@@ -86,5 +86,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/Compare-MesenCapture.p
 The comparator reports differences; it does not turn nonzero mismatches into a passing
 equivalence assertion. See [PROGRESS.md](PROGRESS.md) for current results and coverage gaps.
 
+## State and graphics discovery
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --rom '.\Alien Crush.pce' --extract-assets out/assets
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --rom '.\Alien Crush.pce' --verify-discovery
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --rom '.\Alien Crush.pce' --frames 1800 --capture out/captures/discovery --video-every 120 --compact --verify-replay
+```
+
+Asset extraction produces both initial table backgrounds directly from the ROM,
+without executing the game, under `out/assets/<ROM SHA-256>/table-background-v1`.
+These layers omit dynamic actors and palette animation.
+
+Captures include `game-observations.csv` with recovered score, ball/table counters
+and high scores. `--video-every` also exports background/sprite BMPs, attributes,
+raw video memory and metadata. `--compact` omits large per-frame raw RAM/pixel
+streams; use a fresh output directory per capture. Mesen comparison requires raw mode.
+
+See [state and asset evidence](docs/STATE_AND_ASSETS.md) for recovered addresses and
+validation. `Invoke-MesenCapture.ps1` accepts `-TraceVideoLastFrames 1..10` for short
+read-only VDC write traces. `Find-VideoRomMatches.ps1 -RomPath <ROM> -VideoDirectory
+<video-N directory>` locates candidate source data.
+
 Enable local ROM tests with `-DAC_ENABLE_ROM_TESTS=ON -DAC_ROM_PATH='<absolute ROM path>'`
 at configuration. Public CI runs ROM-free tests. `windows-core-only` builds without SDL or Beetle.

@@ -3,6 +3,8 @@
 #include "alien_crush/core/recording.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/core/rom_image.hpp"
+#include "video_capture.hpp"
+#include "alien_crush/diagnostics/alien_state.hpp"
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -23,7 +25,8 @@ void bitmap(const std::filesystem::path& path,const Frame& frame) {
 }
 std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint64_t frames,
     const std::filesystem::path& output, bool check_restore,
-    const recording::Recording* playback=nullptr, bool restore_initial=false) {
+    const recording::Recording* playback=nullptr, bool restore_initial=false,
+    std::uint64_t video_every=0,bool raw=true) {
     auto runtime=make_reference_runtime(); runtime->load(rom_path);
     if(playback) runtime->restore(playback->initial);
     else if(restore_initial) runtime->restore(runtime->save());
@@ -33,14 +36,20 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
     std::ofstream census;
     std::ofstream ram_stream;
     std::ofstream pixel_stream;
+    std::ofstream observations;
     if(!output.empty()) {
         std::filesystem::create_directories(output);
         census.exceptions(std::ios::failbit|std::ios::badbit);
         ram_stream.exceptions(std::ios::failbit|std::ios::badbit);
         pixel_stream.exceptions(std::ios::failbit|std::ios::badbit);
         census.open(output/"census.csv");
-        ram_stream.open(output/"work-ram.bin",std::ios::binary);
-        pixel_stream.open(output/"pixels.argb",std::ios::binary);
+        observations.exceptions(std::ios::failbit|std::ios::badbit);
+        observations.open(output/"game-observations.csv");
+        observations<<"frame,score,table_code,ball_counter,score_pending,high_score_1,high_score_2,high_score_3,high_score_4,high_score_5\n";
+        if(raw) {
+            ram_stream.open(output/"work-ram.bin",std::ios::binary);
+            pixel_stream.open(output/"pixels.argb",std::ios::binary);
+        }
         census<<"frame,width,height,ram_sha256,pixels_sha256,audio_samples,audio_sha256\n";
     }
     for(std::uint64_t n=0;n<frames;++n) {
@@ -51,18 +60,28 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
         hashes.push_back(recording::fingerprint(frame,runtime->work_ram()));
         if(!output.empty()) census<<hashes.back()<<'\n';
         if(!output.empty()) {
+            const auto observed=diagnostics::observe_alien_state(runtime->work_ram());
+            observations<<frame.number<<','<<observed.score_points<<','<<static_cast<unsigned>(observed.table_code)<<','
+                <<static_cast<unsigned>(observed.ball_counter)<<','<<observed.score_update_pending;
+            for(auto high:observed.high_scores) observations<<','<<high;
+            observations<<'\n';
+        }
+        if(!output.empty() && raw) {
             const auto ram=runtime->work_ram();
             ram_stream.write(reinterpret_cast<const char*>(ram.data()),static_cast<std::streamsize>(ram.size()));
         }
-        if(!output.empty()) pixel_stream.write(reinterpret_cast<const char*>(frame.pixels.data()),static_cast<std::streamsize>(frame.pixels.size_bytes()));
+        if(!output.empty() && raw) pixel_stream.write(reinterpret_cast<const char*>(frame.pixels.data()),static_cast<std::streamsize>(frame.pixels.size_bytes()));
         if(n+1==frames/2) checkpoint=runtime->save();
         if(!output.empty() && (n%120==119 || n+1==frames)) {
             bitmap(output/("frame-"+std::to_string(n+1)+".bmp"),frame);
             core::write_file_atomic(output/("ram-"+std::to_string(n+1)+".bin"),runtime->work_ram());
         }
+        if(!output.empty() && video_every && ((n+1)%video_every==0 || n+1==frames))
+            diagnostics::export_video(output/("video-"+std::to_string(frame.number)),runtime->save());
     }
     if(!output.empty()) {
-        census.close(); ram_stream.close(); pixel_stream.close();
+        census.close(); observations.close();
+        if(raw) {ram_stream.close(); pixel_stream.close();}
         recording::write(output/"session.acrec",recording);
     }
     if(check_restore && checkpoint) {
@@ -80,9 +99,9 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
 }
 int main(int argc,char** argv) {
     try {
-        std::filesystem::path rom_path="Alien Crush.pce",output,replay_path;
-        std::uint64_t frames=1800;
-        bool validate=false,verify=false,cold=false;
+        std::filesystem::path rom_path="Alien Crush.pce",output,replay_path,asset_path;
+        std::uint64_t frames=1800,video_every=0;
+        bool validate=false,verify=false,cold=false,raw=true,discovery=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){ if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]); };
@@ -90,16 +109,31 @@ int main(int argc,char** argv) {
             else if(arg=="--frames") frames=std::stoull(value());
             else if(arg=="--capture") output=core::path_from_utf8(value());
             else if(arg=="--replay") replay_path=core::path_from_utf8(value());
+            else if(arg=="--video-every") { video_every=std::stoull(value()); if(!video_every) throw std::runtime_error("Video interval must be positive"); }
+            else if(arg=="--compact") raw=false;
+            else if(arg=="--extract-assets") asset_path=core::path_from_utf8(value());
+            else if(arg=="--verify-discovery") discovery=true;
             else if(arg=="--validate-rom") validate=true;
             else if(arg=="--verify-replay") verify=true;
             else if(arg=="--verify-cold") cold=true;
-            else if(arg=="--help") { std::cout<<"alien-crush-tools --rom <path> [--validate-rom | --verify-replay | --verify-cold] [--frames N] [--replay <file>] [--capture <directory>]\nReplay consumes the entire recording; --frames applies to the canonical route.\n"; return 0; }
+            else if(arg=="--help") {
+                std::cout<<"alien-crush-tools --rom <path> [--validate-rom | --verify-replay | --verify-cold | --verify-discovery]\n"
+                    <<"  [--frames N] [--replay <file>] [--capture <directory>] [--video-every N] [--compact]\n"
+                    <<"  --extract-assets <directory>: decode both table backgrounds without running the game.\n"
+                    <<"Replay consumes the entire recording; --frames applies to the canonical route.\n"
+                    <<"--video-every exports background/sprite images and diagnostic video state every N frames.\n"
+                    <<"--compact omits large per-frame raw RAM/video streams.\n";
+                return 0;
+            }
             else throw std::runtime_error("Unknown option "+arg);
         }
         if(frames<2 || frames>10'000'000) throw std::runtime_error("Frames must be between 2 and 10000000");
+        if(video_every && output.empty()) throw std::runtime_error("--video-every requires --capture");
         const auto validation=rom::validate_file(rom_path);
         if(!validation.supported()) throw std::runtime_error(validation.message);
         std::cout<<"ROM SHA-256: "<<validation.digests.sha256<<'\n';
+        if(!asset_path.empty()) {diagnostics::export_table_assets(asset_path,rom_path); std::cout<<"Extracted both table background assets without running the reference core.\n"; return 0;}
+        if(discovery) {diagnostics::verify_discovery(rom_path); return 0;}
         if(validate) return 0;
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) {
@@ -107,7 +141,7 @@ int main(int argc,char** argv) {
             if(frames<2) throw std::runtime_error("Replay requires at least two frames");
         }
         const auto* source=playback?&*playback:nullptr;
-        const auto first=capture(rom_path,frames,output,verify,source);
+        const auto first=capture(rom_path,frames,output,verify,source,false,video_every,raw);
         if(verify || cold) {
             const auto second=capture(rom_path,frames,{},false,source);
             for(std::size_t i=0;i<first.size();++i) if(first[i]!=second[i]) throw std::runtime_error("Cold-boot replay diverged at frame "+std::to_string(i+1));

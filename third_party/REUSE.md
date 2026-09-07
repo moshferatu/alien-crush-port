@@ -11,6 +11,7 @@ Selected infrastructure was adapted from `D:/Workspace/devils-crush` at commit
 - Reference core option values and libretro callback integration patterns.
 - Dependency license inventory and notices.
 - Generic HuC6280 opcode/addressing-mode table for the disassembly tool.
+- Generic background tile/bitplane addressing from `src/render/pce_background.cpp`.
 
 Namespaces, ROM identity, and state magic are Alien Crush-specific. Plunger sample
 normalization is reused; Devil Shooter addresses and its launcher equation are not.

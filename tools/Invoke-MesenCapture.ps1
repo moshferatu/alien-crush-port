@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string] $MesenPath,
     [Parameter(Mandatory)][string] $RomPath,
     [string] $OutputDirectory = 'out/mesen/baseline',
-    [ValidateRange(2,100000)][int] $Frames = 1800
+    [ValidateRange(2,100000)][int] $Frames = 1800,
+    [ValidateRange(0,10)][int] $TraceVideoLastFrames = 0
 )
 $ErrorActionPreference = 'Stop'
 $acMesen = (Resolve-Path -LiteralPath $MesenPath).Path
@@ -38,9 +39,11 @@ $acSettings = @{
 $acSettings | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $acRuntime 'settings.json') -Encoding UTF8
 $acOldOutput=$env:AC_MESEN_OUTPUT
 $acOldFrames=$env:AC_MESEN_FRAMES
+$acOldTrace=$env:AC_MESEN_TRACE_VIDEO
 try {
     $env:AC_MESEN_OUTPUT=$acOutput.Replace('\','/')
     $env:AC_MESEN_FRAMES="$Frames"
+    $env:AC_MESEN_TRACE_VIDEO="$TraceVideoLastFrames"
     $acScript=Join-Path $PSScriptRoot 'mesen/capture.lua'
     $acProcess=Start-Process -FilePath (Join-Path $acRuntime 'Mesen.exe') -ArgumentList ('--testRunner --timeout=120 "{0}" "{1}"' -f $acScript,$acRom) -WindowStyle Hidden -PassThru
     if (-not $acProcess.WaitForExit(130000)) { $acProcess.Kill(); throw 'Mesen capture timed out' }
@@ -50,4 +53,5 @@ try {
 } finally {
     $env:AC_MESEN_OUTPUT=$acOldOutput
     $env:AC_MESEN_FRAMES=$acOldFrames
+    $env:AC_MESEN_TRACE_VIDEO=$acOldTrace
 }

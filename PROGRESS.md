@@ -6,7 +6,7 @@ not intended capabilities. Last updated: 2026-09-07.
 | Milestone | Status |
 | --- | --- |
 | 1. Trustworthy desktop baseline | Playable and deterministic; independent-emulator differences remain under investigation |
-| 2. State and assets | Diagnostic capture, named state extraction, and bank-aware disassembly implemented; game state not yet mapped |
+| 2. State and assets | Native extraction of both table backgrounds; score, high-score storage, ball counter and level observations recovered; remaining gameplay mapping open |
 | 3. Playable full-table cabinet | Not yet implemented |
 | 4. Native gameplay | Not yet implemented |
 | 5. Standalone native release | Not yet implemented |
@@ -18,8 +18,8 @@ RAM/video/audio census and screenshots, core utility tests, and PinOne calibrati
 
 Verified on Windows x64 with MSVC 19.43 / Windows SDK 10.0.22621:
 
-- Release CTest: 3/3 pass (core, 1,800-frame replay, SDL dummy desktop smoke).
-- ROM-free Debug CTest: 1/1 pass, with both reference and SDL disabled.
+- Release CTest: 5/5 pass (core, graphics, 1,800-frame replay, asset discovery, SDL dummy desktop smoke).
+- ROM-free Debug CTest: 2/2 pass, with both reference and SDL disabled.
 - All 1,800 canonical frames match across cold boots and initial-state restore;
   all 900 frames after midpoint restore match RAM, pixels, and PCM exactly.
 - A separately reopened 600-frame `.acrec` reproduces the original census exactly,
@@ -35,5 +35,17 @@ Verified on Windows x64 with MSVC 19.43 / Windows SDK 10.0.22621:
   without inserting execution hooks.
 
 No native gameplay ownership, full-table
-rendering, DMD state mapping, or game-specific analog launcher support is claimed yet.
+rendering, DMD presentation, or game-specific analog launcher support is claimed yet.
 Physical cabinet, three-monitor, focus/hotplug and prolonged-play acceptance remain open.
+
+State/asset continuation:
+
+- Added bounded C++ snapshot parsing, background/sprite decoding, compact video capture,
+  per-frame game observations and optional Mesen VDC-write tracing.
+- Both ROM background pattern sets match reference VRAM exactly; 1,437 score/ball
+  comparisons match original source HUD data during the canonical route.
+- Native word-RLE and palette extraction builds both initial background layers before
+  game execution. Outputs are versioned by ROM hash and decoder schema.
+- Synthetic graphics/parser/RLE/state tests pass in Debug and Release. Video capture
+  plus per-frame game observations preserve the frozen pristine baseline exactly.
+- Details and evidence: [docs/STATE_AND_ASSETS.md](docs/STATE_AND_ASSETS.md).

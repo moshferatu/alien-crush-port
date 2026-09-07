@@ -6,6 +6,24 @@ local ram = assert(io.open(directory .. '/work-ram.bin', 'wb'))
 local pixels = assert(io.open(directory .. '/pixels.rgb', 'wb'))
 local cpu = assert(io.open(directory .. '/cpu.csv', 'w'))
 local frame_count = 0
+local trace_frames=tonumber(os.getenv('AC_MESEN_TRACE_VIDEO')) or 0
+local video_trace=nil
+if trace_frames>0 then
+  video_trace=assert(io.open(directory..'/video-writes.csv','w'))
+  video_trace:write('frame,pc,mpr,port,register,value,a,x,y\n')
+  local selected=0
+  emu.addMemoryCallback(function(address,value)
+    if address==0 then selected=value end
+    if frame_count>=frames-trace_frames then
+      local state=emu.getState()
+      local pc=state['cpu.pc']
+      video_trace:write(string.format('%d,%04X,%02X,%04X,%02X,%02X,%02X,%02X,%02X\n',
+        frame_count+1,pc,state['memoryManager.mpr['..(pc>>13)..']'],address,selected,value,
+        state['cpu.a'],state['cpu.x'],state['cpu.y']))
+    end
+    -- No return value: preserve the original bus write.
+  end,emu.callbackType.write,0,3,emu.cpuType.pce,emu.memType.pceMemory)
+end
 cpu:write('frame,pc,sp,clock,mpr0,mpr1,mpr2,mpr3,mpr4,mpr5,mpr6,mpr7\n')
 local function dump_memory(name, kind)
   local file = assert(io.open(directory .. '/' .. name .. '-' .. frame_count .. '.bin', 'wb'))
@@ -50,6 +68,7 @@ local function end_frame()
   end
   if frame_count==frames then
     ram:close(); pixels:close(); cpu:close()
+    if video_trace then video_trace:close() end
     local done=assert(io.open(directory..'/complete.txt','w'))
     done:write('Captured ',frames,' frames with Mesen 2.1.1\n'); done:close()
     emu.stop(0)
