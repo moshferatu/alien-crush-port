@@ -119,7 +119,7 @@ int main(int argc,char** argv) {
             else if(arg=="--help") {
                 std::cout<<"alien-crush-tools --rom <path> [--validate-rom | --verify-replay | --verify-cold | --verify-discovery]\n"
                     <<"  [--frames N] [--replay <file>] [--capture <directory>] [--video-every N] [--compact]\n"
-                    <<"  --extract-assets <directory>: decode both table backgrounds without running the game.\n"
+                    <<"  --extract-assets <directory>: decode both table backgrounds and sprite patterns without running the game.\n"
                     <<"Replay consumes the entire recording; --frames applies to the canonical route.\n"
                     <<"--video-every exports background/sprite images and diagnostic video state every N frames.\n"
                     <<"--compact omits large per-frame raw RAM/video streams.\n";
@@ -132,7 +132,7 @@ int main(int argc,char** argv) {
         const auto validation=rom::validate_file(rom_path);
         if(!validation.supported()) throw std::runtime_error(validation.message);
         std::cout<<"ROM SHA-256: "<<validation.digests.sha256<<'\n';
-        if(!asset_path.empty()) {diagnostics::export_table_assets(asset_path,rom_path); std::cout<<"Extracted both table background assets without running the reference core.\n"; return 0;}
+        if(!asset_path.empty()) {diagnostics::export_table_assets(asset_path,rom_path); std::cout<<"Extracted both table backgrounds and sprite patterns without running the reference core.\n"; return 0;}
         if(discovery) {diagnostics::verify_discovery(rom_path); return 0;}
         if(validate) return 0;
         std::optional<recording::Recording> playback;

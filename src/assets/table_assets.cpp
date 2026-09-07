@@ -42,4 +42,30 @@ std::array<TableBackground,2> decode_table_backgrounds(std::span<const std::byte
     }
     return result;
 }
+std::array<TableSprites,2> decode_table_sprites(std::span<const std::byte> image) {
+    if(!rom::matches_supported_rom(image.size(),rom::compute_digests(image))) throw std::runtime_error("Unsupported ROM for sprite asset extraction");
+    // 05/0A:403F map banks 0F..11 at CPU 8000..DFFF. The upper
+    // loader selects pointer 8004, whereas the lower selects 8002.
+    auto pointer=[&](std::size_t entry) {
+        const auto at=0x1e000+entry*2;
+        const auto cpu=std::to_integer<unsigned>(image[at])|(std::to_integer<unsigned>(image[at+1])<<8);
+        if(cpu<0x8000 || cpu>=0xe000) throw std::runtime_error("Invalid shared sprite pointer");
+        return std::size_t{0x1e000}+cpu-0x8000;
+    };
+    constexpr std::size_t local[]{0x10254,0x19ef6};
+    constexpr std::size_t destinations[]{0x4000,0x5800,0x6000};
+    constexpr std::size_t limits[]{0x1800,0x800,0x2000};
+    std::array<TableSprites,2> result;
+    for(std::size_t level=0;level<2;++level) {
+        const std::size_t offsets[]{pointer(0),pointer(level+1),local[level]};
+        for(std::size_t stream=0;stream<3;++stream) {
+            const auto decoded=decode_word_rle(image.subspan(offsets[stream]),limits[stream]);
+            if(decoded.words.size()!=limits[stream]) throw std::runtime_error("Invalid sprite pattern stream size");
+            auto& table=result[level];
+            std::copy(decoded.words.begin(),decoded.words.end(),table.vram.begin()+destinations[stream]);
+            table.streams[stream]={offsets[stream],decoded.consumed,destinations[stream],decoded.words.size()};
+        }
+    }
+    return result;
+}
 }

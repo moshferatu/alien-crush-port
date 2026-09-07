@@ -94,9 +94,13 @@ equivalence assertion. See [PROGRESS.md](PROGRESS.md) for current results and co
 .\out\build\windows-vs2022\Release\alien-crush-tools.exe --rom '.\Alien Crush.pce' --frames 1800 --capture out/captures/discovery --video-every 120 --compact --verify-replay
 ```
 
-Asset extraction produces both initial table backgrounds directly from the ROM,
-without executing the game, under `out/assets/<ROM SHA-256>/table-background-v1`.
-These layers omit dynamic actors and palette animation.
+Asset extraction produces both initial table backgrounds and sprite pattern sets
+directly from the ROM, without executing the game, under
+`out/assets/<ROM SHA-256>/table-background-v1` and `table-sprites-v1`.
+Sprite exports include VRAM, initial palettes, a stream manifest with ROM offsets
+and hashes, and 16 palette previews per level. Each preview shows pattern IDs
+256 through 511 in row order as individual 16-by-16 tiles. Actor placement,
+multi-tile assembly and palette animation remain separate from these assets.
 
 Captures include `game-observations.csv` with recovered score, ball/table counters
 and high scores. `--video-every` also exports background/sprite BMPs, attributes,

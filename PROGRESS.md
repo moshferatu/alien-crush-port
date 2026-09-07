@@ -6,7 +6,7 @@ not intended capabilities. Last updated: 2026-09-07.
 | Milestone | Status |
 | --- | --- |
 | 1. Trustworthy desktop baseline | Playable and deterministic; independent-emulator differences remain under investigation |
-| 2. State and assets | Native extraction of both table backgrounds; score, high-score storage, ball counter and level observations recovered; remaining gameplay mapping open |
+| 2. State and assets | Native extraction of both table backgrounds and sprite pattern sets; score, high-score storage, ball counter and level observations recovered; remaining gameplay mapping open |
 | 3. Playable full-table cabinet | Not yet implemented |
 | 4. Native gameplay | Not yet implemented |
 | 5. Standalone native release | Not yet implemented |
@@ -49,3 +49,12 @@ State/asset continuation:
 - Synthetic graphics/parser/RLE/state tests pass in Debug and Release. Video capture
   plus per-frame game observations preserve the frozen pristine baseline exactly.
 - Details and evidence: [docs/STATE_AND_ASSETS.md](docs/STATE_AND_ASSETS.md).
+
+Sprite asset continuation:
+
+- Recovered the shared, level-selected and local sprite streams from the original
+  loaders, including the different middle-stream pointer used by the upper level.
+- All 16,384 sprite pattern words per level match reference VRAM at frames 600/720.
+- Asset exports include versioned sprite VRAM, initial palettes, stream provenance
+  and hashes, and previews of every palette. Ball and flipper artwork is present;
+  native actor assembly, animation and gameplay integration remain open.

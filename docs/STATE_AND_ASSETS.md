@@ -51,8 +51,33 @@ ROM hash and decoder schema.
 Output is an initial background layer, not a complete playfield. Live BAT changes,
 palette animation, sprites and transitions are separate. For example, the upper
 brain's initial green palette changes during play. Both backgrounds can now exist
-before either camera visit, without advancing off-screen actors. Shared/table-specific
-sprite asset loaders remain to be decoded.
+before either camera visit, without advancing off-screen actors.
+
+## Native table sprite extraction
+
+The same table loaders fill the entire sprite pattern region at VRAM words
+`$4000..$7FFF` in three streams. Each uses the word RLE format above.
+
+| Stream | Lower ROM offset | Upper ROM offset | VRAM word | Decoded words |
+| --- | --- | --- | --- | --- |
+| Shared | `$1E00F` | `$1E00F` | `$4000` | 6,144 |
+| Level-selected | `$20372` | `$20EB8` | `$5800` | 2,048 |
+| Level-local | `$10254` | `$19EF6` | `$6000` | 8,192 |
+
+`05/0A:4019` selects the local stream. At `:403F`, both loaders map banks
+`$0F..$11` to CPU `$8000..$DFFF`. The pointer at CPU `$8000` selects the shared
+stream; pointers `$8002` (lower) and `$8004` (upper) select the middle stream.
+The decoder reads these pointers and checks their mapped range and stream sizes.
+All 16,384 decoded words per level match reference VRAM at canonical frames
+600 and 720, alongside the background and HUD checks.
+
+`table-sprites-v1` exports initial sprite VRAM and palettes plus a manifest with
+physical source offsets, compressed lengths, destinations, decoded lengths and
+stream SHA-256 hashes. Sixteen preview BMPs per level show all palette choices;
+each is a 16-by-16 grid of 16-pixel patterns, IDs 256 through 511 in row order.
+Transparent pixels appear dark gray. These are pattern atlases, not assembled
+actors: actor descriptors select palette, size, orientation and animation.
+HUD sprite patterns below VRAM `$4000` are outside this extraction.
 
 ## Diagnostic graphics and validation
 
@@ -71,5 +96,5 @@ Mesen can optionally trace VDC writes for the final 1..10 frames. Callbacks retu
 no replacement values. `Find-VideoRomMatches.ps1` locates exact runs, but repeated
 artwork means a match alone does not prove the loader path.
 
-Next: scene/launcher validity, launch arithmetic, ball update epochs, sprite assets,
+Next: scene/launcher validity, launch arithmetic, ball update epochs,
 actors and palette rules; then continuous table rendering and cabinet integration.

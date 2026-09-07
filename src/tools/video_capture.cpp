@@ -22,9 +22,33 @@ void bitmap(const std::filesystem::path& path,const render::Image& image) {
     const auto raw=std::as_bytes(std::span(image.pixels)); std::copy(raw.begin(),raw.end(),bytes.begin()+54);
     core::write_file_atomic(path,bytes);
 }
+render::Image pattern_atlas(const assets::TableSprites& table,
+    const std::array<std::uint16_t,512>& palette,unsigned palette_index) {
+    render::Image atlas{256,256,std::vector<std::uint32_t>(256*256,0xff202020)};
+    // VRAM 4000..7FFF contains 256 individual 16x16 patterns (IDs 256..511).
+    // Show every palette because actor data, not pattern data, selects colors.
+    for(unsigned batch=0;batch<4;++batch) {
+        std::array<std::uint16_t,256> sat{};
+        for(unsigned slot=0;slot<64;++slot) {
+            sat[slot*4+2]=static_cast<std::uint16_t>((256+batch*64+slot)*2);
+            sat[slot*4+3]=static_cast<std::uint16_t>(palette_index);
+        }
+        const auto decoded=render::sprites(table.vram,palette,sat,0);
+        for(unsigned slot=0;slot<64;++slot) {
+            const auto tile=batch*64+slot;
+            for(unsigned y=0;y<16;++y) for(unsigned x=0;x<16;++x) {
+                const auto color=decoded[slot].image.pixels[y*16+x];
+                if(color>>24) atlas.pixels[((tile/16)*16+y)*256+(tile%16)*16+x]=color;
+            }
+        }
+    }
+    return atlas;
+}
 }
 void export_table_assets(const std::filesystem::path& directory,const std::filesystem::path& rom) {
-    const auto tables=assets::decode_table_backgrounds(core::read_file(rom));
+    const auto image=core::read_file(rom);
+    const auto tables=assets::decode_table_backgrounds(image);
+    const auto sprite_tables=assets::decode_table_sprites(image);
     const auto versioned=directory/rom::kSupportedSha256/"table-background-v1";
     std::filesystem::create_directories(versioned);
     std::ofstream manifest; manifest.exceptions(std::ios::failbit|std::ios::badbit); manifest.open(versioned/"manifest.csv");
@@ -39,6 +63,25 @@ void export_table_assets(const std::filesystem::path& directory,const std::files
         core::write_file_atomic(versioned/(std::string(name)+"-palette.bin"),palette);
         manifest<<name<<','<<table.pattern_words<<','<<table.map_words<<','<<table.palette_words<<','
             <<rom::compute_digests(vram).sha256<<','<<rom::compute_digests(palette).sha256<<'\n';
+    }
+    manifest.close();
+    const auto sprite_directory=directory/rom::kSupportedSha256/"table-sprites-v1";
+    std::filesystem::create_directories(sprite_directory);
+    manifest.open(sprite_directory/"manifest.csv");
+    manifest<<"table,stream,rom_offset,compressed_bytes,vram_word,word_count,sha256\n";
+    for(std::size_t level=0;level<2;++level) {
+        const std::string name=level==0?"lower":"upper";
+        const auto& table=sprite_tables[level];
+        core::write_file_atomic(sprite_directory/(name+"-vram.bin"),std::as_bytes(std::span(table.vram)));
+        core::write_file_atomic(sprite_directory/(name+"-palette.bin"),std::as_bytes(std::span(tables[level].palette)));
+        for(std::size_t index=0;index<table.streams.size();++index) {
+            const auto& stream=table.streams[index];
+            const auto data=std::as_bytes(std::span(table.vram).subspan(stream.vram_word,stream.word_count));
+            manifest<<name<<','<<index<<','<<stream.rom_offset<<','<<stream.compressed_bytes<<','
+                <<stream.vram_word<<','<<stream.word_count<<','<<rom::compute_digests(data).sha256<<'\n';
+        }
+        for(unsigned palette=0;palette<16;++palette)
+            bitmap(sprite_directory/(name+"-palette-"+std::to_string(palette)+".bmp"),pattern_atlas(table,tables[level].palette,palette));
     }
     manifest.close();
 }
@@ -68,7 +111,9 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     manifest.close();
 }
 void verify_discovery(const std::filesystem::path& rom) {
-    const auto tables=assets::decode_table_backgrounds(core::read_file(rom));
+    const auto image=core::read_file(rom);
+    const auto tables=assets::decode_table_backgrounds(image);
+    const auto sprite_tables=assets::decode_table_sprites(image);
     auto runtime=make_reference_runtime(); runtime->load(rom);
     std::size_t hud_checks=0;
     for(std::uint64_t n=0;n<1800;++n) {
@@ -80,6 +125,11 @@ void verify_discovery(const std::filesystem::path& rom) {
             const auto index=n==599?0U:1U; const auto& table=tables[index];
             if(observed.table_code!=index || !std::equal(table.vram.begin()+0x800,table.vram.begin()+0x800+table.pattern_words,snapshot.vram.begin()+0x800))
                 throw std::runtime_error("Native table pattern mismatch at frame "+std::to_string(n+1));
+            for(const auto& stream:sprite_tables[index].streams) {
+                const auto begin=sprite_tables[index].vram.begin()+stream.vram_word;
+                if(!std::equal(begin,begin+stream.word_count,snapshot.vram.begin()+stream.vram_word))
+                    throw std::runtime_error("Native sprite pattern mismatch at frame "+std::to_string(n+1)+" VRAM word "+std::to_string(stream.vram_word));
+            }
         }
         // Check the original HUD's source SAT in VRAM. The latched SAT belongs to
         // a different DMA epoch and may legitimately show the preceding score.
@@ -99,6 +149,6 @@ void verify_discovery(const std::filesystem::path& rom) {
         }
     }
     if(hud_checks<1000) throw std::runtime_error("Insufficient discovery HUD coverage");
-    std::cout<<"PASS: both ROM-decoded table pattern sets exactly match reference VRAM; "<<hud_checks<<" score/ball HUD checks.\n";
+    std::cout<<"PASS: both ROM-decoded background and sprite pattern sets exactly match reference VRAM; "<<hud_checks<<" score/ball HUD checks.\n";
 }
 }
