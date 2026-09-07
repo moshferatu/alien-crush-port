@@ -2,6 +2,7 @@
 #include "alien_crush/diagnostics/reference_snapshot.hpp"
 #include "alien_crush/render/pce_graphics.hpp"
 #include "alien_crush/assets/table_assets.hpp"
+#include "alien_crush/assets/actor_assets.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include <array>
 #include <cstring>
@@ -77,6 +78,19 @@ int main() {
         const std::array<std::byte,4> wrapping{std::byte{0x80},std::byte{0x34},std::byte{0x12},std::byte{0}};
         require(assets::decode_word_rle(wrapping,256).words.size()==256,"RLE repeat zero count preserves CPU wrap");
         std::array<std::byte,8192> ram{};
+        const std::array<std::byte,8> piece_bytes{std::byte{1},std::byte{0x80},std::byte{0xff},
+            std::byte{0x34},std::byte{0x12},std::byte{0x8f},std::byte{0x89},std::byte{0xff}};
+        const auto pieces=assets::decode_actor_pieces(piece_bytes);
+        require(pieces.size()==1 && pieces[0].y==-128 && pieces[0].x==-1 && pieces[0].pattern==0x1234 && pieces[0].flags==0x898f,
+            "Actor signed offsets, little-endian words and trailing descriptor data");
+        rejects([&]{(void)assets::decode_actor_pieces({});},"Empty actor descriptor rejected");
+        rejects([&]{(void)assets::decode_actor_pieces(std::span(piece_bytes).first(6));},"Truncated actor piece rejected");
+        std::array<std::byte,259> large_descriptor{};
+        rejects([&]{(void)assets::decode_actor_pieces(large_descriptor);},"Zero piece count rejected");
+        large_descriptor[0]=std::byte{42};
+        require(assets::decode_actor_pieces(large_descriptor).size()==42,"Largest non-wrapping descriptor accepted");
+        large_descriptor[0]=std::byte{43};
+        rejects([&]{(void)assets::decode_actor_pieces(large_descriptor);},"Wrapping descriptor index rejected");
         ram[0x121e]=std::byte{0x66}; ram[0x1224]=std::byte{1}; ram[0x122a]=std::byte{2};
         ram[0x1219]=std::byte{0x10}; ram[0x121f]=std::byte{0x27}; ram[0x46]=std::byte{3}; ram[0x68]=std::byte{4};
         const auto observed=diagnostics::observe_alien_state(ram);

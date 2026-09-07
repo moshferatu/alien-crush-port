@@ -58,3 +58,16 @@ Sprite asset continuation:
 - Asset exports include versioned sprite VRAM, initial palettes, stream provenance
   and hashes, and previews of every palette. Ball and flipper artwork is present;
   native actor assembly, animation and gameplay integration remain open.
+
+Actor assembly continuation:
+
+- Added native ROM descriptor decoding and main-table actor ordering, signed
+  placement, pattern-base arithmetic, attribute overrides and SAT capacity handling.
+  The assembler observes animation selection without advancing gameplay.
+- All 324 actor sprite words at the fixed lower/upper source frames 600/720 match
+  exactly when reconstructed from the preceding RAM frames. Arithmetic edge checks
+  and ROM-free descriptor bounds tests are included.
+- Added per-sprite native/source CSV evidence and assembled sprite-layer previews.
+  The broader one-frame-offset diagnostic matches 1,151/1,320 frames; 3,130 of
+  209,268 words differ. Epoch/transition classification remains open, so this is
+  not yet a replacement renderer or a whole-route equivalence result.

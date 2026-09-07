@@ -5,5 +5,5 @@
 namespace alien_crush::diagnostics {
 void export_video(const std::filesystem::path& directory,const state::SaveStateContainer& saved);
 void export_table_assets(const std::filesystem::path& directory,const std::filesystem::path& rom);
-void verify_discovery(const std::filesystem::path& rom);
+void verify_discovery(const std::filesystem::path& rom,const std::filesystem::path& report={});
 }

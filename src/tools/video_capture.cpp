@@ -4,6 +4,7 @@
 #include "alien_crush/render/pce_graphics.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/assets/table_assets.hpp"
+#include "alien_crush/assets/actor_assets.hpp"
 #include "alien_crush/core/rom_image.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include "alien_crush/runtime/game_runtime.hpp"
@@ -110,17 +111,87 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     manifest<<"phase=post-frame; register values are not a scanline history\n";
     manifest.close();
 }
-void verify_discovery(const std::filesystem::path& rom) {
+void verify_discovery(const std::filesystem::path& rom,const std::filesystem::path& report) {
     const auto image=core::read_file(rom);
     const auto tables=assets::decode_table_backgrounds(image);
     const auto sprite_tables=assets::decode_table_sprites(image);
     auto runtime=make_reference_runtime(); runtime->load(rom);
+    const assets::ActorAssets actor_assets(image);
+    // Arithmetic edges outside the natural route, using the verified ball descriptor.
+    std::array<std::byte,8192> actor_fixture{};
+    actor_fixture[0x50]=std::byte{20}; actor_fixture[0x1500]=std::byte{1}; actor_fixture[0x1540]=std::byte{0x80};
+    actor_fixture[0x16]=std::byte{1}; actor_fixture[0x2e]=std::byte{0xff}; actor_fixture[0x2f]=std::byte{0xff};
+    actor_fixture[0x1a00]=std::byte{0xa0}; actor_fixture[0x1a80]=std::byte{0x0f}; actor_fixture[0x1980]=std::byte{0x88};
+    const auto fixture=assets::assemble_table_actors(actor_assets,actor_fixture);
+    if(fixture.size()!=1 || fixture[0].slot!=20 || fixture[0].words!=std::array<std::uint16_t,4>{65529,65530,31,0x888f})
+        throw std::runtime_error("Actor coordinate/pattern wrapping or attribute override mismatch");
+    if(!actor_assets.pieces(1,62).empty() || actor_assets.pieces(1,61).size()!=2)
+        throw std::runtime_error("Actor SAT capacity boundary mismatch");
+    std::vector<assets::ActorSprite> previous_actors;
+    std::size_t actor_checks=0,actor_bad=0,actor_frames=0;
+    std::size_t verified_actor_words=0;
+    std::ofstream actor_report;
+    if(!report.empty()) {
+        if(std::filesystem::exists(report)) throw std::runtime_error("Discovery report requires a new directory");
+        std::filesystem::create_directories(report);
+        actor_report.exceptions(std::ios::failbit|std::ios::badbit);
+        actor_report.open(report/"actor-comparison.csv");
+        actor_report<<"ram_frame,source_sat_frame,table,actor,descriptor,slot,native_y,native_x,native_pattern,native_flags,source_y,source_x,source_pattern,source_flags,matching_words\n";
+    }
     std::size_t hud_checks=0;
     for(std::uint64_t n=0;n<1800;++n) {
         (void)runtime->advance(recording::canonical_input(n));
         if(n<359) continue;
         const auto observed=observe_alien_state(runtime->work_ram());
         const auto snapshot=decode_reference_snapshot(runtime->save());
+        std::vector<assets::ActorSprite> actors;
+        try { if(n>=479) actors=assets::assemble_table_actors(actor_assets,runtime->work_ram()); }
+        catch(const std::exception& e) { throw std::runtime_error(std::string(e.what())+" frame "+std::to_string(n+1)); }
+        if(n>=480) {
+            bool bad=false;
+            for(const auto& sprite:previous_actors) {
+                unsigned matching=0;
+                for(std::size_t w=0;w<4;++w) {
+                    ++actor_checks;
+                    if(sprite.words[w]!=snapshot.vram[0x400+sprite.slot*4+w]) {++actor_bad;bad=true;}
+                    else ++matching;
+                }
+                if(actor_report.is_open()) {
+                    actor_report<<n<<','<<n+1<<','<<static_cast<unsigned>(observed.table_code)<<','<<static_cast<unsigned>(sprite.actor)<<','
+                        <<static_cast<unsigned>(sprite.descriptor)<<','<<static_cast<unsigned>(sprite.slot);
+                    for(auto word:sprite.words) actor_report<<','<<word;
+                    for(std::size_t w=0;w<4;++w) actor_report<<','<<snapshot.vram[0x400+sprite.slot*4+w];
+                    actor_report<<','<<matching<<'\n';
+                }
+            }
+            if(!bad) ++actor_frames;
+            // Fixed, independently inspected lower/upper samples. Other epochs
+            // stay diagnostic; they are not silently excluded from an equality claim.
+            if(n==599 || n==719) {
+                if(bad || previous_actors.size()!=(n==599?41U:40U))
+                    throw std::runtime_error("Native actor SAT mismatch at frame "+std::to_string(n+1));
+                verified_actor_words+=previous_actors.size()*4;
+            }
+        }
+        if(!report.empty() && (n==599 || n==719)) {
+            const auto directory=report/("frame-"+std::to_string(n+1));
+            export_video(directory,runtime->save());
+            std::array<std::uint16_t,256> sat{};
+            for(const auto& sprite:previous_actors) std::copy(sprite.words.begin(),sprite.words.end(),sat.begin()+sprite.slot*4);
+            const auto decoded=render::sprites(sprite_tables[n==599?0:1].vram,snapshot.palette,sat,snapshot.memory_width);
+            render::Image layer{256,240,std::vector<std::uint32_t>(256*240,0xff202020)};
+            // Diagnostic sprite layer: lowest SAT index wins, no background or scanline limits.
+            for(auto it=previous_actors.rbegin();it!=previous_actors.rend();++it) {
+                const auto& s=decoded[it->slot];
+                for(int y=0;y<s.height;++y) for(int x=0;x<s.width;++x) {
+                    const int dx=s.x+x,dy=s.y+y;
+                    const auto color=s.image.pixels[static_cast<std::size_t>(y*s.width+x)];
+                    if(dx>=0 && dx<256 && dy>=0 && dy<240 && color>>24) layer.pixels[static_cast<std::size_t>(dy*256+dx)]=color;
+                }
+            }
+            bitmap(directory/"native-actor-layer.bmp",layer);
+        }
+        previous_actors=actors;
         if(n==599 || n==719) {
             const auto index=n==599?0U:1U; const auto& table=tables[index];
             if(observed.table_code!=index || !std::equal(table.vram.begin()+0x800,table.vram.begin()+0x800+table.pattern_words,snapshot.vram.begin()+0x800))
@@ -149,6 +220,20 @@ void verify_discovery(const std::filesystem::path& rom) {
         }
     }
     if(hud_checks<1000) throw std::runtime_error("Insufficient discovery HUD coverage");
+    if(actor_report.is_open()) {
+        actor_report.close();
+        std::ofstream manifest; manifest.exceptions(std::ios::failbit|std::ios::badbit); manifest.open(report/"actor-manifest.txt");
+        manifest<<"schema=table-actors-v1\nrom_sha256="<<rom::kSupportedSha256<<"\nbackend="<<runtime->save().core_revision
+            <<"\nroute=canonical\nram_frames=480..1799\nsource_sat_frames=481..1800\ncompared_words="<<actor_checks
+            <<"\nmismatching_words="<<actor_bad<<"\nexact_frames="<<actor_frames<<"\nsampled_verified_words="<<verified_actor_words
+            <<"\nverified_source_frames=600,720\nverified_ram_frames=599,719\n"
+            <<"preview=previous-frame RAM; native initial patterns; current reference palette; sprite-only layer\n"
+            <<"limits=main-table actor pass only; no HUD, BAT writes, later sprite pass or scanline limits; timing differences unresolved\n";
+        manifest.close();
+    }
+    std::cout<<"Actor epoch diagnostic (previous RAM vs current source SAT): "<<actor_checks<<" words, "<<actor_bad
+        <<" mismatches, "<<actor_frames<<"/1320 exact frames; full actor equivalence remains open.\n";
     std::cout<<"PASS: both ROM-decoded background and sprite pattern sets exactly match reference VRAM; "<<hud_checks<<" score/ball HUD checks.\n";
+    std::cout<<"PASS: "<<verified_actor_words<<" native actor SAT words match at lower/upper source frames 600/720; arithmetic and capacity edges verified.\n";
 }
 }

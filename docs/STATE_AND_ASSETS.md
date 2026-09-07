@@ -79,6 +79,62 @@ Transparent pixels appear dark gray. These are pattern atlases, not assembled
 actors: actor descriptors select palette, size, orientation and animation.
 HUD sprite patterns below VRAM `$4000` are outside this extraction.
 
+## Native actor assembly
+
+`ActorAssets` validates the ROM and reads the descriptor pointers at physical
+`$2C24B` (low bytes) and `$2C34B` (high bytes). `00:EBA3` maps banks `$16/$17`
+at CPU `$A000..$DFFF`; the sprite routine starts at `16:A006`.
+The sprite descriptor starts with a piece count, followed by six bytes per piece:
+signed Y offset, signed X offset, little-endian pattern word and attribute word.
+The same pointer table also contains background-update descriptors consumed by
+`16:A1C3`; these must not be decoded as sprite lists indiscriminately.
+
+The native assembler reproduces the main-table pass at `01:85E2..8665`:
+
+- Actor slots 4..63 with `$3540,X` bit 7 set and bit 5 clear are eligible.
+  Bit 2 selects immediate emission; remaining actors with bit 3 set are emitted
+  next, then actor zero (when its type is nonzero and flags permit), then the
+  remaining actors. Each group preserves ascending actor index order.
+- `$2050` supplies the first SAT slot. The descriptor count plus current slot
+  must be strictly less than 64. This capacity test precedes piece decoding.
+- `$3800,X` selects the descriptor. X comes from `$35C0,X/$3600,X`, Y from
+  `$3680,X/$36C0,X`. Signed component offsets are added; camera `$2016/$2017`
+  is subtracted from Y. These are hardware-coordinate words, not established
+  full-table world coordinates. Arithmetic wraps to 16 bits.
+- `$202E/$202F` is added to the descriptor pattern word. `$3A00,X` bit 5 enables
+  OR-ing `$3A80,X` into the low attribute byte; bit 7 enables OR-ing `$3980,X`
+  into the high byte. These overrides do not transform component offsets.
+
+The assembler observes the ROM's selected animation descriptor; it does not
+advance animation or gameplay. It omits HUD, background writes, pattern-transfer
+side effects after `16:A0D7`, and the later pass called at `01:8666`.
+Callers must establish scene validity and the rendering epoch before using it
+for presentation. The bounded decoder rejects zero counts, truncation and lists
+whose six-byte entries would wrap the original eight-bit Y index.
+
+The canonical route provides these reproducible checks:
+
+- RAM frames 599/719 reconstruct all 41/40 actor sprites in source SAT frames
+  600/720: all 324 words match exactly, including the ball and flippers.
+  These fixed lower/upper samples are enforced by `--verify-discovery`.
+- Across RAM frames 480..1799 versus source SAT frames 481..1800, 1,151 of 1,320
+  frames match completely. Of 209,268 compared words, 3,130 differ. This is an
+  epoch diagnostic, not a passed whole-route actor-equivalence gate. A fixed
+  one-frame offset is insufficient; rendering/update and transition timing
+  remain to be classified before replacing the original renderer.
+- ROM-free tests cover descriptor boundaries and signed offsets. ROM integration
+  also checks coordinate/pattern wrapping, both attribute overrides and the
+  strict SAT-capacity boundary using the recovered descriptors.
+
+`--verify-discovery --capture <new-directory>` exports `actor-comparison.csv`
+with every native/source word, actor index, descriptor, slot and both frame
+numbers. `actor-manifest.txt` records provenance, coverage and limitations.
+Frames 600/720 include `native-actor-layer.bmp`: assembled sprite-only previews
+using native initial patterns and the current reference palette, on dark gray.
+Lower SAT indices take precedence; background priority and scanline sprite
+limits are not simulated. Reference snapshot exports are included for inspection.
+Generated data remains in ignored local output.
+
 ## Diagnostic graphics and validation
 
 `--video-every N` exports background/sprite BMPs, attributes, VRAM/SAT/palette and

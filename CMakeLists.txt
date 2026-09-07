@@ -19,7 +19,7 @@ add_library(ac_core STATIC src/core/rom_image.cpp src/core/save_state.cpp
     src/core/atomic_file.cpp src/core/files.cpp src/core/recording.cpp
     src/render/sharp_pixel_scaler.cpp src/input/plunger.cpp
     src/diagnostics/reference_snapshot.cpp src/render/pce_graphics.cpp
-    src/assets/table_assets.cpp src/diagnostics/alien_state.cpp)
+    src/assets/table_assets.cpp src/assets/actor_assets.cpp src/diagnostics/alien_state.cpp)
 target_include_directories(ac_core PUBLIC include)
 target_link_libraries(ac_core PRIVATE bcrypt)
 ac_enable_strict_warnings(ac_core)
