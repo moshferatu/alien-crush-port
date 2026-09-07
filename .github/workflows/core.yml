@@ -1,0 +1,16 @@
+name: ROM-free core
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  core:
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure without SDL, reference core, or ROM
+        run: cmake --preset windows-core-only
+      - name: Build
+        run: cmake --build out/build/windows-core-only --config ${{ matrix.configuration }} --parallel
+      - name: Test
+        run: ctest --test-dir out/build/windows-core-only -C ${{ matrix.configuration }} --output-on-failure

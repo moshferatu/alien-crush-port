@@ -1,0 +1,19 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {"name":"windows-vs2022","generator":"Visual Studio 17 2022","architecture":"x64","binaryDir":"${sourceDir}/out/build/windows-vs2022"},
+    {"name":"windows-core-only","inherits":"windows-vs2022","binaryDir":"${sourceDir}/out/build/windows-core-only","cacheVariables":{"AC_BUILD_APP":"OFF","AC_BUILD_REFERENCE":"OFF"}},
+    {"name":"windows-cabinet","inherits":"windows-vs2022","binaryDir":"${sourceDir}/out/build/windows-cabinet","cacheVariables":{"CMAKE_CONFIGURATION_TYPES":"Release","CMAKE_MSVC_RUNTIME_LIBRARY":"MultiThreaded","AC_BUILD_TESTS":"OFF"}}
+  ],
+  "buildPresets":[
+    {"name":"windows-release","configurePreset":"windows-vs2022","configuration":"Release"},
+    {"name":"windows-debug","configurePreset":"windows-vs2022","configuration":"Debug"},
+    {"name":"windows-core-debug","configurePreset":"windows-core-only","configuration":"Debug"},
+    {"name":"windows-cabinet","configurePreset":"windows-cabinet","configuration":"Release"}
+  ],
+  "testPresets":[
+    {"name":"windows-release","configurePreset":"windows-vs2022","configuration":"Release","output":{"outputOnFailure":true}},
+    {"name":"windows-debug","configurePreset":"windows-vs2022","configuration":"Debug","output":{"outputOnFailure":true}},
+    {"name":"windows-core-debug","configurePreset":"windows-core-only","configuration":"Debug","output":{"outputOnFailure":true}}
+  ]
+}

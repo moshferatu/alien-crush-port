@@ -1,0 +1,17 @@
+{
+  "devils_crush_reuse_commit": "95a53cdabba8876b021f9917e6542158b75b80e1",
+  "sdl": {
+    "version": "3.4.12",
+    "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-3.4.12.tar.gz",
+    "sha256": "f07b958a9ac5020fb7a44cadb957f658b2149c3c8abb4f63145fac9303249db7"
+  },
+  "beetle_pce": {
+    "repository": "https://github.com/libretro/beetle-pce-libretro.git",
+    "revision": "ae99235c2139c176c1a8d0fde2957bf701d3cab0",
+    "reference_patches": ["cmake/ReferenceState.cmake: serialization-only state1 extension; optional"]
+  },
+  "mesen": {
+    "version": "2.1.1",
+    "executable_sha256": "d2eb03c2590c648bf329f127ebcfefd70130e7690a9e2ccdba8616faea1fe96b"
+  }
+}

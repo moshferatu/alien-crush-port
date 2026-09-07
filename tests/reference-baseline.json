@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "platform": "Windows x64 MSVC; census.csv CRLF",
+  "rom_sha256": "1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f",
+  "beetle_revision": "ae99235c2139c176c1a8d0fde2957bf701d3cab0",
+  "route": "recording::canonical_input, three RUN pulses at 180/240/300",
+  "frames": 1800,
+  "census_sha256": "ee560dad47ece1a3c2e55a4326bcd4ef97276ad1ac0912d6c36eb29298c6572e",
+  "evidence": "Untouched pinned Beetle and state1 serialization extension produced identical uninterrupted RAM, pixels and audio."
+}
