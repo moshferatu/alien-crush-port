@@ -7,6 +7,7 @@
 #include <array>
 #include <cstring>
 #include <iostream>
+#include <algorithm>
 #include <stdexcept>
 using namespace alien_crush;
 namespace {
@@ -78,6 +79,27 @@ int main() {
         const std::array<std::byte,4> wrapping{std::byte{0x80},std::byte{0x34},std::byte{0x12},std::byte{0}};
         require(assets::decode_word_rle(wrapping,256).words.size()==256,"RLE repeat zero count preserves CPU wrap");
         std::array<std::byte,8192> ram{};
+        std::array<std::uint16_t,512> fade_current{},fade_target{};
+        fade_target[0]=511; fade_target[1]=65; fade_target[2]=1;
+        auto fade=assets::advance_palette_fade(fade_current,fade_target,21);
+        require(fade[0]==8 && fade[1]==0 && fade[2]==0,"Fade brightness threshold and red tie priority");
+        fade=assets::advance_palette_fade(fade_current,fade_target,1);
+        require(fade[1]==64 && fade[2]==1,"Fade green tie priority and blue-only step");
+        for(unsigned t=21;t>0;--t) fade_current=assets::advance_palette_fade(fade_current,fade_target,t);
+        require(fade_current==fade_target,"Complete 21-step fade reaches target");
+        rejects([&]{(void)assets::advance_palette_fade(fade_current,fade_target,0);},"Invalid fade threshold rejected");
+        fade_current[2]=2;
+        rejects([&]{(void)assets::advance_palette_fade(fade_current,fade_target,1);},"Non-monotonic fade input rejected");
+        for(unsigned i=0;i<512;++i) fade_current[i]=static_cast<std::uint16_t>(i);
+        const auto faded=assets::advance_palette_fade_out(fade_current);
+        require(faded.already_black==1 && faded.colors[511]==438 && faded.colors[73]==0 && faded.colors[1]==0,
+            "Fade-out decrements every nonzero channel and counts input black");
+        for(unsigned step=0;step<7;++step) fade_current=assets::advance_palette_fade_out(fade_current).colors;
+        require(std::all_of(fade_current.begin(),fade_current.end(),[](auto v){return v==0;}),"All 512 PCE colors fade to black in seven steps");
+        require(assets::advance_palette_fade_out(fade_current).already_black==512,"Fade-out requires final already-black completion sweep");
+        fade_current[0]=512;
+        rejects([&]{(void)assets::advance_palette_fade_out(fade_current);},"Invalid fade-out color rejected");
+        rejects([&]{(void)assets::advance_palette_fade_out({});},"Invalid fade-out buffer rejected");
         const auto hud=assets::assemble_table_hud(123456700,10);
         const std::array<unsigned,9> hud_digits{1,2,3,4,5,6,7,0,0};
         for(unsigned i=0;i<9;++i) require(hud[i].slot==i && hud[i].words[2]==(20+hud_digits[i])*2,"HUD decimal order and trailing hundreds");

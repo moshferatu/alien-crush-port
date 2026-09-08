@@ -133,6 +133,46 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     manifest<<"phase=post-frame; register values are not a scanline history\n";
     manifest.close();
 }
+void verify_palette_fade_trace(const std::filesystem::path& trace) {
+    const auto bytes=core::read_file(trace);
+    if(bytes.size()<=8) throw std::runtime_error("Empty palette fade trace");
+    const std::string_view schema(reinterpret_cast<const char*>(bytes.data()),8);
+    const bool fade_out=schema=="ACFD0001";
+    const std::size_t record_size=fade_out?10+1024*2:9+1024*3;
+    if((!fade_out && schema!="ACPF0001") || (bytes.size()-8)%record_size)
+        throw std::runtime_error("Invalid, empty or truncated palette fade trace");
+    auto u32=[&](std::size_t p){std::uint32_t v=0;for(unsigned s=0;s<32;s+=8) v|=std::to_integer<std::uint32_t>(bytes[p++])<<s;return v;};
+    auto palette=[&](std::size_t p){std::array<std::uint16_t,512> result{};for(auto& color:result) {
+        color=static_cast<std::uint16_t>(std::to_integer<unsigned>(bytes[p])|(std::to_integer<unsigned>(bytes[p+1])<<8));p+=2;
+    }return result;};
+    std::size_t steps=0,cross_frame=0,completed=0;
+    std::uint32_t previous_end=0;
+    std::array<bool,22> thresholds{};
+    for(std::size_t p=8;p<bytes.size();p+=record_size) {
+        const auto entry=u32(p),end=u32(p+4);
+        if(!entry || entry<previous_end || end<entry) throw std::runtime_error("Invalid palette fade frame order");
+        previous_end=end;
+        if(fade_out) {
+            const auto result=assets::advance_palette_fade_out(palette(p+10));
+            const auto black=std::to_integer<unsigned>(bytes[p+8])|(std::to_integer<unsigned>(bytes[p+9])<<8);
+            if(result.colors!=palette(p+10+1024) || result.already_black!=black)
+                throw std::runtime_error("Native fade-out colors or completion counter mismatch at frame "+std::to_string(entry));
+            if(black==512) ++completed;
+        } else {
+            const auto threshold=std::to_integer<unsigned>(bytes[p+8]);
+            const auto result=assets::advance_palette_fade(palette(p+9),palette(p+9+1024),threshold);
+            if(result!=palette(p+9+2048)) throw std::runtime_error("Native palette fade mismatch at frame "+std::to_string(entry));
+            thresholds[threshold]=true;
+        }
+        ++steps;
+        if(entry!=end) ++cross_frame;
+    }
+    std::cout<<"PASS: "<<steps<<" native palette "<<(fade_out?"fade-out":"fade-in")<<" steps / "<<steps*512<<" color words; "
+        <<cross_frame<<" steps cross frame boundaries.\n";
+    if(fade_out) std::cout<<"PASS: all already-black counters match; "<<completed<<" completion sweeps.\n";
+    else std::cout<<"Verified "<<std::count(thresholds.begin(),thresholds.end(),true)<<" thresholds.\n";
+    std::cout<<"Palette upload timing remains separate.\n";
+}
 void verify_background_trace(const std::filesystem::path& rom,const std::filesystem::path& trace) {
     const assets::ActorAssets assets(core::read_file(rom));
     const auto bytes=core::read_file(trace);

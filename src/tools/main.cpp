@@ -99,7 +99,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
 }
 int main(int argc,char** argv) {
     try {
-        std::filesystem::path rom_path="Alien Crush.pce",output,replay_path,asset_path,actor_trace,background_trace;
+        std::filesystem::path rom_path="Alien Crush.pce",output,replay_path,asset_path,actor_trace,background_trace,palette_trace;
         std::uint64_t frames=1800,video_every=0;
         bool validate=false,verify=false,cold=false,raw=true,discovery=false;
         for(int i=1;i<argc;++i) {
@@ -116,6 +116,7 @@ int main(int argc,char** argv) {
             else if(arg=="--verify-actor-trace") actor_trace=core::path_from_utf8(value());
             else if(arg=="--verify-background-trace") background_trace=core::path_from_utf8(value());
             else if(arg=="--verify-pattern-trace") background_trace=core::path_from_utf8(value());
+            else if(arg=="--verify-palette-trace") palette_trace=core::path_from_utf8(value());
             else if(arg=="--validate-rom") validate=true;
             else if(arg=="--verify-replay") verify=true;
             else if(arg=="--verify-cold") cold=true;
@@ -130,6 +131,7 @@ int main(int argc,char** argv) {
                 std::cout<<"--verify-actor-trace <file> compares main actor (ACAT0001) or table overlay (ACOV0001) instruction-boundary traces.\n";
                 std::cout<<"--verify-background-trace <file> checks actor BAT writes against complete before/after VRAM captures.\n";
                 std::cout<<"--verify-pattern-trace <file> checks dynamic sprite-pattern transfers against complete before/after VRAM captures.\n";
+                std::cout<<"--verify-palette-trace <file> checks native fade-in/out steps against captured palette buffers.\n";
                 return 0;
             }
             else throw std::runtime_error("Unknown option "+arg);
@@ -143,6 +145,7 @@ int main(int argc,char** argv) {
         if(discovery) {diagnostics::verify_discovery(rom_path,output); return 0;}
         if(!actor_trace.empty()) {diagnostics::verify_actor_trace(rom_path,actor_trace); return 0;}
         if(!background_trace.empty()) {diagnostics::verify_background_trace(rom_path,background_trace); return 0;}
+        if(!palette_trace.empty()) {diagnostics::verify_palette_fade_trace(palette_trace); return 0;}
         if(validate) return 0;
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) {

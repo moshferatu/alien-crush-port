@@ -18,6 +18,10 @@ local background_trace,background_pending=nil,nil
 local background_pairs,background_orphans=0,0
 local pattern_trace,pattern_pending=nil,nil
 local pattern_pairs=0
+local fade_trace,fade_pending=nil,nil
+local fade_pairs,fade_orphans=0,0
+local fade_out_trace,fade_out_pending=nil,nil
+local fade_out_pairs,fade_out_orphans=0,0
 if actor_frames>0 then
   actor_trace=assert(io.open(directory..'/actor-passes.bin','wb'))
   actor_trace:write('ACAT0001')
@@ -27,6 +31,10 @@ if actor_frames>0 then
   background_trace:write('ACBG0001')
   pattern_trace=assert(io.open(directory..'/pattern-passes.bin','wb'))
   pattern_trace:write('ACPT0001')
+  fade_trace=assert(io.open(directory..'/palette-fades.bin','wb'))
+  fade_trace:write('ACPF0001')
+  fade_out_trace=assert(io.open(directory..'/palette-fade-outs.bin','wb'))
+  fade_out_trace:write('ACFD0001')
   actor_phases=assert(io.open(directory..'/actor-phases.csv','w'))
   actor_phases:write('frame,address,phase,table,slot,clock\n')
   local function memory_bytes(kind,start,count)
@@ -105,6 +113,41 @@ if actor_frames>0 then
       end
     end,emu.callbackType.exec,address,address,emu.cpuType.pce,emu.memType.pceMemory)
   end
+  for _,address in ipairs({0xe4b7,0xe5cc}) do
+    emu.addMemoryCallback(function()
+      if frame_count<frames-actor_frames then return end
+      local state=emu.getState()
+      if state['memoryManager.mpr[7]']~=0 then return end
+      if address==0xe4b7 then
+        assert(not fade_pending,'Nested palette fade step')
+        local source=emu.read(0x0a,emu.memType.pceWorkRam)+256*emu.read(0x0b,emu.memType.pceWorkRam)
+        assert(source>=0x4000 and source+1024<=0x10000,'Palette target outside ROM window')
+        fade_pending={frame=frame_count+1,threshold=emu.read(0x0c,emu.memType.pceWorkRam),
+          current=memory_bytes(emu.memType.pceWorkRam,0xa00,1024),
+          target=memory_bytes(emu.memType.pceMemory,source,1024)}
+      elseif fade_pending then
+        fade_trace:write(string.pack('<I4I4',fade_pending.frame,frame_count+1),string.char(fade_pending.threshold),
+          fade_pending.current,fade_pending.target,memory_bytes(emu.memType.pceWorkRam,0xa00,1024))
+        fade_pending=nil; fade_pairs=fade_pairs+1
+      else fade_orphans=fade_orphans+1 end
+    end,emu.callbackType.exec,address,address,emu.cpuType.pce,emu.memType.pceMemory)
+  end
+  for _,address in ipairs({0xe605,0xe6aa}) do
+    emu.addMemoryCallback(function()
+      if frame_count<frames-actor_frames then return end
+      local state=emu.getState()
+      if state['memoryManager.mpr[7]']~=0 then return end
+      if address==0xe605 then
+        assert(not fade_out_pending,'Nested palette fade-out step')
+        fade_out_pending={frame=frame_count+1,current=memory_bytes(emu.memType.pceWorkRam,0xa00,1024)}
+      elseif fade_out_pending then
+        local black=emu.read(6,emu.memType.pceWorkRam)+256*emu.read(7,emu.memType.pceWorkRam)
+        fade_out_trace:write(string.pack('<I4I4I2',fade_out_pending.frame,frame_count+1,black),
+          fade_out_pending.current,memory_bytes(emu.memType.pceWorkRam,0xa00,1024))
+        fade_out_pending=nil; fade_out_pairs=fade_out_pairs+1
+      else fade_out_orphans=fade_out_orphans+1 end
+    end,emu.callbackType.exec,address,address,emu.cpuType.pce,emu.memType.pceMemory)
+  end
 end
 if trace_frames>0 then
   video_trace=assert(io.open(directory..'/video-writes.csv','w'))
@@ -170,6 +213,8 @@ local function end_frame()
     if actor_trace then
       actor_trace:close(); actor_phases:close(); overlay_trace:close(); background_trace:close()
       pattern_trace:close()
+      fade_trace:close()
+      fade_out_trace:close()
       local manifest=assert(io.open(directory..'/actor-trace-manifest.txt','w'))
       manifest:write('schema=ACAT0001\nrom_sha256=1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f\n',
         'backend=Mesen-2.1.1\nroute=canonical\nfirst_frame=',math.max(1,frames-actor_frames+1),
@@ -180,7 +225,11 @@ local function end_frame()
         '\nbackground_schema=ACBG0001\nbackground_complete_pairs=',background_pairs,
         '\nbackground_orphan_ends=',background_orphans,'\nbackground_pending_entry=',background_pending and 1 or 0,
         '\npattern_schema=ACPT0001\npattern_complete_pairs=',pattern_pairs,
-        '\npattern_pending_entry=',pattern_pending and 1 or 0,'\n')
+        '\npattern_pending_entry=',pattern_pending and 1 or 0,
+        '\nfade_schema=ACPF0001\nfade_complete_pairs=',fade_pairs,'\nfade_orphan_ends=',fade_orphans,
+        '\nfade_pending_entry=',fade_pending and 1 or 0,
+        '\nfade_out_schema=ACFD0001\nfade_out_complete_pairs=',fade_out_pairs,
+        '\nfade_out_orphan_ends=',fade_out_orphans,'\nfade_out_pending_entry=',fade_out_pending and 1 or 0,'\n')
       manifest:close()
     end
     local done=assert(io.open(directory..'/complete.txt','w'))

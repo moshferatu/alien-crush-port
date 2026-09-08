@@ -8,4 +8,5 @@ void export_table_assets(const std::filesystem::path& directory,const std::files
 void verify_discovery(const std::filesystem::path& rom,const std::filesystem::path& report={});
 void verify_actor_trace(const std::filesystem::path& rom,const std::filesystem::path& trace);
 void verify_background_trace(const std::filesystem::path& rom,const std::filesystem::path& trace);
+void verify_palette_fade_trace(const std::filesystem::path& trace);
 }

@@ -4,6 +4,36 @@
 #include <algorithm>
 #include <stdexcept>
 namespace alien_crush::assets {
+PaletteFadeOut advance_palette_fade_out(std::span<const std::uint16_t> current) {
+    if(current.size()!=512) throw std::runtime_error("Palette fade-out requires 512 colors");
+    PaletteFadeOut result;
+    for(std::size_t i=0;i<512;++i) {
+        if(current[i]>511) throw std::runtime_error("Palette fade-out requires 9-bit colors");
+        if(!current[i]) ++result.already_black;
+        const unsigned blue=current[i]&7,red=(current[i]>>3)&7,green=(current[i]>>6)&7;
+        result.colors[i]=static_cast<std::uint16_t>((blue?blue-1:0)|((red?red-1:0)<<3)|((green?green-1:0)<<6));
+    }
+    return result;
+}
+std::array<std::uint16_t,512> advance_palette_fade(std::span<const std::uint16_t> current,
+    std::span<const std::uint16_t> target,unsigned threshold) {
+    if(current.size()!=512 || target.size()!=512 || threshold<1 || threshold>21)
+        throw std::runtime_error("Invalid palette fade input");
+    std::array<std::uint16_t,512> result{};
+    for(std::size_t i=0;i<512;++i) {
+        if(current[i]>511 || target[i]>511) throw std::runtime_error("Palette fade requires 9-bit colors");
+        const unsigned blue=target[i]&7,red=(target[i]>>3)&7,green=(target[i]>>6)&7;
+        const unsigned cb=current[i]&7,cr=(current[i]>>3)&7,cg=(current[i]>>6)&7;
+        if(cb>blue || cr>red || cg>green) throw std::runtime_error("Palette fade requires monotonic channel targets");
+        result[i]=current[i];
+        if(blue+red+green<threshold) continue;
+        const auto db=blue-cb,dr=red-cr,dg=green-cg;
+        if(db+dr+dg==0) continue;
+        // E553..E580: red wins ties with green, and either wins ties with blue.
+        result[i]=static_cast<std::uint16_t>(current[i]+(dr>=dg && dr>=db?8:(dg>=db?64:1)));
+    }
+    return result;
+}
 WordStream decode_word_rle(std::span<const std::byte> source,std::size_t max_words) {
     WordStream result;
     auto byte=[&]() {if(result.consumed==source.size()) throw std::runtime_error("Truncated Alien Crush RLE stream"); return std::to_integer<unsigned>(source[result.consumed++]);};

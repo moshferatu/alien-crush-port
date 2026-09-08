@@ -384,6 +384,76 @@ This API reconstructs settled HUD state. It does not imitate the original
 incremental digit writes at `00:FA49`, own the update flag or replace live
 rendering. Palette changes and native render scheduling remain open.
 
+### Native palette fade-in
+
+`advance_palette_fade` translates one iteration of `00:E4B7..E5CC`. The original
+starts its 512-word palette buffer at RAM `$2A00` at black, then processes
+thresholds 21 down to 1. A target color participates when its three channel
+intensities sum to at least the threshold. One channel advances per participating
+step: the channel with the largest remaining difference, with ties favoring red,
+then green, then blue. Colors that have reached their target remain unchanged.
+This is a discrete color-building effect, not linear brightness scaling.
+
+The native function takes current/target palettes and a threshold, and returns
+the next palette. It requires 512 nine-bit colors, thresholds 1..21, and target
+channels no lower than current channels. It does not modify game RAM or emulate
+the original waits/VCE upload. Tests cover brightness gating, channel tie order,
+completion after 21 steps and invalid inputs.
+
+The bounded actor tracing option now also writes `palette-fades.bin`, pairing
+`00:E4B7` with `$E5CC` before the frame wait and VCE transfer. Schema `ACPF0001`
+has 3,081-byte records: u32 entry/end frames, one threshold byte, then 1,024-byte
+current, target and resulting palette buffers. All integers are little-endian.
+The manifest records completed, orphan and pending pairs.
+
+```powershell
+.\tools\Invoke-MesenCapture.ps1 -MesenPath <pinned-Mesen.exe> -RomPath '.\Alien Crush.pce' -OutputDirectory out/mesen/palette-trace -Frames 370 -TraceActorsLastFrames 120
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --verify-palette-trace out/mesen/palette-trace/palette-fades.bin
+```
+
+This captures the complete fade beginning at frame 333: all 21 thresholds and
+10,752 color words match; nine computations cross frame boundaries. No orphan
+or pending pair remains. A fresh untraced 370-frame control matches all RAM and
+CPU/clock logs. A deliberately corrupted output color is rejected. Release
+checks pass 5/5 and ROM-free Debug checks pass 2/2. The 120-frame startup window
+contains no such fade and is not treated as successful coverage.
+
+Other palette behavior is still separate: direct level palette loads are already
+extracted, while fade-out and the palette-zero pulse at `00:F64B` are not yet
+translated. VCE upload timing and native renderer integration remain open.
+
+### Native palette fade-out
+
+`advance_palette_fade_out` translates `00:E605..E6AA`. Every nonzero red, green
+and blue channel is decremented by one, without going below zero. The result
+also reports how many of the 512 input colors were already black. The original
+tests this count after waiting and uploading the palette; it finishes only
+when the count is 512. Therefore a palette containing maximum-brightness
+channels takes seven darkening passes followed by an additional all-black
+completion pass. Checking the resulting palette alone would end one pass early.
+
+The trace pairs `$E605` with `$E6AA`, before the two-frame wait and VCE upload.
+`palette-fade-outs.bin` uses schema `ACFD0001` and 2,058-byte records: u32
+entry/end frames, u16 already-black count, 1,024 input palette bytes and 1,024
+output palette bytes, all little-endian. The existing verifier chooses the
+fade-in or fade-out decoder from the header:
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --verify-palette-trace out/mesen/palette-trace/palette-fade-outs.bin
+```
+
+A 370-frame capture with the final 120 frames traced contains all eight fade-out
+passes beginning at frame 301: all 4,096 color words and every already-black
+counter match, including the final completion pass. Two computations cross
+frame boundaries. No orphan or pending pairs remain. The same capture retains
+the 21 exact fade-in steps and identical RAM/CPU logs to the untraced control.
+A deliberately altered completion counter is rejected.
+
+ROM-free tests exercise all 512 valid PCE colors, channel saturation, completion
+counting and invalid colors/buffers. Release passes 5/5 and Debug passes 2/2.
+This function owns no reference RAM, waits or palette uploads. Palette-zero
+pulsing, VCE upload timing and native renderer integration remain open.
+
 ## Diagnostic graphics and validation
 
 `--video-every N` exports background/sprite BMPs, attributes, VRAM/SAT/palette and

@@ -30,6 +30,15 @@ struct HudAssets {
 };
 // Standard main-table digits, selected by 00:EDD2 when RAM $76 is zero.
 HudAssets decode_hud_assets(std::span<const std::byte> rom);
+// One monotonic fade-in step from 00:E4B7..E5CC. Threshold descends 21..1.
+std::array<std::uint16_t,512> advance_palette_fade(std::span<const std::uint16_t> current,
+    std::span<const std::uint16_t> target,unsigned threshold);
+struct PaletteFadeOut {
+    std::array<std::uint16_t,512> colors{};
+    unsigned already_black{};
+};
+// 00:E605..E6AA counts colors already black before decrementing all channels.
+PaletteFadeOut advance_palette_fade_out(std::span<const std::uint16_t> current);
 // Initial sprite pattern memory only; actor placement and animation are separate.
 std::array<TableSprites,2> decode_table_sprites(std::span<const std::byte> rom);
 }

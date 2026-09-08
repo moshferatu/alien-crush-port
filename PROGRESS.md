@@ -137,3 +137,22 @@ Main-table HUD continuation:
 - Added ROM-free numeric bounds and digit-order tests; Release passes 5/5 and
   Debug passes 2/2. Alternate HUD assets, incremental update timing, palettes and
   live renderer integration remain open.
+
+Palette fade-out continuation:
+
+- Added native channel darkening and the original already-black completion count,
+  preserving the final extra all-black pass.
+- All eight captured passes / 4,096 color words and counters match, including two
+  computations across frame boundaries. Fade-in and RAM/CPU control checks still pass.
+- ROM-free tests cover all 512 PCE colors; Release passes 5/5 and Debug 2/2.
+  Palette-zero pulsing, upload timing and live renderer integration remain open.
+
+Palette fade-in continuation:
+
+- Translated the original discrete channel-by-channel fade-in, including brightness
+  thresholds and red/green/blue tie priority.
+- All 21 traced steps / 10,752 color words match, including nine computations across
+  frame boundaries. The untraced control retains identical RAM and CPU/clock logs.
+- Added ROM-free fade bounds/tie/completion tests; Release passes 5/5 and Debug 2/2.
+  Corrupted output is rejected. Fade-out, palette-zero pulse, upload timing and
+  live renderer integration remain open.

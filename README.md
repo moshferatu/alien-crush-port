@@ -127,6 +127,11 @@ to compare their native decoding with the bounded Mesen capture.
 Asset extraction also produces `table-hud-v1` with the standard HUD pattern
 stream, source hashes and a digit preview. Native score/ball sprite assembly is
 checked against all 40 HUD words on eligible gameplay frames; live timing remains separate.
+The palette fade-in step is also native. Bounded tracing produces
+`palette-fades.bin`; `--verify-palette-trace <file>` compares all colors against
+the original step's output before palette upload.
+The verifier also accepts `palette-fade-outs.bin`, checking channel darkening
+and the original already-black completion count, including its final extra pass.
 
 Captures include `game-observations.csv` with recovered score, ball/table counters
 and high scores. `--video-every` also exports background/sprite BMPs, attributes,
