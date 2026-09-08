@@ -135,6 +135,255 @@ Lower SAT indices take precedence; background priority and scanline sprite
 limits are not simulated. Reference snapshot exports are included for inspection.
 Generated data remains in ignored local output.
 
+The same command also exports `actor-epochs.csv` and `actor-epoch-manifest.txt`.
+This observational sweep compares current source SAT against RAM from zero to
+three frames earlier, using the common source interval 483..1800 (1,318 frames).
+Every candidate is reported; no best-offset selection is used as a validation gate.
+
+| RAM lag | Exact candidate frames | Mismatching / compared words |
+| --- | ---: | ---: |
+| 0 | 72 | 18,735 / 208,916 |
+| 1 | 1,149 | 3,130 / 208,940 |
+| 2 | 92 | 18,545 / 208,964 |
+| 3 | 32 | 23,626 / 208,988 |
+
+The source SAT's entire 256-word VRAM range is unchanged from the preceding
+snapshot on 211 frames; its longest unchanged run in this interval is 13 frames.
+Of the 169 inexact lag-one frames, 141 have unchanged source SAT and 28 have
+changed source SAT. The mismatches comprise 1,638 Y, 620 X, 543 pattern and 329
+attribute words. No lag has an exact candidate on 130 frames. These observations
+show that a fixed frame offset does not establish the render phase; unchanged
+snapshots alone do not prove that no writes occurred between snapshots.
+
+Each row records both table codes, sampled PC and its mapped bank, source SAT
+retention and consecutive unchanged-frame count, candidate sprite count, and
+differences by field. An exact candidate must be nonempty and match every word
+it emits. This does not check omitted/extra sprites, scene validity or later
+sprite passes. The original fixed sample gates remain unchanged. Next, trace
+the original actor-pass entry/exit and transition scheduling against this evidence
+before introducing any runtime phase selection or holding native output.
+
+### Actor instruction-boundary capture
+
+`Invoke-MesenCapture.ps1 -TraceActorsLastFrames N` observes the final 1..120
+frames with bank-checked execution callbacks. Bank 01 runs at CPU `$4000` in
+this path: earlier disassembly labels such as `01:85E2` refer to the same ROM
+offset as the actual `01:45E2`, not a second entry point. The trace observes
+update entry `$45A8`, ball update `$45CE`, render entry `$45E2`, main-pass end
+`$4666` and render return `$46AC`. It never writes game memory.
+
+At render entry it saves RAM; immediately before the later sprite pass at
+`$4666` it saves source SAT and the current end slot. Thus each comparison uses
+the actual input and output of one main actor pass, even across frame boundaries.
+`actor-phases.csv` records call order, frames, table code, slot and master clock.
+The trace manifest reports paired passes, orphan ends and an unfinished entry;
+these boundary omissions are not represented as successful comparisons.
+
+```powershell
+.\tools\Invoke-MesenCapture.ps1 -MesenPath <pinned-Mesen.exe> -RomPath '.\Alien Crush.pce' -OutputDirectory out/mesen/actor-trace -Frames 1600 -TraceActorsLastFrames 120
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --verify-actor-trace out/mesen/actor-trace/actor-passes.bin
+```
+
+The verifier checks every emitted word and the end slot, rejects empty or
+truncated captures and invalid frame order, and requires nonempty candidates.
+Binary schema `ACAT0001` has an eight-byte ASCII header followed by 8,713-byte
+records: little-endian u32 entry/end frames, 8,192 RAM bytes, 512 source SAT
+bytes (VRAM byte address `$0800`), and one end-slot byte. Captures remain local.
+
+| Captured frame interval | Complete passes | Matching sprite words | Cross-frame passes |
+| --- | ---: | ---: | ---: |
+| 591..600 | 10 | 1,640 | 0 |
+| 595..624 | 16 | 2,576 | 0 |
+| 1481..1600 | 64 | 9,716 | 2 |
+
+All end slots match; all three captures have zero orphan ends and zero pending
+entries. The first two intervals overlap, so these are 90 captured passes,
+not 90 distinct route passes. During ordinary play, render return precedes
+actor update and then ball update. At the first transition, no main render
+entry is observed in frames 608..620; an upper-table update occurs at 620,
+followed by rendering at 621. This explains why end-of-frame lag comparisons
+cannot establish assembly correctness during transitions. These Mesen samples
+validate assembly at instruction boundaries, not the entire Beetle mismatch
+set or a native scheduler.
+
+A fresh tracing-disabled 600-frame control has identical RAM and CPU/clock logs
+on all 600 frames, identical video on frames 20..600, and identical final VRAM,
+SAT and palette. Video differs on startup frames 1..19, before the trace window
+591..600; startup framebuffer reproducibility remains unclassified. Deliberately
+truncated data and a corrupted end slot are rejected by the verifier.
+
+### Later table overlay pass
+
+`assemble_table_overlay` now translates `01:4741..480C`, called at `$4666`
+after the main actor pass. It emits four consecutive SAT entries only when table
+code `$79` is 0 or 1, neither `$53` nor `$54` has its sign bit set, and the
+starting slot is less than 60. Coordinates from `01:480D..4814` are hardware SAT
+coordinates: lower `(132,191)`, upper `(136,245)`, with camera `$16/$17`
+subtracted from Y and X increasing by eight for each entry. Flags are `$008F`.
+
+The first pattern word is `$0100 + pattern_base + (($99[table] * 2) & $FF)`.
+The shift carry is explicitly discarded by the original routine. The other
+three patterns use only the incremented high byte of the pattern base, with
+zero low byte. Arithmetic wraps at 16 bits. The visible meaning of `$99/$9A`
+has not yet been assigned; this is described as a table overlay without claiming
+its gameplay role. The assembler returns sprite entries without modifying RAM
+or clearing SAT; the caller must clear remaining slots as the original does.
+
+Actor tracing additionally writes `overlay-passes.bin` with schema `ACOV0001`,
+using the same record layout as `ACAT0001`. Input RAM is captured at `$4666`,
+output SAT and end slot at `$46AC`, after the original clears unused entries.
+The verifier selects the decoder from the header, uses RAM `$2D` as the overlay
+starting slot, and also requires every trailing SAT word to be zero. Main actor
+captures and their validation remain available separately.
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --verify-actor-trace out/mesen/actor-trace/overlay-passes.bin
+```
+
+| Captured frame interval | Overlay passes | Matching sprite words | Cleared trailing words |
+| --- | ---: | ---: | ---: |
+| 595..624 | 16 | 256 | 624 |
+| 1481..1600 | 64 | 1,024 | 3,084 |
+
+All end slots match and both captures have zero orphan or pending overlay
+boundaries. None of these 80 passes takes the visibility/capacity early exit;
+ROM-free tests cover those branches, both table positions, the slot 59/60
+boundary, discarded shift carry, pattern/coordinate wrapping and invalid inputs.
+An intentionally corrupted trailing SAT word is rejected. The new 624-frame
+capture retains identical RAM and CPU logs to the prior main-actor trace.
+Release tests pass 5/5 and ROM-free Debug tests pass 2/2. This adds a verified
+native sprite pass; presentation timing, HUD, dynamic pattern uploads, background
+updates and integration with the live renderer remain open.
+
+### Actor-driven background updates
+
+`ActorAssets::background` and `decode_actor_background` translate the rectangular
+BAT-update format at `16:A1C3..A24A`. It shares the sprite descriptor pointer
+table, but has a different layout: little-endian destination word address,
+one-byte width and height, little-endian base tile word, then width×height
+little-endian tile words. Rows advance by 32 VRAM words. Each output adds the
+base tile word with 16-bit wrapping, then ORs an optional attribute mask into
+the high byte. The original selects this mask from RAM `$1A80+actor` only when
+`$1A00+actor` bit `$20` is set.
+
+The native API returns ordered address/value writes without changing reference
+RAM or VRAM. Caller scheduling and clearing the actor's update-request bit are
+not yet native-owned. The original calls this form from the main actor pass
+when flags `$1540+actor` have bits `$80`, `$20` and `$10` set, and clears `$10`
+after writing. The decoder rejects zero dimensions and rectangles exceeding
+125 words, which would wrap the original eight-bit descriptor index. It does
+not interpret all entries in the shared pointer table as background descriptors.
+
+The existing bounded actor trace option additionally observes `16:A1C3` entry
+and `16:A24A` return, recording complete before/after VRAM and the resulting actor
+flags. `background-passes.bin` uses header `ACBG0001` and 139,274-byte records:
+u32 entry/end frames, one actor-index byte, 8,192 input RAM bytes, 65,536 before
+VRAM bytes, 65,536 after VRAM bytes, and one final actor-flags byte. Integer
+fields are little-endian. Pair/orphan/pending counts are in the trace manifest.
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --verify-background-trace out/mesen/actor-trace/background-passes.bin
+```
+
+Verification applies native writes to the captured input VRAM, compares all
+32,768 output words, and checks that only the expected update-request flag was
+cleared in the actor's flags byte. This catches changes outside the intended
+tile region as well as incorrect tile values. The observed calls use one-word
+VDC auto-increment; verification rejects upper-half VRAM addresses instead of
+assuming how those accesses behave.
+
+| Captured frame interval | Updates | Native writes | Distinct descriptors in interval |
+| --- | ---: | ---: | ---: |
+| 595..624 | 2 | 106 | 2 |
+| 1481..1600 | 8 | 314 | 5 |
+
+All ten complete VRAM snapshots and actor flag acknowledgements match, with no
+orphan ends or pending calls. At frame 621, descriptor `$0F` at `$A9B0` updates
+a 10×10 region and descriptor `$CE` at `$AF03` updates a 2×3 region. The new
+624-frame capture retains identical RAM and CPU logs to the preceding overlay
+capture, and its main actor/overlay verifications still pass. ROM-free tests
+cover bounds, row stride, address and value wrapping, carry and attribute OR.
+Truncated traces and an unexpected change to the final VRAM byte are rejected.
+This validates sampled background update calls, not all scenes or a replacement
+renderer. Dynamic sprite pattern transfers, palettes, HUD and native scheduling
+remain to be integrated.
+
+### Dynamic actor sprite patterns
+
+`ActorAssets::pattern_transfer` decodes the transfer selected by `16:A0DF..A120`.
+The preceding check at `$A0D7` uses actor flags bit `$02` (distinct from the
+ordering bit `$04`). The destination is the 16-bit wrapped sum of
+`pattern_base << 5` and the actor-type offset in `16:A123`. The source is selected
+by RAM `$1A80+actor` through the 17 low/high pointer entries at `16:B2C1/B2D2`.
+`00:E018` jumps to the existing word-RLE loader at `$E3DD`. The original clears
+the actor's `$02` flag before calling the loader. Native code returns destination,
+ROM offset, compressed length and decoded words; it does not change reference RAM.
+
+All 17 streams decode to 384 words (six 16×16 sprite patterns). With pattern base
+`$0200`, actor types 26/27 target VRAM `$7C80/$7E80`. ROM integration checks all
+17 stream layouts, matching data for the two destinations, destination wrapping,
+and rejection of out-of-table selectors and unsupported VRAM destinations.
+Those layout checks are separate from observed execution equivalence.
+
+Actor tracing now emits `pattern-passes.bin` (`ACPT0001`) with the same record
+layout as `ACBG0001`. It pairs pending-transfer entry `$A0DF` with return to
+`00:EBB1`, before the sprite wrapper restores ROM banks. The capture manifest
+reports completed pairs and any pending entry. Unpaired wrapper returns are
+ordinary sprite calls and do not indicate a missing transfer.
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --verify-pattern-trace out/mesen/actor-trace/pattern-passes.bin
+```
+
+Frames 1481..1600 contain four transfers: types 26/27 at frames 1555 and
+1592/1593, all selecting stream 1. All 1,536 native writes reproduce complete
+post-transfer VRAM, and every pending-flag acknowledgement matches. One transfer
+crosses a frame boundary; no pending entry remains at capture end. Frames
+595..624 contain no transfers; their empty trace is rejected as insufficient
+validation, not reported as a pass. Other stream selections still need execution
+coverage. The later capture retains identical RAM/CPU logs to the preceding
+background trace, and its main actors, overlay and background checks all pass.
+An unrelated VRAM mutation is rejected by the pattern verifier. Release checks
+pass 5/5 and ROM-free Debug checks pass 2/2.
+
+Remaining presentation work includes palette changes, HUD artwork/assembly and
+native render scheduling. Pattern transfers are decoded and sampled here, but
+have not yet been connected to the live renderer.
+
+### Main-table HUD artwork and assembly
+
+`decode_hud_assets` follows `00:EDD2..EDEA`: when RAM `$76` is zero, banks
+`0F..11` map to `$8000..DFFF`, pointer `$8008` selects `$CAB7` (physical ROM
+`$22AB7`), and the word-RLE loader writes at VRAM `$0500`. The 1,305-byte stream
+decodes to 768 words, or 12 sprite patterns (decimal IDs 20..31). All 768 words
+match the lower/upper reference samples at frames 600/720. The alternate loader
+path for nonzero `$76` is not included in this main-table asset API.
+
+`--extract-assets` now writes a ROM-hashed `table-hud-v1` directory with
+`patterns.bin`, a provenance/hash manifest and `digits.bmp`. The preview shows
+digits 0..9 with initial lower-table palette 15, on dark gray; it was visually
+checked. Pattern data SHA-256 is
+`977da766953084e148add71489da8baac80b690c87776f692ac3c5b5cf22d200`.
+
+`assemble_table_hud` builds ten SAT entries from a settled score and stored ball
+counter. The nine score digits occupy slots 0..8 at hardware Y=80 and X=48+10i;
+the ball digit uses slot 9 at (264,96). All flags are `$008F`. Digit pattern words
+are twice (20+digit), consistent with the lookup at `03:900E`; the ball routine
+at `03:8FF0` subtracts one from the stored counter. Scores must be multiples of
+100 in 0..999,999,900 and counters must be 1..10. Other states are rejected.
+
+The existing discovery gate now compares all 40 HUD sprite words on each eligible
+frame, rather than only decoding their displayed values. All 57,480 words match
+on 1,437 frames. Eligibility still requires a recognizable source HUD, no pending
+score update and a supported ball counter; this does not establish menu, bonus,
+or transition validity. ROM-free tests cover decimal order, trailing hundreds,
+zero/maximum scores, ball placement and invalid input. Release passes 5/5 and
+Debug passes 2/2.
+
+This API reconstructs settled HUD state. It does not imitate the original
+incremental digit writes at `00:FA49`, own the update flag or replace live
+rendering. Palette changes and native render scheduling remain open.
+
 ## Diagnostic graphics and validation
 
 `--video-every N` exports background/sprite BMPs, attributes, VRAM/SAT/palette and

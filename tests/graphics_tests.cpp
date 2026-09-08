@@ -78,6 +78,51 @@ int main() {
         const std::array<std::byte,4> wrapping{std::byte{0x80},std::byte{0x34},std::byte{0x12},std::byte{0}};
         require(assets::decode_word_rle(wrapping,256).words.size()==256,"RLE repeat zero count preserves CPU wrap");
         std::array<std::byte,8192> ram{};
+        const auto hud=assets::assemble_table_hud(123456700,10);
+        const std::array<unsigned,9> hud_digits{1,2,3,4,5,6,7,0,0};
+        for(unsigned i=0;i<9;++i) require(hud[i].slot==i && hud[i].words[2]==(20+hud_digits[i])*2,"HUD decimal order and trailing hundreds");
+        require(hud[9].words==std::array<std::uint16_t,4>{96,264,58,143},"HUD ball counter decrement and placement");
+        require(assets::assemble_table_hud(0,1)[0].words[2]==40 && assets::assemble_table_hud(999999900,1)[6].words[2]==58,"HUD zero and maximum score");
+        rejects([&]{(void)assets::assemble_table_hud(1000000000,1);},"HUD score overflow rejected");
+        rejects([&]{(void)assets::assemble_table_hud(101,1);},"HUD fractional hundreds rejected");
+        rejects([&]{(void)assets::assemble_table_hud(0,0);},"Invalid HUD counter rejected");
+        const std::array<std::byte,14> background_bytes{std::byte{0xff},std::byte{0xff},std::byte{2},std::byte{2},
+            std::byte{0xff},std::byte{0xff},std::byte{2},std::byte{0},std::byte{0},std::byte{0},
+            std::byte{1},std::byte{0},std::byte{0xff},std::byte{1}};
+        const auto updates=assets::decode_actor_background(background_bytes,0x80);
+        require(updates.size()==4 && updates[0].address==65535 && updates[1].address==0 &&
+            updates[2].address==31 && updates[3].address==32,"Background row stride and address wrapping");
+        require(updates[0].value==0x8001 && updates[1].value==0xffff && updates[2].value==0x8000 &&
+            updates[3].value==0x81fe,"Background base carry, wrapping and high-byte OR");
+        rejects([&]{(void)assets::decode_actor_background({});},"Empty background header rejected");
+        rejects([&]{(void)assets::decode_actor_background(std::span(background_bytes).first(13));},"Truncated background tiles rejected");
+        std::array<std::byte,258> background_bounds{};
+        rejects([&]{(void)assets::decode_actor_background(background_bounds);},"Zero background dimensions rejected");
+        background_bounds[2]=std::byte{125}; background_bounds[3]=std::byte{1};
+        require(assets::decode_actor_background(background_bounds).size()==125,"Largest non-wrapping background descriptor accepted");
+        background_bounds[2]=std::byte{126};
+        rejects([&]{(void)assets::decode_actor_background(background_bounds);},"Wrapping background byte index rejected");
+        ram[0x99]=std::byte{3};
+        auto overlay=assets::assemble_table_overlay(ram,59);
+        require(overlay.size()==4 && overlay[0].slot==59 && overlay[3].slot==62 &&
+            overlay[0].words==std::array<std::uint16_t,4>{191,132,262,143} &&
+            overlay[3].words==std::array<std::uint16_t,4>{191,156,256,143},"Lower table overlay and strict capacity boundary");
+        require(assets::assemble_table_overlay(ram,60).empty() && assets::assemble_table_overlay(ram,64).empty(),"Overlay capacity guard");
+        ram[0x79]=std::byte{1}; ram[0x9a]=std::byte{0xff};
+        ram[0x16]=std::byte{0xff}; ram[0x17]=std::byte{0xff};
+        ram[0x2e]=std::byte{0xff}; ram[0x2f]=std::byte{0xff};
+        overlay=assets::assemble_table_overlay(ram,0);
+        require(overlay[0].words==std::array<std::uint16_t,4>{246,136,509,143} &&
+            overlay[1].words==std::array<std::uint16_t,4>{246,144,0,143},"Upper overlay coordinate wrap, discarded shift carry and pattern arithmetic");
+        ram[0x53]=std::byte{0x80};
+        require(assets::assemble_table_overlay(ram,0).empty(),"Overlay first sign guard");
+        ram[0x53]=std::byte{0}; ram[0x54]=std::byte{0x80};
+        require(assets::assemble_table_overlay(ram,0).empty(),"Overlay second sign guard");
+        ram[0x54]=std::byte{0}; ram[0x79]=std::byte{2};
+        require(assets::assemble_table_overlay(ram,0).empty(),"Non-table overlay guard");
+        rejects([&]{(void)assets::assemble_table_overlay(ram,65);},"Invalid overlay slot rejected");
+        rejects([&]{(void)assets::assemble_table_overlay(std::span(ram).first(8191),0);},"Truncated overlay RAM rejected");
+        ram.fill(std::byte{0});
         const std::array<std::byte,8> piece_bytes{std::byte{1},std::byte{0x80},std::byte{0xff},
             std::byte{0x34},std::byte{0x12},std::byte{0x8f},std::byte{0x89},std::byte{0xff}};
         const auto pieces=assets::decode_actor_pieces(piece_bytes);

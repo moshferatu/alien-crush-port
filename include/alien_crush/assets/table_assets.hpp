@@ -24,6 +24,12 @@ struct TableSprites {
     // Shared, level-selected, then level-local, in original load order.
     std::array<SpriteStream,3> streams{};
 };
+struct HudAssets {
+    std::vector<std::uint16_t> patterns;
+    SpriteStream stream;
+};
+// Standard main-table digits, selected by 00:EDD2 when RAM $76 is zero.
+HudAssets decode_hud_assets(std::span<const std::byte> rom);
 // Initial sprite pattern memory only; actor placement and animation are separate.
 std::array<TableSprites,2> decode_table_sprites(std::span<const std::byte> rom);
 }

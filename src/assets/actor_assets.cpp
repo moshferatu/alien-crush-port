@@ -1,10 +1,57 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "alien_crush/assets/actor_assets.hpp"
 #include "alien_crush/core/rom_image.hpp"
+#include "alien_crush/assets/table_assets.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <string>
 namespace alien_crush::assets {
+std::array<TableSprite,10> assemble_table_hud(std::uint32_t score_points,unsigned ball_counter) {
+    if(score_points>999999900 || score_points%100 || ball_counter<1 || ball_counter>10)
+        throw std::runtime_error("HUD requires settled main-table score and ball counter");
+    std::array<TableSprite,10> result{};
+    for(unsigned i=9;i>0;--i) {
+        const auto slot=i-1,digit=score_points%10;
+        score_points/=10;
+        result[slot]={static_cast<std::uint8_t>(slot),{80,static_cast<std::uint16_t>(48+10*slot),
+            static_cast<std::uint16_t>((20+digit)*2),0x8f}};
+    }
+    result[9]={9,{96,264,static_cast<std::uint16_t>((19+ball_counter)*2),0x8f}};
+    return result;
+}
+std::vector<BackgroundWrite> decode_actor_background(std::span<const std::byte> data,std::uint8_t high_override) {
+    if(data.size()<6) throw std::runtime_error("Truncated background descriptor header");
+    auto b=[&](std::size_t p){return std::to_integer<unsigned>(data[p]);};
+    auto word=[&](std::size_t p){return b(p)|(b(p+1)<<8);};
+    const auto width=b(2),height=b(3),count=width*height;
+    if(!width || !height || count>125 || data.size()<6+count*2)
+        throw std::runtime_error("Invalid, wrapping or truncated background descriptor");
+    std::vector<BackgroundWrite> result;
+    for(unsigned y=0;y<height;++y) for(unsigned x=0;x<width;++x) {
+        const auto value=static_cast<std::uint16_t>(word(6+(y*width+x)*2)+word(4));
+        result.push_back({static_cast<std::uint16_t>(word(0)+y*32+x),
+            static_cast<std::uint16_t>(value|(static_cast<unsigned>(high_override)<<8))});
+    }
+    return result;
+}
+std::vector<TableSprite> assemble_table_overlay(std::span<const std::byte> ram,unsigned first_slot) {
+    if(ram.size()!=8192 || first_slot>64) throw std::runtime_error("Invalid table overlay RAM or starting slot");
+    auto b=[&](std::size_t p){return std::to_integer<unsigned>(ram[p]);};
+    const auto table=b(0x79);
+    // 01:4741..4756 deliberately leaves slot 63 unused when emitting four pieces.
+    if(table>=2 || (b(0x53)&0x80) || (b(0x54)&0x80) || first_slot>=60) return {};
+    constexpr unsigned xs[]{132,136},ys[]{191,245}; // 01:480D..4814
+    const auto y=static_cast<std::uint16_t>(ys[table]-(b(0x16)|(b(0x17)<<8)));
+    const auto base=b(0x2e)|(b(0x2f)<<8);
+    // ASL's carry is discarded at 47A6. The trailing pieces use only base's
+    // incremented high byte, not the low byte used by the first piece.
+    const auto first=static_cast<std::uint16_t>(base+0x100+((b(0x99+table)*2)&255));
+    const auto blank=static_cast<std::uint16_t>(((b(0x2f)+1)&255)<<8);
+    std::vector<TableSprite> result;
+    for(unsigned i=0;i<4;++i) result.push_back({static_cast<std::uint8_t>(first_slot+i),
+        {y,static_cast<std::uint16_t>(xs[table]+i*8),i?blank:first,0x008f}});
+    return result;
+}
 std::vector<ActorPiece> decode_actor_pieces(std::span<const std::byte> data) {
     if(data.empty()) throw std::runtime_error("Missing actor descriptor");
     const auto count=std::to_integer<unsigned>(data[0]);
@@ -32,6 +79,23 @@ std::vector<ActorPiece> ActorAssets::pieces(std::uint8_t id,unsigned first_slot)
     if(std::to_integer<unsigned>(banks_[address-0xa000])+first_slot>=64) return {};
     try { return decode_actor_pieces(std::span(banks_).subspan(address-0xa000)); }
     catch(const std::runtime_error& e) { throw std::runtime_error(std::string(e.what())+" (descriptor "+std::to_string(id)+")"); }
+}
+std::vector<BackgroundWrite> ActorAssets::background(std::uint8_t id,std::uint8_t high_override) const {
+    const auto address=std::to_integer<unsigned>(banks_[0x24b+id])|(std::to_integer<unsigned>(banks_[0x34b+id])<<8);
+    if(address<0xa000 || address>=0xe000) throw std::runtime_error("Background actor pointer outside mapped banks");
+    return decode_actor_background(std::span(banks_).subspan(address-0xa000),high_override);
+}
+ActorPatternTransfer ActorAssets::pattern_transfer(std::uint8_t type,std::uint8_t selection,std::uint16_t pattern_base) const {
+    if(type>=80 || selection>=17) throw std::runtime_error("Dynamic actor pattern selector outside recovered tables");
+    auto b=[&](std::size_t p){return std::to_integer<unsigned>(banks_[p]);};
+    const auto offset=b(0x123+type*2)|(b(0x124+type*2)<<8);
+    const auto destination=static_cast<std::uint16_t>((static_cast<unsigned>(pattern_base)<<5)+offset);
+    const auto source=b(0x12c1+selection)|(b(0x12d2+selection)<<8);
+    if(source<0xa000 || source>=0xe000 || destination>=32768)
+        throw std::runtime_error("Dynamic actor pattern address outside supported banks/VRAM");
+    auto decoded=decode_word_rle(std::span(banks_).subspan(source-0xa000),32768-destination);
+    if(decoded.words.empty()) throw std::runtime_error("Empty dynamic actor pattern stream");
+    return {destination,0x2c000+source-0xa000,decoded.consumed,std::move(decoded.words)};
 }
 std::vector<ActorSprite> assemble_table_actors(const ActorAssets& assets,std::span<const std::byte> ram) {
     if(ram.size()!=8192) throw std::runtime_error("Actor assembly requires 8192-byte work RAM");

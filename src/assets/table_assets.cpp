@@ -68,4 +68,13 @@ std::array<TableSprites,2> decode_table_sprites(std::span<const std::byte> image
     }
     return result;
 }
+HudAssets decode_hud_assets(std::span<const std::byte> image) {
+    if(!rom::matches_supported_rom(image.size(),rom::compute_digests(image))) throw std::runtime_error("Unsupported ROM for HUD extraction");
+    const auto source=std::to_integer<unsigned>(image[0x1e008])|(std::to_integer<unsigned>(image[0x1e009])<<8);
+    if(source<0x8000 || source>=0xe000) throw std::runtime_error("HUD pointer outside mapped banks");
+    const auto offset=0x1e000+source-0x8000;
+    auto decoded=decode_word_rle(image.subspan(offset,0x24000-offset),768);
+    if(decoded.words.size()!=768) throw std::runtime_error("Unexpected main-table HUD stream size");
+    return {std::move(decoded.words),{offset,decoded.consumed,0x500,768}};
+}
 }

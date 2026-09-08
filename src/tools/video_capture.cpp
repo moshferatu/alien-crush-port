@@ -11,6 +11,7 @@
 #include "alien_crush/core/recording.hpp"
 #include <fstream>
 #include <iostream>
+#include <deque>
 namespace alien_crush::diagnostics {
 namespace {
 void bitmap(const std::filesystem::path& path,const render::Image& image) {
@@ -50,6 +51,7 @@ void export_table_assets(const std::filesystem::path& directory,const std::files
     const auto image=core::read_file(rom);
     const auto tables=assets::decode_table_backgrounds(image);
     const auto sprite_tables=assets::decode_table_sprites(image);
+    const auto hud=assets::decode_hud_assets(image);
     const auto versioned=directory/rom::kSupportedSha256/"table-background-v1";
     std::filesystem::create_directories(versioned);
     std::ofstream manifest; manifest.exceptions(std::ios::failbit|std::ios::badbit); manifest.open(versioned/"manifest.csv");
@@ -85,6 +87,26 @@ void export_table_assets(const std::filesystem::path& directory,const std::files
             bitmap(sprite_directory/(name+"-palette-"+std::to_string(palette)+".bmp"),pattern_atlas(table,tables[level].palette,palette));
     }
     manifest.close();
+    const auto hud_directory=directory/rom::kSupportedSha256/"table-hud-v1";
+    std::filesystem::create_directories(hud_directory);
+    core::write_file_atomic(hud_directory/"patterns.bin",std::as_bytes(std::span(hud.patterns)));
+    std::array<std::uint16_t,32768> hud_vram{};
+    std::copy(hud.patterns.begin(),hud.patterns.end(),hud_vram.begin()+0x500);
+    std::array<std::uint16_t,256> hud_sat{};
+    for(unsigned i=0;i<10;++i) {hud_sat[i*4+2]=static_cast<std::uint16_t>((20+i)*2);hud_sat[i*4+3]=0x8f;}
+    const auto digits=render::sprites(hud_vram,tables[0].palette,hud_sat,0);
+    render::Image strip{160,16,std::vector<std::uint32_t>(160*16,0xff202020)};
+    for(unsigned i=0;i<10;++i) for(unsigned y=0;y<16;++y) for(unsigned x=0;x<16;++x) {
+        const auto color=digits[i].image.pixels[y*16+x];
+        if(color>>24) strip.pixels[y*160+i*16+x]=color;
+    }
+    bitmap(hud_directory/"digits.bmp",strip);
+    manifest.open(hud_directory/"manifest.txt");
+    manifest<<"schema=table-hud-v1\nrom_sha256="<<rom::kSupportedSha256<<"\nrom_offset="<<hud.stream.rom_offset
+        <<"\ncompressed_bytes="<<hud.stream.compressed_bytes<<"\nvram_word=1280\nword_count="<<hud.patterns.size()
+        <<"\nsha256="<<rom::compute_digests(std::as_bytes(std::span(hud.patterns))).sha256
+        <<"\npreview=digits 0..9; lower initial palette 15; dark gray background\n";
+    manifest.close();
 }
 void export_video(const std::filesystem::path& directory,const state::SaveStateContainer& saved) {
     const auto snapshot=decode_reference_snapshot(saved);
@@ -111,12 +133,129 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     manifest<<"phase=post-frame; register values are not a scanline history\n";
     manifest.close();
 }
+void verify_background_trace(const std::filesystem::path& rom,const std::filesystem::path& trace) {
+    const assets::ActorAssets assets(core::read_file(rom));
+    const auto bytes=core::read_file(trace);
+    constexpr std::size_t record_size=8+1+8192+65536*2+1;
+    if(bytes.size()<=8 || (bytes.size()-8)%record_size)
+        throw std::runtime_error("Invalid, empty or truncated background trace");
+    const std::string_view schema(reinterpret_cast<const char*>(bytes.data()),8);
+    const bool pattern=schema=="ACPT0001";
+    if(!pattern && schema!="ACBG0001") throw std::runtime_error("Unsupported VRAM update trace schema");
+    auto u32=[&](std::size_t p){std::uint32_t v=0;for(unsigned s=0;s<32;s+=8) v|=std::to_integer<std::uint32_t>(bytes[p++])<<s;return v;};
+    std::size_t passes=0,words=0,cross_frame=0;
+    std::array<bool,256> descriptors{};
+    std::uint32_t previous_end=0;
+    for(std::size_t p=8;p<bytes.size();p+=record_size) {
+        const auto entry=u32(p),end=u32(p+4);
+        if(!entry || entry<previous_end || end<entry) throw std::runtime_error("Invalid background trace frame order");
+        previous_end=end;
+        const auto actor=std::to_integer<unsigned>(bytes[p+8]);
+        if(actor>=64) throw std::runtime_error("Invalid background actor index");
+        const auto ram=std::span(bytes).subspan(p+9,8192);
+        const auto id=std::to_integer<std::uint8_t>(ram[0x1800+actor]);
+        const auto high=(std::to_integer<unsigned>(ram[0x1a00+actor])&0x20)?std::to_integer<std::uint8_t>(ram[0x1a80+actor]):std::uint8_t{0};
+        std::vector<assets::BackgroundWrite> writes;
+        if(pattern) {
+            if(!(std::to_integer<unsigned>(ram[0x1540+actor])&2)) throw std::runtime_error("Pattern trace missing pending flag");
+            const auto base=static_cast<std::uint16_t>(std::to_integer<unsigned>(ram[0x2e])|(std::to_integer<unsigned>(ram[0x2f])<<8));
+            const auto transfer=assets.pattern_transfer(std::to_integer<std::uint8_t>(ram[0x1500+actor]),
+                std::to_integer<std::uint8_t>(ram[0x1a80+actor]),base);
+            for(std::size_t i=0;i<transfer.words.size();++i)
+                writes.push_back({static_cast<std::uint16_t>(transfer.destination+i),transfer.words[i]});
+        } else writes=assets.background(id,high);
+        auto expected=std::vector<std::byte>(bytes.begin()+p+9+8192,bytes.begin()+p+9+8192+65536);
+        for(const auto& write:writes) {
+            // Captures establish normal one-word VDC increment. Unsupported
+            // upper-half VRAM addresses are rejected rather than guessed.
+            if(write.address>=32768) throw std::runtime_error("Background write outside captured VRAM");
+            expected[write.address*2]=static_cast<std::byte>(write.value&255);
+            expected[write.address*2+1]=static_cast<std::byte>(write.value>>8);
+            ++words;
+        }
+        const auto actual=std::span(bytes).subspan(p+9+8192+65536,65536);
+        if(!std::equal(expected.begin(),expected.end(),actual.begin()))
+            throw std::runtime_error("Background VRAM mismatch at entry frame "+std::to_string(entry)+" descriptor "+std::to_string(id));
+        const auto flags=std::to_integer<unsigned>(ram[0x1540+actor])&(pattern?0xfd:0xef);
+        if(std::to_integer<unsigned>(bytes[p+record_size-1])!=flags)
+            throw std::runtime_error("Background dirty-flag acknowledgement mismatch");
+        descriptors[pattern?std::to_integer<std::uint8_t>(ram[0x1a80+actor]):id]=true; ++passes;
+        if(entry!=end) ++cross_frame;
+    }
+    std::cout<<"PASS: "<<passes<<(pattern?" dynamic pattern transfers, ":" background updates, ")<<words<<" native writes, "<<std::count(descriptors.begin(),descriptors.end(),true)
+        <<(pattern?" stream selectors":" descriptors")<<"; all complete VRAM snapshots and dirty-flag acknowledgements match. "<<cross_frame<<" updates cross a frame boundary.\n";
+}
+void verify_actor_trace(const std::filesystem::path& rom,const std::filesystem::path& trace) {
+    const assets::ActorAssets assets(core::read_file(rom));
+    const auto bytes=core::read_file(trace);
+    constexpr std::size_t record_size=8+8192+512+1;
+    constexpr std::size_t header_size=8;
+    if(bytes.size()<=header_size || (bytes.size()-header_size)%record_size)
+        throw std::runtime_error("Invalid, empty or truncated actor trace");
+    const std::string_view magic(reinterpret_cast<const char*>(bytes.data()),header_size);
+    const bool overlay=magic=="ACOV0001";
+    if(!overlay && magic!="ACAT0001") throw std::runtime_error("Unsupported actor trace schema");
+    auto u32=[&](std::size_t p){std::uint32_t v=0;for(unsigned s=0;s<32;s+=8) v|=std::to_integer<std::uint32_t>(bytes[p++])<<s;return v;};
+    std::size_t passes=0,words=0,cross_frame=0,cleared_words=0,skipped=0;
+    std::uint32_t previous_end=0;
+    for(std::size_t p=magic.size();p<bytes.size();p+=record_size) {
+        const auto entry=u32(p),end=u32(p+4);
+        if(!entry || entry<previous_end || end<entry) throw std::runtime_error("Invalid actor trace frame order");
+        previous_end=end;
+        const auto ram=std::span(bytes).subspan(p+8,8192);
+        const auto first_slot=std::to_integer<unsigned>(ram[overlay?0x2d:0x50]);
+        std::vector<assets::TableSprite> sprites;
+        if(overlay) sprites=assets::assemble_table_overlay(ram,first_slot);
+        else for(const auto& sprite:assets::assemble_table_actors(assets,ram)) sprites.push_back({sprite.slot,sprite.words});
+        if(sprites.empty()) {
+            if(!overlay) throw std::runtime_error("Empty actor trace candidate at frame "+std::to_string(entry));
+            ++skipped;
+        }
+        const auto end_slot=std::to_integer<unsigned>(bytes[p+record_size-1]);
+        if(end_slot!=first_slot+sprites.size())
+            throw std::runtime_error("Actor trace end-slot mismatch at frame "+std::to_string(entry));
+        for(const auto& sprite:sprites) for(std::size_t w=0;w<4;++w) {
+            const auto offset=p+8+8192+(sprite.slot*4+w)*2;
+            const auto expected=std::to_integer<unsigned>(bytes[offset])|(std::to_integer<unsigned>(bytes[offset+1])<<8);
+            if(sprite.words[w]!=expected) throw std::runtime_error("Actor trace mismatch at entry frame "+std::to_string(entry)+
+                " slot "+std::to_string(sprite.slot)+" word "+std::to_string(w)+" native "+std::to_string(sprite.words[w])+" source "+std::to_string(expected));
+            ++words;
+        }
+        if(overlay) for(unsigned slot=end_slot;slot<64;++slot) for(unsigned w=0;w<4;++w) {
+            const auto offset=p+8+8192+(slot*4+w)*2;
+            if(bytes[offset]!=std::byte{0} || bytes[offset+1]!=std::byte{0})
+                throw std::runtime_error("Uncleared trailing SAT word at frame "+std::to_string(end));
+            ++cleared_words;
+        }
+        ++passes;
+        if(entry!=end) ++cross_frame;
+    }
+    std::cout<<"PASS: "<<passes<<" traced "<<(overlay?"table overlay":"main actor")<<" passes, "<<words<<" sprite words and all end slots match; "
+        <<cross_frame<<" passes cross a frame boundary.\n";
+    if(overlay) std::cout<<"PASS: "<<cleared_words<<" trailing SAT words cleared; "<<skipped<<" guarded overlay passes emit no sprites.\n";
+    std::cout<<"Only the selected pass is checked; HUD, background writes and gameplay remain outside this check.\n";
+}
 void verify_discovery(const std::filesystem::path& rom,const std::filesystem::path& report) {
     const auto image=core::read_file(rom);
     const auto tables=assets::decode_table_backgrounds(image);
     const auto sprite_tables=assets::decode_table_sprites(image);
+    const auto hud=assets::decode_hud_assets(image);
     auto runtime=make_reference_runtime(); runtime->load(rom);
     const assets::ActorAssets actor_assets(image);
+    // The 17 recovered streams all replace six 16x16 sprite patterns.
+    for(std::uint8_t selection=0;selection<17;++selection) {
+        const auto left=actor_assets.pattern_transfer(26,selection,0x200);
+        const auto right=actor_assets.pattern_transfer(27,selection,0x200);
+        if(left.destination!=0x7c80 || right.destination!=0x7e80 || left.words.size()!=384 || left.words!=right.words)
+            throw std::runtime_error("Dynamic sprite stream layout mismatch");
+    }
+    if(actor_assets.pattern_transfer(26,0,0xffff).destination!=0x3c60)
+        throw std::runtime_error("Dynamic sprite destination wrapping mismatch");
+    auto rejects_pattern=[&](std::uint8_t type,std::uint8_t selection,std::uint16_t base) {
+        try {(void)actor_assets.pattern_transfer(type,selection,base);} catch(const std::runtime_error&) {return;}
+        throw std::runtime_error("Invalid dynamic sprite selector/address accepted");
+    };
+    rejects_pattern(80,0,0); rejects_pattern(26,17,0); rejects_pattern(26,0,0x400);
     // Arithmetic edges outside the natural route, using the verified ball descriptor.
     std::array<std::byte,8192> actor_fixture{};
     actor_fixture[0x50]=std::byte{20}; actor_fixture[0x1500]=std::byte{1}; actor_fixture[0x1540]=std::byte{0x80};
@@ -128,17 +267,32 @@ void verify_discovery(const std::filesystem::path& rom,const std::filesystem::pa
     if(!actor_assets.pieces(1,62).empty() || actor_assets.pieces(1,61).size()!=2)
         throw std::runtime_error("Actor SAT capacity boundary mismatch");
     std::vector<assets::ActorSprite> previous_actors;
+    struct ActorEpoch {
+        std::uint64_t frame;
+        std::uint8_t table;
+        std::vector<assets::ActorSprite> sprites;
+    };
+    std::deque<ActorEpoch> actor_history;
+    std::array<std::uint16_t,256> previous_source{};
+    std::array<std::size_t,4> lag_exact{},lag_words{},lag_bad{};
+    std::size_t epoch_frames=0,held_frames=0,unmatched_frames=0;
+    std::size_t held_run=0,longest_hold=0,lag1_held_bad=0,lag1_changed_bad=0;
+    std::array<std::size_t,4> lag1_field_bad{};
     std::size_t actor_checks=0,actor_bad=0,actor_frames=0;
     std::size_t verified_actor_words=0;
     std::ofstream actor_report;
+    std::ofstream epoch_report;
     if(!report.empty()) {
         if(std::filesystem::exists(report)) throw std::runtime_error("Discovery report requires a new directory");
         std::filesystem::create_directories(report);
         actor_report.exceptions(std::ios::failbit|std::ios::badbit);
         actor_report.open(report/"actor-comparison.csv");
         actor_report<<"ram_frame,source_sat_frame,table,actor,descriptor,slot,native_y,native_x,native_pattern,native_flags,source_y,source_x,source_pattern,source_flags,matching_words\n";
+        epoch_report.exceptions(std::ios::failbit|std::ios::badbit);
+        epoch_report.open(report/"actor-epochs.csv");
+        epoch_report<<"source_sat_frame,ram_frame,lag,source_table,ram_table,pc,pc_bank,source_sat_held,held_run,sprites,compared_words,bad_y,bad_x,bad_pattern,bad_flags,exact\n";
     }
-    std::size_t hud_checks=0;
+    std::size_t hud_checks=0,native_hud_words=0;
     for(std::uint64_t n=0;n<1800;++n) {
         (void)runtime->advance(recording::canonical_input(n));
         if(n<359) continue;
@@ -147,6 +301,40 @@ void verify_discovery(const std::filesystem::path& rom,const std::filesystem::pa
         std::vector<assets::ActorSprite> actors;
         try { if(n>=479) actors=assets::assemble_table_actors(actor_assets,runtime->work_ram()); }
         catch(const std::exception& e) { throw std::runtime_error(std::string(e.what())+" frame "+std::to_string(n+1)); }
+        if(n>=479) {
+            actor_history.push_front({n+1,observed.table_code,actors});
+            if(actor_history.size()>4) actor_history.pop_back();
+            if(actor_history.size()==4) {
+                ++epoch_frames;
+                const bool held=std::equal(previous_source.begin(),previous_source.end(),snapshot.vram.begin()+0x400);
+                if(held) ++held_frames;
+                held_run=held?held_run+1:0;
+                longest_hold=std::max(longest_hold,held_run);
+                bool any_exact=false;
+                // Report every candidate on the same interval. Choosing the best lag
+                // per frame would conceal timing defects and is not an equality gate.
+                for(std::size_t lag=0;lag<actor_history.size();++lag) {
+                    const auto& epoch=actor_history[lag];
+                    std::array<std::size_t,4> bad{};
+                    for(const auto& sprite:epoch.sprites) for(std::size_t w=0;w<4;++w)
+                        if(sprite.words[w]!=snapshot.vram[0x400+sprite.slot*4+w]) ++bad[w];
+                    const auto total=bad[0]+bad[1]+bad[2]+bad[3];
+                    const bool exact=!epoch.sprites.empty() && total==0;
+                    lag_words[lag]+=epoch.sprites.size()*4; lag_bad[lag]+=total;
+                    if(exact) {++lag_exact[lag];any_exact=true;}
+                    if(lag==1) {
+                        for(std::size_t w=0;w<4;++w) lag1_field_bad[w]+=bad[w];
+                        if(!exact) {if(held) ++lag1_held_bad;else ++lag1_changed_bad;}
+                    }
+                    if(epoch_report.is_open()) epoch_report<<n+1<<','<<epoch.frame<<','<<lag<<','
+                        <<static_cast<unsigned>(observed.table_code)<<','<<static_cast<unsigned>(epoch.table)<<','
+                        <<snapshot.pc<<','<<static_cast<unsigned>(snapshot.mpr[snapshot.pc>>13])<<','<<held<<','<<held_run<<','<<epoch.sprites.size()<<','
+                        <<epoch.sprites.size()*4<<','<<bad[0]<<','<<bad[1]<<','<<bad[2]<<','<<bad[3]<<','<<exact<<'\n';
+                }
+                if(!any_exact) ++unmatched_frames;
+            }
+            std::copy_n(snapshot.vram.begin()+0x400,256,previous_source.begin());
+        }
         if(n>=480) {
             bool bad=false;
             for(const auto& sprite:previous_actors) {
@@ -194,6 +382,8 @@ void verify_discovery(const std::filesystem::path& rom,const std::filesystem::pa
         previous_actors=actors;
         if(n==599 || n==719) {
             const auto index=n==599?0U:1U; const auto& table=tables[index];
+            if(!std::equal(hud.patterns.begin(),hud.patterns.end(),snapshot.vram.begin()+0x500))
+                throw std::runtime_error("Native HUD artwork mismatch at frame "+std::to_string(n+1));
             if(observed.table_code!=index || !std::equal(table.vram.begin()+0x800,table.vram.begin()+0x800+table.pattern_words,snapshot.vram.begin()+0x800))
                 throw std::runtime_error("Native table pattern mismatch at frame "+std::to_string(n+1));
             for(const auto& stream:sprite_tables[index].streams) {
@@ -216,12 +406,19 @@ void verify_discovery(const std::filesystem::path& rom,const std::filesystem::pa
             const auto balls=(snapshot.vram[0x426]>>1)&1023;
             if(observed.ball_counter>=1 && observed.ball_counter<=10 && balls!=20+observed.ball_counter-1)
                 throw std::runtime_error("Mapped ball counter differs from original HUD at frame "+std::to_string(n+1));
+            if(observed.ball_counter>=1 && observed.ball_counter<=10) {
+                for(const auto& sprite:assets::assemble_table_hud(observed.score_points,observed.ball_counter))
+                    if(!std::equal(sprite.words.begin(),sprite.words.end(),snapshot.vram.begin()+0x400+sprite.slot*4))
+                        throw std::runtime_error("Native HUD sprite mismatch at frame "+std::to_string(n+1));
+                native_hud_words+=40;
+            }
             ++hud_checks;
         }
     }
     if(hud_checks<1000) throw std::runtime_error("Insufficient discovery HUD coverage");
     if(actor_report.is_open()) {
         actor_report.close();
+        epoch_report.close();
         std::ofstream manifest; manifest.exceptions(std::ios::failbit|std::ios::badbit); manifest.open(report/"actor-manifest.txt");
         manifest<<"schema=table-actors-v1\nrom_sha256="<<rom::kSupportedSha256<<"\nbackend="<<runtime->save().core_revision
             <<"\nroute=canonical\nram_frames=480..1799\nsource_sat_frames=481..1800\ncompared_words="<<actor_checks
@@ -230,10 +427,24 @@ void verify_discovery(const std::filesystem::path& rom,const std::filesystem::pa
             <<"preview=previous-frame RAM; native initial patterns; current reference palette; sprite-only layer\n"
             <<"limits=main-table actor pass only; no HUD, BAT writes, later sprite pass or scanline limits; timing differences unresolved\n";
         manifest.close();
+        manifest.open(report/"actor-epoch-manifest.txt");
+        manifest<<"schema=actor-epochs-v1\nrom_sha256="<<rom::kSupportedSha256<<"\nbackend="<<runtime->save().core_revision
+            <<"\nroute=canonical\nsource_sat_frames=483..1800\nframes="<<epoch_frames<<"\nheld_source_sat_frames="<<held_frames
+            <<"\nframes_without_exact_candidate="<<unmatched_frames<<'\n';
+        manifest<<"longest_source_sat_hold="<<longest_hold<<"\nlag1_inexact_held_frames="<<lag1_held_bad
+            <<"\nlag1_inexact_changed_frames="<<lag1_changed_bad<<"\nlag1_bad_y="<<lag1_field_bad[0]
+            <<"\nlag1_bad_x="<<lag1_field_bad[1]<<"\nlag1_bad_pattern="<<lag1_field_bad[2]<<"\nlag1_bad_flags="<<lag1_field_bad[3]<<'\n';
+        for(std::size_t lag=0;lag<4;++lag) manifest<<"lag"<<lag<<"_exact_frames="<<lag_exact[lag]
+            <<"\nlag"<<lag<<"_compared_words="<<lag_words[lag]<<"\nlag"<<lag<<"_mismatching_words="<<lag_bad[lag]<<'\n';
+        manifest<<"limits=observational lag sweep, not runtime phase detection; exact means nonempty candidate slots only; no missing/extra sprite or scene-validity claim\n";
+        manifest.close();
     }
+    std::cout<<"Actor epoch sweep: "<<epoch_frames<<" frames, "<<held_frames<<" held source SAT frames, "<<unmatched_frames<<" without an exact lag 0..3 candidate.\n";
+    for(std::size_t lag=0;lag<4;++lag) std::cout<<"  lag "<<lag<<": "<<lag_exact[lag]<<" exact frames, "<<lag_bad[lag]<<'/'<<lag_words[lag]<<" mismatching words.\n";
     std::cout<<"Actor epoch diagnostic (previous RAM vs current source SAT): "<<actor_checks<<" words, "<<actor_bad
         <<" mismatches, "<<actor_frames<<"/1320 exact frames; full actor equivalence remains open.\n";
     std::cout<<"PASS: both ROM-decoded background and sprite pattern sets exactly match reference VRAM; "<<hud_checks<<" score/ball HUD checks.\n";
     std::cout<<"PASS: "<<verified_actor_words<<" native actor SAT words match at lower/upper source frames 600/720; arithmetic and capacity edges verified.\n";
+    std::cout<<"PASS: "<<native_hud_words<<" native HUD sprite words match; all 768 HUD pattern words match at both table samples.\n";
 }
 }

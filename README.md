@@ -106,9 +106,27 @@ multi-tile assembly and palette animation remain separate from these assets.
 The native actor assembler decodes selected animation descriptors and reproduces
 sprite ordering, placement and attributes. Discovery verification enforces exact
 actor sprite words at two lower/upper samples. Adding `--capture <new-directory>`
-exports per-sprite comparisons and native sprite-layer previews. The wider report
+exports per-sprite comparisons, a zero-to-three-frame timing sweep with source
+SAT retention and field-level differences, and native sprite-layer previews. The wider report
 still contains epoch/transition differences; the assembler is diagnostic and does
 not yet replace the live renderer. See the evidence document for counts and limits.
+
+For instruction-boundary validation, Mesen capture accepts
+`-TraceActorsLastFrames 120`. Feed its `actor-passes.bin` to
+`alien-crush-tools --verify-actor-trace <file>` to check native sprite words and
+end slots against paired render-entry/main-pass-end observations. See
+[state and asset evidence](docs/STATE_AND_ASSETS.md) for commands and limitations.
+The same capture also emits `overlay-passes.bin`; pass that file to the same
+verifier to check the native four-sprite table overlay and original SAT tail clearing.
+Actor-driven background rectangles are decoded natively as well. The capture's
+`background-passes.bin` can be checked with `--verify-background-trace <file>`;
+this compares complete before/after VRAM and the actor's update acknowledgement.
+Dynamic sprite artwork transfers are available through
+`ActorAssets::pattern_transfer`. Use `--verify-pattern-trace <pattern-passes.bin>`
+to compare their native decoding with the bounded Mesen capture.
+Asset extraction also produces `table-hud-v1` with the standard HUD pattern
+stream, source hashes and a digit preview. Native score/ball sprite assembly is
+checked against all 40 HUD words on eligible gameplay frames; live timing remains separate.
 
 Captures include `game-observations.csv` with recovered score, ball/table counters
 and high scores. `--video-every` also exports background/sprite BMPs, attributes,

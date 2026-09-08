@@ -71,3 +71,69 @@ Actor assembly continuation:
   The broader one-frame-offset diagnostic matches 1,151/1,320 frames; 3,130 of
   209,268 words differ. Epoch/transition classification remains open, so this is
   not yet a replacement renderer or a whole-route equivalence result.
+
+Actor timing continuation:
+
+- Added reproducible timing reports comparing all RAM lags 0..3 on the same
+  1,318-frame interval, with source SAT retention, table codes, PC/bank and
+  mismatches separated into coordinates, patterns and attributes.
+- Lag one is strongest (1,149 exact candidate frames). Of its 169 inexact frames,
+  141 retain the prior source SAT and 28 change it. The longest unchanged source
+  run is 13 frames; 130 frames have no exact candidate at any tested lag.
+- These are diagnostic classifications, not proof of runtime update phases.
+  Existing 324-word sample gates remain intact; live rendering is unchanged.
+
+Actor instruction-boundary continuation:
+
+- Added bank-checked, observational Mesen actor-phase tracing and paired RAM/SAT
+  captures, plus a native verifier of emitted sprite words and end slots.
+- Three sampled intervals validate 90 captured passes / 13,932 sprite words,
+  including two passes crossing frame boundaries (the first two intervals overlap).
+- Traces establish render-before-update order during ordinary play and an absent
+  main render pass during frames 608..620 of the first table transition.
+- Control capture matches all 600 RAM/CPU frames and video frames 20..600;
+  initial 19 video frames differ before tracing starts. Whole-route native timing,
+  later sprite passes and live renderer integration remain open.
+- Release CTest remains 5/5; malformed trace and end-slot corruption are rejected.
+
+Later sprite-pass continuation:
+
+- Translated the four-sprite table overlay at `01:4741`, including visibility,
+  strict capacity, table positions, camera subtraction and byte-level pattern arithmetic.
+- Added paired overlay entry/return tracing and verification: all 80 sampled passes
+  match 1,280 sprite words, every end slot and 3,708 cleared trailing SAT words.
+  Main actor-pass validation also remains exact in both intervals.
+- Added ROM-free branch/arithmetic tests; Release passes 5/5 and Debug passes 2/2.
+  A corrupted SAT tail is rejected. Live renderer integration remains open.
+
+Actor background-update continuation:
+
+- Added native rectangular BAT descriptor decoding, including 32-word row stride,
+  wrapped tile addition and optional high-byte attribute overrides.
+- Added instruction-boundary captures and whole-VRAM comparison: ten sampled
+  calls / 420 native writes match, including actor update-flag acknowledgements.
+- Added ROM-free bounds and arithmetic tests; Release passes 5/5 and Debug 2/2.
+  Truncation and a VRAM mutation outside the update region are rejected.
+- Native update scheduling, dynamic pattern transfers, palettes and live rendering
+  remain open; diagnostic code does not write reference game state.
+
+Dynamic sprite-pattern continuation:
+
+- Recovered actor-type destinations and all 17 dynamic word-RLE streams. Each
+  contains 384 words; decoding returns source provenance and destination data.
+- Four observed transfers match all 1,536 writes, complete VRAM and pending-flag
+  acknowledgements, including one transfer across a frame boundary. These samples
+  cover stream 1; the other streams have layout checks but not execution coverage.
+- Existing actor/overlay/background checks and RAM/CPU captures remain unchanged.
+  Release passes 5/5; ROM-free Debug passes 2/2. Palettes, HUD, native scheduling
+  and live renderer integration remain open.
+
+Main-table HUD continuation:
+
+- Extracted the standard HUD stream: 768 words match both table samples.
+  ROM-hashed exports include pattern data, provenance and a checked digit preview.
+- Added settled score/ball sprite assembly. All 57,480 HUD words match across
+  1,437 eligible frames, including coordinates, patterns and attributes.
+- Added ROM-free numeric bounds and digit-order tests; Release passes 5/5 and
+  Debug passes 2/2. Alternate HUD assets, incremental update timing, palettes and
+  live renderer integration remain open.
