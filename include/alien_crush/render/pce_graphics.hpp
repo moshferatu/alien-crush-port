@@ -23,7 +23,8 @@ struct Viewport {
     int width{256},height{240};
     std::uint16_t scroll_x{},scroll_y{},memory_width{},control{0xc0};
 };
-// Frozen-register diagnostic composition, without scanline changes or sprite limits.
+// Frozen-register diagnostic composition with the sixteen-piece scanline limit.
+// Register/palette/VRAM changes during a frame are not modeled.
 // Scroll is the background origin at output (0,0); sprites use screen coordinates.
 Image compose(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
     std::span<const std::uint16_t> sat,const Viewport& viewport);

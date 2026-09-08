@@ -182,6 +182,16 @@ Composition timing comparison continuation:
   and the remaining scanline/transition differences remain open.
 - Release regression tests pass 5/5; ROM-free Debug passes 2/2.
 
+Sprite scanline limit continuation:
+
+- Added the hardware's sixteen 16-pixel fetches per row, including transparent
+  and offscreen pieces, partial wide sprites, and flipped wide-sprite ordering.
+- This resolves 26 of the 32 previous-SAT mismatching frames. All-frame native
+  comparison now matches 1,793/1,799 frames; six remain unresolved, with no formerly
+  exact frame regressing. The frozen reference RAM/video/audio census is unchanged.
+- Added ROM-free boundary tests; Release passes 5/5 and Debug 2/2.
+  Register/VRAM/palette timing and live renderer integration remain open.
+
 Palette fade-in continuation:
 
 - Translated the original discrete channel-by-channel fade-in, including brightness

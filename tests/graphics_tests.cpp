@@ -106,6 +106,33 @@ int main() {
             view.width=2;
             rejects([&]{(void)render::compose(memory,std::span(colors).first(256),attributes,view);},"Incomplete composition palette rejected");
         }
+        {
+            std::array<std::uint16_t,32768> memory{};
+            std::array<std::uint16_t,512> colors{};
+            std::array<std::uint16_t,256> attributes{};
+            colors[257]=7; colors[258]=7<<3;
+            // Fifteen transparent, horizontally offscreen pieces exhaust fifteen fetches.
+            for(unsigned i=0;i<15;++i) {attributes[i*4]=64; attributes[i*4+1]=900;}
+            attributes[60]=64; attributes[61]=32; attributes[62]=128; attributes[63]=0x180;
+            for(unsigned y=0;y<16;++y) {memory[64*64+y]=0xffff; memory[65*64+16+y]=0xffff;}
+            render::Viewport view{32,17,0,0,0,0x40};
+            auto limited=render::compose(memory,colors,attributes,view);
+            require(limited.pixels[0]==render::pce_color(7) && limited.pixels[16]==render::pce_color(0),
+                "Wide sprite at fetch sixteen retains only its left half");
+            attributes[63]|=0x800;
+            limited=render::compose(memory,colors,attributes,view);
+            require(limited.pixels[0]==render::pce_color(7<<3) && limited.pixels[16]==render::pce_color(0),
+                "Flipped wide sprite still fetches its screen-left half first");
+            attributes[64]=64; attributes[65]=48; attributes[66]=128; attributes[67]=0x80;
+            require(render::compose(memory,colors,attributes,view).pixels[16]==render::pce_color(0),
+                "Later sprite cannot use exhausted row even after transparent fetches");
+            attributes[64]=80;
+            require(render::compose(memory,colors,attributes,view).pixels[16*32+16]==render::pce_color(7),
+                "Fetch budget resets on each row and excludes vertically absent sprites");
+            attributes[56]=63; // Only fourteen pieces intersect row fifteen now.
+            require(render::compose(memory,colors,attributes,view).pixels[15*32+16]==render::pce_color(7),
+                "Wide sprite consumes both remaining fetches at exact capacity");
+        }
         snapshot.memory_width=0x70;
         require(snapshot.bat_width()==128 && snapshot.bat_height()==64,"MWR map dimensions");
         const std::array<std::byte,10> packed{std::byte{2},std::byte{0x34},std::byte{0x12},std::byte{0x78},std::byte{0x56},std::byte{0x83},std::byte{0xbc},std::byte{0x9a},std::byte{0},std::byte{0xff}};

@@ -99,16 +99,28 @@ Image compose(std::span<const std::uint16_t> vram,std::span<const std::uint16_t>
             if(opaque[dest]) result.pixels[dest]=color;
         }
     }
+    std::vector<unsigned> fetched(static_cast<std::size_t>(viewport.height));
     if(sprites_enabled) for(const auto& sprite:sprites(vram,palette,sat,viewport.memory_width)) {
-        for(int y=0;y<sprite.height;++y) for(int x=0;x<sprite.width;++x) {
-            const int dx=sprite.x+x,dy=sprite.y+y;
-            if(dx<0 || dy<0 || dx>=viewport.width || dy>=viewport.height) continue;
-            const auto color=sprite.image.pixels[static_cast<std::size_t>(y)*sprite.width+x];
-            const auto dest=static_cast<std::size_t>(dy)*viewport.width+dx;
-            if(!(color>>24) || claimed[dest]) continue;
-            // SAT priority is resolved before background priority, even if hidden.
-            claimed[dest]=true;
-            if(sprite.foreground || !opaque[dest]) result.pixels[dest]=color;
+        for(int y=0;y<sprite.height;++y) {
+            const int row=sprite.y+y;
+            if(row<0 || row>=viewport.height) continue;
+            // HuC6270 fetches at most sixteen 16-pixel pieces per row in SAT order.
+            // Transparent/offscreen pieces count; a wide sprite can be cut in half.
+            auto& used=fetched[static_cast<std::size_t>(row)];
+            const auto available=16U-used;
+            const auto pieces=static_cast<unsigned>(sprite.width/16);
+            const auto accepted=pieces<available?pieces:available;
+            used+=accepted;
+            for(int x=0;x<static_cast<int>(accepted)*16;++x) {
+                const int dx=sprite.x+x,dy=sprite.y+y;
+                if(dx<0 || dy<0 || dx>=viewport.width || dy>=viewport.height) continue;
+                const auto color=sprite.image.pixels[static_cast<std::size_t>(y)*sprite.width+x];
+                const auto dest=static_cast<std::size_t>(dy)*viewport.width+dx;
+                if(!(color>>24) || claimed[dest]) continue;
+                // SAT priority is resolved before background priority, even if hidden.
+                claimed[dest]=true;
+                if(sprite.foreground || !opaque[dest]) result.pixels[dest]=color;
+            }
         }
     }
     return result;

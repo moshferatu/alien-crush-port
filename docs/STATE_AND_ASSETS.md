@@ -501,8 +501,12 @@ color-index opacity independently of RGB, resolves SAT priority before backgroun
 priority, wraps scroll at BAT boundaries, and clips sprites at viewport edges.
 Sprite-only display uses palette entry 256 as its backdrop; both layers disabled
 use entry zero, following the pinned VDC implementation.
-Post-frame registers are not scanline histories: this preview omits scanline sprite
-limits, register/VRAM/palette changes during display, and display-window timing.
+The compositor enforces sixteen 16-pixel sprite pieces per row, counting transparent
+and horizontally offscreen pieces in SAT order. A 32-pixel sprite consumes two
+pieces and can lose its screen-right half, including when flipped. This follows
+the pinned VDC `FetchSpriteData` implementation with sprite limits enabled.
+Post-frame registers are not scanline histories: this preview omits
+register/VRAM/palette changes during display and display-window timing.
 It does not replace the live renderer or establish full-frame pixel equivalence.
 
 `out/captures/compositor-1800` contains 15 exported previews, including visually
@@ -528,10 +532,20 @@ Composition timing comparison:
   SAT matches 1,767/1,799, including all 15 samples at 120-frame intervals. These
   results support a sprite-table timing explanation for most original differences,
   but do not establish complete scanline equivalence.
-- Previous-SAT mismatches remain at frames 19, 608, 622, 758, 938..958, 961..963,
-  966..967, 1573 and 1594. Their causes remain unverified. A separate frame-938
+- Before adding the sprite fetch limit, previous-SAT mismatches occurred at frames
+  19, 608, 622, 758, 938..958, 961..963, 966..967, 1573 and 1594. A separate frame-938
   capture has five differing pixels on row 64 (x 113..118); an independent BMP
   byte comparison verifies both candidate masks and row counts for that sample.
+- `out/captures/composite-limited-1800` repeats every-frame comparison with the
+  hardware sprite fetch limit: previous SAT matches 1,793/1,799 frames, current SAT
+  remains 503/1,800. All 26 formerly mismatching frames in 938..967 now match exactly;
+  frame 938's slot 49 was the seventeenth piece on row 64. No formerly exact frame
+  regresses. The six unresolved frames and pixel counts are 19 (46,848), 608 (402),
+  622 (48,783), 758 (72), 1573 (49,017), and 1594 (48,301). Their causes remain
+  unverified. The complete reference census retains the same frozen hash.
+- ROM-free fetch-limit tests cover transparent/offscreen budget consumption,
+  truncated wide sprites with horizontal flip, exact capacity, exhausted rows,
+  and reset on subsequent rows. Release passes 5/5 and Debug 2/2.
 - The all-frame comparison retains the exact frozen 1,800-frame RAM/video/audio
   census hash above. Initial three-frame capture checks the missing first epoch
   and consecutive exports. Full native gameplay/presentation integration remains open.
