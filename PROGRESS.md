@@ -192,6 +192,64 @@ Sprite scanline limit continuation:
 - Added ROM-free boundary tests; Release passes 5/5 and Debug 2/2.
   Register/VRAM/palette timing and live renderer integration remain open.
 
+Video component timing continuation:
+
+- Extended comparison reports with fixed previous-VRAM, palette, register and
+  complete-video candidates, preserving input snapshots and per-candidate masks.
+- Older control values reproduce three transition frames. Frame 19 mixes palette
+  states across rows, and frame 758 mixes BAT states; no single frozen snapshot
+  reproduces either. Frame 608's remaining difference is confined to its first
+  two rows. Exact update scheduling remains open.
+- Retained the original 1,793/1,799 previous-SAT matches and frozen reference census.
+  Verified all six exported masks/row reports independently; Release passes 5/5.
+  These are timing diagnostics, not additional live renderer fixes.
+
+Video bus timing continuation:
+
+- Added Mesen VDC/VCE traces with raster positions, master clocks and pre-write
+  address/data state, plus a bounded inspector that decodes and validates requests.
+- Frame 758 BAT requests occur around raster rows 42/43, supporting the observed
+  mixed-VRAM frame. Control writes at raster row 1 support the enable/disable
+  timing explanation. Mesen's startup palette timing differs from Beetle's.
+- All 235 final requested words in the 758 trace match final memory. Traced/control
+  RAM and CPU logs are identical; pixels match from frame 20 onward, with startup
+  variation confined to frames 1..19. Malformed trace fixtures are rejected.
+- Exact fetch/commit scheduling and live renderer integration remain open.
+
+Native raster composition continuation:
+
+- Added ordered, bounded native video writes at explicit output-row boundaries,
+  preserving earlier rows, sprite priority/limits and immutable caller state.
+- Added offline CSV schedule replay with input hashes, image/mask and row reports.
+  Explicit reconstruction schedules reproduce frames 19 and 758 exactly. These
+  use boundaries identified from pixels; automatic hardware scheduling remains open.
+- All six fixed candidate counts and the frozen reference census remain unchanged
+  across 1,800 frames. Release passes 5/5 and Debug 2/2, including raster edge cases.
+- The automatic previous-SAT result remains 1,793/1,799; live integration is pending.
+
+Observed display-control scheduling continuation:
+
+- Added an optional read-only observer at Beetle's existing row-draw boundary,
+  with bounded runtime capture and native translation of latched control/burst mode.
+- The automatic reference-assisted candidate matches 1,795/1,798 complete frames,
+  resolving three enable transitions. Startup frames 1/2 lack complete coverage;
+  palette/VRAM differences remain at 19/608/758. This is not independent device timing.
+- All 900 restored row observations repeat exactly. Observer-enabled and compiled-out
+  captures preserve the frozen RAM/video/audio census. The optional build path is
+  verified and observation support is restored in the final build.
+- Release passes 5/5; Debug 2/2. Palette/VRAM scheduling and live integration remain open.
+
+Observed pixel palette scheduling continuation:
+
+- Added bounded VCE palette observation and native pixel-position palette updates,
+  preserving palette identity through composition and validating complete write chains.
+- Found that burst-mode output uses palette 256. Modeling that explicitly and
+  scheduling its observed write reproduces startup frame 19 automatically.
+- Combined display/palette timing matches 1,796/1,798 complete frames; remaining
+  frames 608/758 still need VRAM timing. This remains reference-assisted rendering.
+- All 900 restored observations repeat; enabled/compiled-out observers preserve
+  the frozen census. Release passes 5/5, Debug 2/2. Live integration remains open.
+
 Palette fade-in continuation:
 
 - Translated the original discrete channel-by-channel fade-in, including brightness

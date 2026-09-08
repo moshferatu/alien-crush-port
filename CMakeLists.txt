@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(AC_BUILD_APP "Build the SDL desktop/cabinet host" ON)
 option(AC_BUILD_REFERENCE "Build the pinned reference emulator and diagnostics" ON)
 option(AC_REFERENCE_STATE_EXTENSION "Preserve upstream audio filter history in quick states" ON)
+option(AC_REFERENCE_VIDEO_OBSERVER "Build optional read-only reference display and palette observation" ON)
 option(AC_BUILD_TESTS "Build tests" ON)
 option(AC_ENABLE_ROM_TESTS "Enable local proprietary-ROM tests" OFF)
 option(AC_FETCH_SDL "Fetch pinned SDL" ON)
@@ -18,7 +19,7 @@ include(CompilerWarnings)
 add_library(ac_core STATIC src/core/rom_image.cpp src/core/save_state.cpp
     src/core/atomic_file.cpp src/core/files.cpp src/core/recording.cpp
     src/render/sharp_pixel_scaler.cpp src/input/plunger.cpp
-    src/diagnostics/reference_snapshot.cpp src/render/pce_graphics.cpp
+    src/diagnostics/reference_snapshot.cpp src/diagnostics/display_trace.cpp src/render/pce_graphics.cpp
     src/assets/table_assets.cpp src/assets/actor_assets.cpp src/diagnostics/alien_state.cpp)
 target_include_directories(ac_core PUBLIC include)
 target_link_libraries(ac_core PRIVATE bcrypt)
@@ -29,6 +30,9 @@ if(AC_BUILD_REFERENCE)
     add_library(ac_reference STATIC src/runtime/reference_runtime.cpp)
     target_link_libraries(ac_reference PUBLIC ac_core PRIVATE AlienCrush::BeetlePce)
     target_compile_definitions(ac_reference PRIVATE AC_BEETLE_REVISION="${AC_BEETLE_REVISION}")
+    if(AC_REFERENCE_VIDEO_OBSERVER)
+        target_compile_definitions(ac_reference PRIVATE AC_REFERENCE_VIDEO_OBSERVER=1)
+    endif()
     if(AC_REFERENCE_STATE_EXTENSION)
         target_compile_definitions(ac_reference PRIVATE AC_REFERENCE_STATE_EXTENSION=1)
     endif()

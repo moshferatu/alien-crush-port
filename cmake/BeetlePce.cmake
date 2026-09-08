@@ -119,6 +119,7 @@ function(ac_provide_beetle_pce)
         "${beetle_root}/mednafen/tremor/window.c"
     )
 
+    set(vce_source "${beetle_root}/mednafen/pce/vce.cpp")
     if(AC_REFERENCE_STATE_EXTENSION)
         include(ReferenceState)
         set(state_source_root "${CMAKE_CURRENT_BINARY_DIR}/reference-state")
@@ -128,6 +129,14 @@ function(ac_provide_beetle_pce)
             "${beetle_root}/mednafen/pce/huc6280.cpp" "${beetle_root}/mednafen/pce/vce.cpp")
         list(APPEND beetle_cxx_sources "${state_source_root}/pce.cpp" "${state_source_root}/pce_psg.cpp"
             "${state_source_root}/huc6280.cpp" "${state_source_root}/vce.cpp")
+        set(vce_source "${state_source_root}/vce.cpp")
+    endif()
+    if(AC_REFERENCE_VIDEO_OBSERVER)
+        include(ReferenceVideo)
+        set(video_source_root "${CMAKE_CURRENT_BINARY_DIR}/reference-video")
+        ac_prepare_reference_video("${beetle_root}" "${vce_source}" "${video_source_root}")
+        list(REMOVE_ITEM beetle_cxx_sources "${beetle_root}/mednafen/hw_video/huc6270/vdc.cpp" "${vce_source}")
+        list(APPEND beetle_cxx_sources "${video_source_root}/vdc.cpp" "${video_source_root}/vce.cpp")
     endif()
     add_library(
         ac_beetle_pce
@@ -146,6 +155,7 @@ function(ac_provide_beetle_pce)
             "${beetle_root}"
             "${beetle_root}/mednafen/pce"
             "${beetle_root}/mednafen/hw_sound/pce_psg"
+            "${beetle_root}/mednafen/hw_video/huc6270"
             "${beetle_root}/mednafen"
             "${beetle_root}/mednafen/include"
             "${beetle_root}/mednafen/hw_sound"

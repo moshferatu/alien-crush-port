@@ -12,6 +12,8 @@
 #include <fstream>
 #include <iostream>
 #include <deque>
+#include <charconv>
+#include <sstream>
 namespace alien_crush::diagnostics {
 namespace {
 void bitmap(const std::filesystem::path& path,const render::Image& image) {
@@ -108,11 +110,31 @@ void export_table_assets(const std::filesystem::path& directory,const std::files
         <<"\npreview=digits 0..9; lower initial palette 15; dark gray background\n";
     manifest.close();
 }
+std::vector<VideoCandidate> compose_video_epochs(const ReferenceSnapshot& current,
+    const ReferenceSnapshot* previous,int width,int height) {
+    if(previous && (current.frame==0 || previous->frame!=current.frame-1))
+        throw std::runtime_error("Video comparison requires consecutive snapshot frames");
+    std::vector<VideoCandidate> result;
+    const auto add=[&](const char* name,const auto& vram,const auto& palette,const auto& sat,const auto& registers) {
+        result.push_back({name,render::compose(vram,palette,sat,
+            {width,height,registers.scroll_x,registers.scroll_y,registers.memory_width,registers.control})});
+    };
+    add("composite",current.vram,current.palette,current.sat,current);
+    if(previous) {
+        add("previous-sat-composite",current.vram,current.palette,previous->sat,current);
+        add("previous-vram-composite",previous->vram,current.palette,previous->sat,current);
+        add("previous-palette-composite",current.vram,previous->palette,previous->sat,current);
+        add("previous-registers-composite",current.vram,current.palette,previous->sat,*previous);
+        add("previous-video-composite",previous->vram,previous->palette,previous->sat,*previous);
+    }
+    return result;
+}
 void export_video(const std::filesystem::path& directory,const state::SaveStateContainer& saved,const render::Image* reference,
-    const std::array<std::uint16_t,256>* previous_sat) {
+    const ReferenceSnapshot* previous) {
     if(reference && (reference->width!=256 || reference->height!=240 || reference->pixels.size()!=256*240))
         throw std::runtime_error("Video comparison requires a complete 256x240 reference frame");
     const auto snapshot=decode_reference_snapshot(saved);
+    const auto candidates=compose_video_epochs(snapshot,previous);
     std::filesystem::create_directories(directory);
     core::write_file_atomic(directory/"reference.state",state::encode(saved));
     core::write_file_atomic(directory/"vram.bin",std::as_bytes(std::span(snapshot.vram)));
@@ -121,9 +143,7 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     bitmap(directory/"background.bmp",render::background(snapshot.vram,snapshot.palette,snapshot.bat_width(),snapshot.bat_height()));
     const auto sprites=render::sprites(snapshot.vram,snapshot.palette,snapshot.sat,snapshot.memory_width);
     bitmap(directory/"sprites.bmp",render::sprite_sheet(sprites));
-    const auto composite=render::compose(snapshot.vram,snapshot.palette,snapshot.sat,
-        {256,240,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control});
-    bitmap(directory/"composite.bmp",composite);
+    bitmap(directory/"composite.bmp",candidates.front().image);
     std::ofstream table; table.exceptions(std::ios::failbit|std::ios::badbit); table.open(directory/"sprites.csv");
     table<<"slot,x,y,width,height,pattern,flags,foreground\n";
     for(std::size_t i=0;i<sprites.size();++i) {
@@ -137,7 +157,7 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
         <<"\nscroll_x="<<snapshot.scroll_x<<"\nscroll_y="<<snapshot.scroll_y<<"\nbat_width="<<snapshot.bat_width()<<"\nbat_height="<<snapshot.bat_height()<<'\n';
     for(std::size_t i=0;i<8;++i) manifest<<"mpr"<<i<<'='<<static_cast<unsigned>(snapshot.mpr[i])<<'\n';
     manifest<<"phase=post-frame; register values are not a scanline history\n";
-    manifest<<"composite=frozen registers, 256x240, raw scroll origin, latched SAT; no scanline changes or sprite limits\n";
+    manifest<<"composite=frozen registers, 256x240, raw scroll origin, latched SAT; sixteen sprite pieces per row; no scanline state changes\n";
     if(reference) {
         bitmap(directory/"reference.bmp",*reference);
         const auto compare=[&](const render::Image& candidate,const std::string& name) {
@@ -164,18 +184,123 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
         };
         manifest<<"comparison=exact ARGB, same frame and coordinates, complete viewport; no crop or alignment search\n"
             <<"difference_image=black matches, magenta differs\n";
-        compare(composite,"composite");
-        if(previous_sat) {
-            const auto previous=render::compose(snapshot.vram,snapshot.palette,*previous_sat,
-                {256,240,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control});
-            core::write_file_atomic(directory/"previous-sat.bin",std::as_bytes(std::span(*previous_sat)));
-            bitmap(directory/"previous-sat-composite.bmp",previous);
-            manifest<<"previous_sat_frame="<<saved.frame_number-1<<"\n"
-                <<"previous_sat_candidate=only latched SAT from preceding frame; all other state from current frame\n";
-            compare(previous,"previous-sat-composite");
+        if(previous) {
+            core::write_file_atomic(directory/"previous-sat.bin",std::as_bytes(std::span(previous->sat)));
+            core::write_file_atomic(directory/"previous-vram.bin",std::as_bytes(std::span(previous->vram)));
+            core::write_file_atomic(directory/"previous-palette.bin",std::as_bytes(std::span(previous->palette)));
+            manifest<<"previous_sat_frame="<<previous->frame<<"\n"
+                <<"previous_sat_candidate=only latched SAT from preceding frame; all other state from current frame\n"
+                <<"previous_vram_candidate=previous SAT and VRAM; current palette and registers\n"
+                <<"previous_palette_candidate=previous SAT and palette; current VRAM and registers\n"
+                <<"previous_registers_candidate=previous SAT and registers; current VRAM and palette\n"
+                <<"previous_video_candidate=previous SAT, VRAM, palette and registers\n"
+                <<"previous_control="<<previous->control<<"\nprevious_memory_width="<<previous->memory_width
+                <<"\nprevious_scroll_x="<<previous->scroll_x<<"\nprevious_scroll_y="<<previous->scroll_y<<'\n';
+        }
+        for(const auto& candidate:candidates) {
+            if(std::string_view(candidate.name)!="composite") bitmap(directory/(std::string(candidate.name)+".bmp"),candidate.image);
+            compare(candidate.image,candidate.name);
         }
     }
     manifest.close();
+}
+void export_palette_comparison(const std::filesystem::path& directory,std::uint64_t frame,
+    std::span<const std::uint16_t> initial,std::span<const render::PalettePixelWrite> writes,
+    const render::Image& candidate,const render::Image& reference) {
+    if(initial.size()!=512 || candidate.width!=256 || candidate.height!=240 || candidate.pixels.size()!=61440 ||
+        reference.width!=256 || reference.height!=240 || reference.pixels.size()!=61440)
+        throw std::runtime_error("Invalid timed palette comparison dimensions");
+    core::write_file_atomic(directory/"palette-initial.bin",std::as_bytes(initial));
+    bitmap(directory/"palette-timed.bmp",candidate);
+    std::ofstream events; events.exceptions(std::ios::failbit|std::ios::badbit); events.open(directory/"palette-pixels.csv");
+    events<<"pixel,address,value\n";
+    for(const auto& write:writes) events<<write.pixel<<','<<write.address<<','<<write.value<<'\n';
+    events.close();
+    std::ofstream rows; rows.exceptions(std::ios::failbit|std::ios::badbit); rows.open(directory/"palette-timed-difference.csv");
+    rows<<"frame,y,compared_pixels,different_pixels\n";
+    render::Image difference{256,240,std::vector<std::uint32_t>(61440,0xff000000)};
+    for(unsigned y=0;y<240;++y) {
+        unsigned count=0;
+        for(unsigned x=0;x<256;++x) {
+            const auto p=y*256+x;
+            if(candidate.pixels[p]!=reference.pixels[p]) {++count;difference.pixels[p]=0xffff00ff;}
+        }
+        rows<<frame<<','<<y<<",256,"<<count<<'\n';
+    }
+    rows.close(); bitmap(directory/"palette-timed-difference.bmp",difference);
+}
+void render_raster_capture(const std::filesystem::path& video,const std::filesystem::path& writes_path,
+    const std::filesystem::path& output) {
+    if(std::filesystem::exists(output)) throw std::runtime_error("Raster output directory must be new");
+    const auto decoded=state::decode(core::read_file(video/"reference.state"));
+    if(!decoded.decoded) throw std::runtime_error(decoded.message);
+    const auto snapshot=decode_reference_snapshot(decoded.container);
+    const auto bytes=core::read_file(writes_path,4U*1024U*1024U);
+    std::istringstream rows(std::string(reinterpret_cast<const char*>(bytes.data()),bytes.size()));
+    std::string line;
+    const auto next_line=[&]() {if(!std::getline(rows,line)) return false; if(!line.empty() && line.back()=='\r') line.pop_back(); return true;};
+    if(!next_line() || line!="row,target,address,value") throw std::runtime_error("Invalid raster CSV header");
+    std::vector<render::RasterWrite> writes;
+    while(next_line()) {
+        std::array<std::string,4> fields;
+        std::istringstream columns(line);
+        for(auto& field:fields) if(!std::getline(columns,field,',')) throw std::runtime_error("Incomplete raster CSV row");
+        if(columns.peek()!=std::char_traits<char>::eof() || line.back()==',') throw std::runtime_error("Extra raster CSV field");
+        const auto number=[](const std::string& field) {
+            unsigned value=0;
+            const auto parsed=std::from_chars(field.data(),field.data()+field.size(),value);
+            if(parsed.ec!=std::errc{} || parsed.ptr!=field.data()+field.size() || value>65535)
+                throw std::runtime_error("Raster CSV numbers must be decimal uint16 values");
+            return static_cast<std::uint16_t>(value);
+        };
+        using Target=render::RasterTarget;
+        Target target;
+        if(fields[1]=="vram") target=Target::vram;
+        else if(fields[1]=="palette") target=Target::palette;
+        else if(fields[1]=="sat") target=Target::sat;
+        else if(fields[1]=="control") target=Target::control;
+        else if(fields[1]=="scroll_x") target=Target::scroll_x;
+        else if(fields[1]=="scroll_y") target=Target::scroll_y;
+        else if(fields[1]=="memory_width") target=Target::memory_width;
+        else if(fields[1]=="burst_mode") target=Target::burst_mode;
+        else throw std::runtime_error("Unknown raster CSV target");
+        writes.push_back({number(fields[0]),target,number(fields[2]),number(fields[3])});
+        if(writes.size()>65536) throw std::runtime_error("Too many raster CSV writes");
+    }
+    const auto result=render::compose_raster(snapshot.vram,snapshot.palette,snapshot.sat,
+        {256,240,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control},writes);
+    const auto reference=core::read_file(video/"reference.bmp",54+256*240*4);
+    const auto u32=[&](std::size_t p) {std::uint32_t value=0; for(unsigned s=0;s<32;s+=8) value|=std::to_integer<std::uint32_t>(reference[p++])<<s; return value;};
+    if(reference.size()!=54+256*240*4 || reference[0]!=std::byte{'B'} || reference[1]!=std::byte{'M'} ||
+        u32(10)!=54 || u32(14)!=40 || u32(18)!=256 || u32(22)!=0U-240U || u32(26)!=0x200001 || u32(30)!=0)
+        throw std::runtime_error("Raster comparison requires an exported top-down 256x240 ARGB BMP");
+    std::filesystem::create_directories(output);
+    core::write_file_atomic(output/"writes.csv",bytes);
+    bitmap(output/"raster.bmp",result);
+    render::Image difference{256,240,std::vector<std::uint32_t>(256*240,0xff000000)};
+    std::ofstream counts; counts.exceptions(std::ios::failbit|std::ios::badbit); counts.open(output/"raster-difference.csv");
+    counts<<"frame,y,compared_pixels,different_pixels\n";
+    std::size_t total=0;
+    for(unsigned y=0;y<240;++y) {
+        unsigned count=0;
+        for(unsigned x=0;x<256;++x) {
+            const auto p=y*256+x;
+            if(result.pixels[p]!=u32(54+p*4)) {++count; difference.pixels[p]=0xffff00ff;}
+        }
+        total+=count; counts<<snapshot.frame<<','<<y<<",256,"<<count<<'\n';
+    }
+    counts.close(); bitmap(output/"raster-difference.bmp",difference);
+    std::ofstream manifest; manifest.exceptions(std::ios::failbit|std::ios::badbit); manifest.open(output/"manifest.txt");
+    manifest<<"schema=raster-comparison-v1\nrom_sha256="<<decoded.container.rom_sha256<<"\nframe="<<snapshot.frame
+        <<"\ninitial_state=provided post-frame reference.state; row-zero writes explicitly override it\n"
+        <<"timing=caller-supplied effective output rows; not inferred from bus writes or pixel matching\n"
+        <<"writes_sha256="<<rom::compute_digests(bytes).sha256
+        <<"\nstate_sha256="<<rom::compute_digests(core::read_file(video/"reference.state")).sha256
+        <<"\nreference_bmp_sha256="<<rom::compute_digests(reference).sha256
+        <<"\nwrites="<<writes.size()<<"\ncompared_pixels=61440\ndifferent_pixels="<<total<<'\n';
+    manifest.close();
+    std::cout<<"Supplied raster schedule: "<<total<<" / 61440 pixels differ at frame "<<snapshot.frame
+        <<". This validates composition, not the schedule's hardware timing.\n";
 }
 void verify_palette_pulse_trace(const std::filesystem::path& trace) {
     const auto bytes=core::read_file(trace);

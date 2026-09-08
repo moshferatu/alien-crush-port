@@ -11,6 +11,10 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifdef AC_REFERENCE_VIDEO_OBSERVER
+extern "C" void ac_set_display_observer(void (*)(unsigned,unsigned,unsigned));
+extern "C" void ac_set_palette_observer(void (*)(int,int,unsigned,unsigned,unsigned,unsigned),void (*)(int,int));
+#endif
 
 namespace alien_crush {
 namespace {
@@ -27,11 +31,39 @@ class Reference final : public ReferenceRuntime {
     int width{}, height{};
     std::vector<std::uint32_t> pixels;
     std::vector<std::int16_t> audio;
+    std::array<diagnostics::DisplayRow,1024> observed_rows{};
+    std::size_t observed_count{};
+    std::vector<diagnostics::PaletteWrite> observed_palette=std::vector<diagnostics::PaletteWrite>(65536);
+    std::size_t palette_count{};
+    bool observation_failed{};
+    static void observe_row(unsigned row,unsigned control,unsigned burst) noexcept {
+        auto* self=active.load();
+        if(!self) return;
+        if(self->observed_count==self->observed_rows.size() || row>65535 || control>65535) {self->observation_failed=true;return;}
+        self->observed_rows[self->observed_count++]={static_cast<std::uint16_t>(row),static_cast<std::uint16_t>(control),burst!=0};
+    }
+    static void observe_palette(int row,int x,unsigned address,unsigned before,unsigned after,unsigned done) noexcept {
+        auto* self=active.load();
+        if(!self) return;
+        if(self->palette_count==self->observed_palette.size() || address>511 || before>511 || after>511) {self->observation_failed=true;return;}
+        self->observed_palette[self->palette_count++]={row,x,static_cast<std::uint16_t>(address),
+            static_cast<std::uint16_t>(before),static_cast<std::uint16_t>(after),done!=0};
+    }
+    static void palette_geometry(int x,int y) noexcept {
+        auto* self=active.load();
+        if(!self) return;
+        for(std::size_t i=0;i<self->palette_count;++i) {self->observed_palette[i].x-=x;self->observed_palette[i].row-=y;}
+    }
     void check_thread() const {
         if(std::this_thread::get_id()!=owner) throw std::logic_error("Reference runtime must stay on its owning thread");
     }
     void check_loaded() const { check_thread(); if(!loaded) throw std::logic_error("No ROM loaded"); }
     void close() noexcept {
+#ifdef AC_REFERENCE_VIDEO_OBSERVER
+        ac_set_display_observer(nullptr);
+        ac_set_palette_observer(nullptr,nullptr);
+#endif
+        observed_count=0; palette_count=0; observation_failed=false;
         if(loaded) retro_unload_game();
         if(initialized) retro_deinit();
         loaded=initialized=false;
@@ -138,9 +170,10 @@ public:
         retro_get_system_av_info(&av);
         if(av.timing.fps<=0 || av.timing.sample_rate<=0) throw std::runtime_error("Invalid reference timing");
     }
-    void reset() override { check_loaded(); retro_reset(); input={}; frame_number=0; pixels.clear(); audio.clear(); width=height=0; failed=false; }
+    void reset() override { check_loaded(); retro_reset(); input={}; frame_number=0; pixels.clear(); audio.clear(); width=height=0; failed=false; observed_count=0; palette_count=0; observation_failed=false; }
     Frame advance(PadInput buttons) override {
-        check_loaded(); input=buttons; audio.clear(); failed=false; retro_run(); ++frame_number;
+        check_loaded(); input=buttons; audio.clear(); failed=false;
+        observed_count=0; palette_count=0; observation_failed=false; retro_run(); ++frame_number;
         if(failed) throw std::runtime_error("Invalid video/audio received from reference core");
         return {frame_number,width,height,pixels,audio};
     }
@@ -159,6 +192,25 @@ public:
         const auto* memory=static_cast<const std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
         if(!memory || size<8192) throw std::runtime_error("Reference work RAM unavailable");
         return {memory,8192};
+    }
+    void observe_display(bool enabled) override {
+        check_loaded(); observed_count=0; palette_count=0; observation_failed=false;
+#ifdef AC_REFERENCE_VIDEO_OBSERVER
+        ac_set_display_observer(enabled?&observe_row:nullptr);
+        ac_set_palette_observer(enabled?&observe_palette:nullptr,enabled?&palette_geometry:nullptr);
+#else
+        if(enabled) throw std::runtime_error("Reference video observer is disabled in this build");
+#endif
+    }
+    std::span<const diagnostics::DisplayRow> display_rows() const override {
+        check_loaded();
+        if(observation_failed) throw std::runtime_error("Reference display observation overflow");
+        return {observed_rows.data(),observed_count};
+    }
+    std::span<const diagnostics::PaletteWrite> palette_writes() const override {
+        check_loaded();
+        if(observation_failed) throw std::runtime_error("Reference video observation overflow");
+        return {observed_palette.data(),palette_count};
     }
     state::SaveStateContainer save() const override {
         check_loaded();
@@ -182,6 +234,7 @@ public:
             throw std::runtime_error("Reference rejected quick state; previous state restored");
         }
         frame_number=saved.frame_number; input={}; pixels.clear(); audio.clear(); width=height=0; failed=false;
+        observed_count=0; palette_count=0; observation_failed=false;
     }
 };
 }

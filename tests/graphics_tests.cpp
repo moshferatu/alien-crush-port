@@ -4,6 +4,7 @@
 #include "alien_crush/assets/table_assets.hpp"
 #include "alien_crush/assets/actor_assets.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
+#include "alien_crush/diagnostics/display_trace.hpp"
 #include <array>
 #include <cstring>
 #include <iostream>
@@ -132,6 +133,114 @@ int main() {
             attributes[56]=63; // Only fourteen pieces intersect row fifteen now.
             require(render::compose(memory,colors,attributes,view).pixels[15*32+16]==render::pce_color(7),
                 "Wide sprite consumes both remaining fetches at exact capacity");
+        }
+        {
+            using Target=render::RasterTarget;
+            using Write=render::RasterWrite;
+            std::array<std::uint16_t,32768> memory{};
+            std::array<std::uint16_t,512> colors{};
+            std::array<std::uint16_t,256> attributes{};
+            render::Viewport view{2,4,0,0,0,0};
+            colors[0]=7; colors[256]=7<<3;
+            const auto original_colors=colors;
+            const std::array writes{Write{0,Target::palette,0,7<<6},Write{2,Target::palette,0,7<<3},
+                Write{2,Target::palette,0,7},Write{3,Target::control,0,0x40}};
+            auto result=render::compose_raster(memory,colors,attributes,view,writes);
+            require(result.pixels==std::vector<std::uint32_t>{0xff00ff00,0xff00ff00,0xff00ff00,0xff00ff00,
+                0xff0000ff,0xff0000ff,0xffff0000,0xffff0000},"Raster row-zero, same-row ordering, final row and backdrop control");
+            require(colors==original_colors && view.control==0,"Raster writes preserve caller palette and registers");
+            require(render::compose_raster(memory,colors,attributes,view,{}).pixels==render::compose(memory,colors,attributes,view).pixels,
+                "No raster writes preserve frozen composition");
+            colors[257]=7<<3; colors[1]=7<<6;
+            memory[0]=128;
+            for(unsigned y=0;y<8;++y) memory[128*16+y]=0xff;
+            for(unsigned y=0;y<16;++y) memory[64*64+y]=0x8000;
+            attributes[0]=64; attributes[1]=32; attributes[2]=128; attributes[3]=0x80;
+            view={4,4};
+            const auto original_memory=memory; const auto original_attributes=attributes;
+            const std::array moving{Write{1,Target::sat,1,33},Write{2,Target::vram,64*64+2,0x4000}};
+            result=render::compose_raster(memory,colors,attributes,view,moving);
+            require(result.pixels[0]==0xffff0000 && result.pixels[4]==0xff00ff00 && result.pixels[5]==0xffff0000 &&
+                result.pixels[9]==0xff00ff00 && result.pixels[10]==0xffff0000 && result.pixels[13]==0xffff0000,
+                "Raster SAT and pattern writes retain absolute sprite rows and prior pixels");
+            require(memory==original_memory && attributes==original_attributes,"Raster writes preserve caller VRAM and SAT");
+            memory.fill(0); attributes.fill(0); memory[0]=128;
+            for(unsigned y=0;y<8;++y) {
+                const auto pixel=y+1;
+                memory[128*16+y]=static_cast<std::uint16_t>(((pixel&1)?0x80:0)|((pixel&2)?0x8000:0));
+                memory[128*16+y+8]=static_cast<std::uint16_t>(((pixel&4)?0x80:0)|((pixel&8)?0x8000:0));
+                colors[pixel]=static_cast<std::uint16_t>(pixel);
+            }
+            view={1,4,0,0,0,0x80};
+            const std::array scrolling{Write{2,Target::scroll_y,0,1}};
+            result=render::compose_raster(memory,colors,attributes,view,scrolling);
+            require(result.pixels==std::vector<std::uint32_t>{render::pce_color(1),render::pce_color(2),render::pce_color(4),render::pce_color(5)},
+                "Raster scroll origin remains relative to full frame, not band start");
+            memory.fill(0); memory[32]=128; memory[64]=129; memory[65]=130;
+            for(unsigned y=0;y<8;++y) {memory[128*16+y]=0x80;memory[129*16+y]=0x8000;memory[130*16+y+8]=0x80;}
+            view={1,10,0,0,0,0x80};
+            const std::array mapping{Write{8,Target::memory_width,0,0x10},Write{9,Target::scroll_x,0,8}};
+            result=render::compose_raster(memory,colors,attributes,view,mapping);
+            require(result.pixels[8]==render::pce_color(2) && result.pixels[9]==render::pce_color(4),"Raster map width and horizontal scroll update at row boundary");
+            const auto invalid_write=[&](Write write) {const std::array list{write};
+                rejects([&]{(void)render::compose_raster(memory,colors,attributes,view,list);},"Invalid raster write rejected");};
+            invalid_write({10,Target::control,0,0}); invalid_write({0,Target::vram,32768,0});
+            invalid_write({0,Target::palette,512,0}); invalid_write({0,Target::palette,0,512});
+            invalid_write({0,Target::sat,256,0}); invalid_write({0,Target::control,1,0});
+            invalid_write({0,static_cast<Target>(99),0,0});
+            const std::array unsorted{Write{2,Target::control,0,0},Write{1,Target::control,0,0}};
+            rejects([&]{(void)render::compose_raster(memory,colors,attributes,view,unsorted);},"Backwards raster writes rejected");
+            const std::vector<Write> excessive(65537);
+            rejects([&]{(void)render::compose_raster(memory,colors,attributes,view,excessive);},"Raster event count bounded");
+        }
+        {
+            const std::array rows{diagnostics::DisplayRow{0,0xc8,true},diagnostics::DisplayRow{1,0xc8,true},
+                diagnostics::DisplayRow{2,0xc8,false},diagnostics::DisplayRow{3,0x88,false}};
+            const auto schedule=diagnostics::display_control_schedule(rows,4);
+            require(schedule.size()==4 && schedule[0].row==0 && schedule[0].value==0xc8 &&
+                schedule[1].target==render::RasterTarget::burst_mode && schedule[1].value==1 &&
+                schedule[2].row==2 && schedule[2].value==0 && schedule[3].row==3 && schedule[3].value==0x88,
+                "Observed burst state remains explicit and consecutive equal controls coalesce");
+            rejects([&]{(void)diagnostics::display_control_schedule(rows,5);},"Partial display row coverage rejected");
+            auto invalid_rows=rows; invalid_rows[2].row=1;
+            rejects([&]{(void)diagnostics::display_control_schedule(invalid_rows,4);},"Duplicate or unordered display rows rejected");
+            rejects([&]{(void)diagnostics::display_control_schedule({},0);},"Empty display trace rejected");
+        }
+        {
+            std::array<std::uint16_t,32768> memory{};
+            std::array<std::uint16_t,512> colors{};
+            std::array<std::uint16_t,256> attributes{};
+            colors[0]=colors[1]=colors[257]=7; colors[256]=7<<3;
+            memory[0]=memory[1]=memory[2]=128; memory[128*16]=0xff; memory[64*64]=0xffff;
+            attributes[0]=64; attributes[1]=32; attributes[2]=128; attributes[3]=0x80;
+            render::Viewport view{20,1};
+            const std::array writes{render::PalettePixelWrite{2,257,7<<6}};
+            auto result=render::compose_palette_raster(memory,colors,attributes,view,{},writes);
+            require(result.pixels[0]==0xff0000ff && result.pixels[1]==0xff0000ff && result.pixels[2]==0xff00ff00 &&
+                result.pixels[15]==0xff00ff00 && result.pixels[16]==0xff0000ff,
+                "Pixel palette timing preserves palette identity when background and sprite RGB initially match");
+            require(colors[257]==7,"Pixel palette timing preserves input colors");
+            view.burst_mode=true;
+            const std::array border{render::PalettePixelWrite{2,256,7<<6},render::PalettePixelWrite{2,256,7}};
+            result=render::compose_palette_raster(memory,colors,attributes,view,{},border);
+            require(result.pixels[0]==0xffff0000 && result.pixels[2]==0xff0000ff,"Burst mode uses palette 256 and ordered same-pixel updates");
+            require(render::compose(memory,colors,attributes,view).pixels[0]==0xffff0000,"Frozen burst mode suppresses enabled sprites and background");
+            const std::array mixed{render::RasterWrite{0,render::RasterTarget::palette,0,0}};
+            rejects([&]{(void)render::compose_palette_raster(memory,colors,attributes,view,mixed,writes);},"Ambiguous palette timelines rejected");
+            const std::array past_end{render::PalettePixelWrite{20,0,0}};
+            rejects([&]{(void)render::compose_palette_raster(memory,colors,attributes,view,{},past_end);},"Pixel timing bounds enforced");
+            const std::array backwards{render::PalettePixelWrite{2,0,0},render::PalettePixelWrite{1,0,0}};
+            rejects([&]{(void)render::compose_palette_raster(memory,colors,attributes,view,{},backwards);},"Pixel timing order enforced");
+            std::array<std::uint16_t,512> initial{},final_colors{}; final_colors[0]=4;
+            const std::array trace{diagnostics::PaletteWrite{240,0,0,0,1,false},diagnostics::PaletteWrite{0,2,0,1,2,false},
+                diagnostics::PaletteWrite{0,5,0,2,3,false},diagnostics::PaletteWrite{240,0,0,3,4,true}};
+            const auto pixels=diagnostics::palette_pixel_schedule(initial,final_colors,trace,4,2);
+            require(pixels.size()==3 && pixels[0].pixel==0 && pixels[1].pixel==2 && pixels[2].pixel==4,
+                "Palette schedule distinguishes preceding blank, visible pixels, right border and completed frame");
+            auto broken=trace; broken[1].before=0;
+            rejects([&]{(void)diagnostics::palette_pixel_schedule(initial,final_colors,broken,4,2);},"Incomplete palette write chain rejected");
+            final_colors[1]=1;
+            rejects([&]{(void)diagnostics::palette_pixel_schedule(initial,final_colors,trace,4,2);},"Full final palette verification rejects unobserved changes");
         }
         snapshot.memory_width=0x70;
         require(snapshot.bat_width()==128 && snapshot.bat_height()==64,"MWR map dimensions");

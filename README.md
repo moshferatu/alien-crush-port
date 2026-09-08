@@ -66,9 +66,40 @@ scanline timing and live renderer integration remain open.
 Exports also include the reference image, exact difference masks and per-row counts.
 `--compare-video --capture <directory> --compact` writes `composite-epochs.csv` for
 every frame, comparing current and previous-frame latched sprite tables separately.
+Additional fixed candidates use previous VRAM, palette, registers, or all video
+state, always with the previous sprite table. Exports retain these inputs and
+each candidate's image, mask, and row report to investigate update timing.
 Composition enforces the hardware's sixteen 16-pixel sprite pieces per row.
 The previous-frame table matches 1,793/1,799 comparable canonical frames; remaining
 differences are diagnostic, and this option does not enforce an equality gate.
+
+The native renderer also accepts changes at explicit output-row boundaries. Replay
+a supplied schedule against an exported video snapshot without running the emulator:
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --render-raster out/captures/example/video-758 --raster-writes out/schedule.csv --capture out/captures/raster-example
+```
+
+The CSV header is `row,target,address,value`, with decimal integers and targets
+`vram`, `palette`, `sat`, `control`, `scroll_x`, `scroll_y`, `memory_width`, or `burst_mode`.
+Rows must be sorted; changes apply before that row in file order. Register addresses
+are zero. Initial state comes from `reference.state`; row-zero writes can explicitly
+replace initial values. The command requires `reference.bmp` and a new output
+directory, and saves the schedule, rendered image, difference mask, row counts and
+input hashes. Exact pixels validate the supplied schedule's composition; hardware
+timing and live scheduling remain separate work.
+
+`--compare-display --capture <directory> --compact` also records reference display
+control at the existing row-draw boundary, plus palette writes at the next output
+pixel, and feeds them to the native raster renderer.
+It writes `display-rows.csv`, `display-comparison.csv`, and a provenance manifest;
+video exports include replayable `display-writes.csv`. This candidate matches
+1,795/1,798 frames with complete observations using display control alone;
+including palette timing raises this to 1,796/1,798. The first two startup frames
+have incomplete coverage and are excluded. Video exports also contain
+`palette-timed.bmp`, its mask and row counts, initial palette and pixel-write schedule.
+The schedule still depends on reference timing. The observer is inactive by default
+at runtime and can be compiled out with `-DAC_REFERENCE_VIDEO_OBSERVER=OFF`.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/Verify-Baseline.ps1 -RomPath '.\Alien Crush.pce'
@@ -152,7 +183,12 @@ streams; use a fresh output directory per capture. Mesen comparison requires raw
 
 See [state and asset evidence](docs/STATE_AND_ASSETS.md) for recovered addresses and
 validation. `Invoke-MesenCapture.ps1` accepts `-TraceVideoLastFrames 1..10` for short
-read-only VDC write traces. `Find-VideoRomMatches.ps1 -RomPath <ROM> -VideoDirectory
+read-only VDC/VCE bus traces with master clocks, raster positions and pre-write
+address/data state. It saves video snapshots around the trace window.
+`Inspect-VideoTiming.ps1 -TraceDirectory <Mesen capture>` validates the trace and
+writes `video-events.csv` with decoded VRAM requests, palette writes and display
+control changes. Bus request times are not necessarily VRAM commit times.
+`Find-VideoRomMatches.ps1 -RomPath <ROM> -VideoDirectory
 <video-N directory>` locates candidate source data.
 
 Enable local ROM tests with `-DAC_ENABLE_ROM_TESTS=ON -DAC_ROM_PATH='<absolute ROM path>'`

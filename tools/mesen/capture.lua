@@ -8,6 +8,7 @@ local cpu = assert(io.open(directory .. '/cpu.csv', 'w'))
 local frame_count = 0
 local trace_frames=tonumber(os.getenv('AC_MESEN_TRACE_VIDEO')) or 0
 local video_trace=nil
+local video_writes=0
 local actor_frames=tonumber(os.getenv('AC_MESEN_TRACE_ACTORS')) or 0
 local actor_trace,actor_phases=nil,nil
 local overlay_trace,overlay_pending=nil,nil
@@ -172,19 +173,28 @@ if actor_frames>0 then
 end
 if trace_frames>0 then
   video_trace=assert(io.open(directory..'/video-writes.csv','w'))
-  video_trace:write('frame,pc,mpr,port,register,value,a,x,y\n')
+  video_trace:write('frame,pc,mpr,port,register,value,a,x,y,device,clock,scanline,hclock,rcr,mawr,vram_data,palette_address,palette_color\n')
   local selected=0
-  emu.addMemoryCallback(function(address,value)
-    if address==0 then selected=value end
+  local function video_write(address,value)
+    local device=address<4 and 'VDC' or 'VCE'
+    if address==0 then selected=value&31 end
     if frame_count>=frames-trace_frames then
       local state=emu.getState()
       local pc=state['cpu.pc']
-      video_trace:write(string.format('%d,%04X,%02X,%04X,%02X,%02X,%02X,%02X,%02X\n',
-        frame_count+1,pc,state['memoryManager.mpr['..(pc>>13)..']'],address,selected,value,
-        state['cpu.a'],state['cpu.x'],state['cpu.y']))
+      local palette_address=state['vce.palAddr']
+      local palette_color=emu.read(palette_address*2,emu.memType.pcePaletteRam) |
+        (emu.read(palette_address*2+1,emu.memType.pcePaletteRam)<<8)
+      video_trace:write(string.format('%d,%04X,%02X,%04X,%02X,%02X,%02X,%02X,%02X,%s,%d,%d,%d,%d,%04X,%04X,%03X,%03X\n',
+        frame_count+1,pc,state['memoryManager.mpr['..(pc>>13)..']'],address,device=='VDC' and selected or (address&7),value,
+        state['cpu.a'],state['cpu.x'],state['cpu.y'],device,state.masterClock,
+        state['vdc.scanline'],state['vdc.hclock'],state['vdc.rcrCounter'],
+        state['vdc.memAddrWrite'],state['vdc.vramData'],palette_address,palette_color))
+      video_writes=video_writes+1
     end
     -- No return value: preserve the original bus write.
-  end,emu.callbackType.write,0,3,emu.cpuType.pce,emu.memType.pceMemory)
+  end
+  emu.addMemoryCallback(video_write,emu.callbackType.write,0,3,emu.cpuType.pce,emu.memType.pceMemory)
+  emu.addMemoryCallback(video_write,emu.callbackType.write,0x400,0x405,emu.cpuType.pce,emu.memType.pceMemory)
 end
 cpu:write('frame,pc,sp,clock,mpr0,mpr1,mpr2,mpr3,mpr4,mpr5,mpr6,mpr7\n')
 local function dump_memory(name, kind)
@@ -219,7 +229,7 @@ local function end_frame()
   local fields={frame_count,state['cpu.pc'],state['cpu.sp'],state.masterClock}
   for i=0,7 do fields[#fields+1]=state['memoryManager.mpr['..i..']'] end
   cpu:write(table.concat(fields,','),'\n')
-  if frame_count%120==0 then
+  if frame_count%120==0 or frame_count==frames or (trace_frames>0 and frame_count>=frames-trace_frames) then
     dump_memory('vram',emu.memType.pceVideoRam)
     dump_memory('sat',emu.memType.pceSpriteRam)
     dump_memory('palette',emu.memType.pcePaletteRam)
@@ -230,7 +240,19 @@ local function end_frame()
   end
   if frame_count==frames then
     ram:close(); pixels:close(); cpu:close()
-    if video_trace then video_trace:close() end
+    if video_trace then
+      video_trace:close()
+      local manifest=assert(io.open(directory..'/video-trace-manifest.txt','w'))
+      manifest:write('schema=video-bus-timing-v1\nbackend=Mesen-2.1.1\nroute=canonical\n',
+        'rom_sha256=1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f\n',
+        'first_frame=',math.max(1,frames-trace_frames+1),'\nlast_frame=',frames,'\nwrites=',video_writes,'\n',
+        'phase=before bus write; scanline/hclock/rcr are raw Mesen coordinates\n',
+        'ports=CPU 0000..0003 and 0400..0405; includes ST0/ST1/ST2 callbacks\n',
+        'mawr=pre-write VRAM word address; vram_data=pre-write latch\n',
+        'palette_address=pre-write color index; palette_color=pre-write nine-bit color\n',
+        'limits=bus requests, not delayed VRAM commits; DMA and mirrored ports not traced\n')
+      manifest:close()
+    end
     if actor_trace then
       actor_trace:close(); actor_phases:close(); overlay_trace:close(); background_trace:close()
       pattern_trace:close()

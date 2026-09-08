@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include "alien_crush/core/save_state.hpp"
+#include "alien_crush/diagnostics/display_trace.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -46,6 +47,9 @@ class ReferenceDiagnostics {
 public:
     virtual ~ReferenceDiagnostics() = default;
     virtual std::span<const std::byte> work_ram() const = 0;
+    virtual void observe_display(bool enabled) = 0;
+    virtual std::span<const diagnostics::DisplayRow> display_rows() const = 0;
+    virtual std::span<const diagnostics::PaletteWrite> palette_writes() const = 0;
 };
 class ReferenceRuntime : public GameRuntime, public ReferenceDiagnostics {};
 std::unique_ptr<ReferenceRuntime> make_reference_runtime();

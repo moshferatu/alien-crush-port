@@ -550,13 +550,204 @@ Composition timing comparison:
   census hash above. Initial three-frame capture checks the missing first epoch
   and consecutive exports. Full native gameplay/presentation integration remains open.
 
+Video component timing investigation:
+
+- All-frame reports now retain six fixed candidates. The original current/previous
+  SAT columns are preserved; four appended columns use previous SAT plus previous
+  VRAM, palette, registers, or the complete previous video snapshot. Each isolated
+  candidate keeps the other components current. No best-match selection occurs.
+  Initial-frame previous fields remain empty. Consecutive snapshot frames are
+  required. Video exports include previous VRAM/palette/SAT bytes and register
+  values, plus each candidate's image, mask and row counts.
+- `out/captures/composite-components-1800` retains the exact frozen census and
+  original candidate results. Among 1,799 comparable frames, previous-SAT-only
+  matches 1,793; previous VRAM 1,749; previous palette 909; previous registers
+  1,759; complete previous video 870. Globally delaying more state is insufficient.
+- Frames 622, 1573 and 1594 match exactly with previous registers. Targeted exports
+  show only control changes, from 8 (layers disabled) to 200 (layers enabled);
+  memory width and scroll remain zero. Their output still shows disabled layers.
+  These samples establish an enable-timing difference; they do not establish a
+  general register scheduling rule.
+- Frame 19 matches the previous palette on rows 0..182 and the current palette
+  on rows 183..239. Both have disabled layers; neither frozen palette reproduces
+  the whole frame. Targeted evidence is in `composite-components-19`.
+- Frame 758 mixes background map epochs. With current VRAM, 72 pixels differ on
+  rows 32..42 at x 130..138. With previous VRAM, 68 pixels differ on rows 43..47
+  and 115..126. The mismatch sets are disjoint: every reference pixel matches
+  at least one candidate, but neither complete candidate is exact. Palette or
+  register substitution alone has no effect on this mismatch. The four BAT words
+  0090/0091/00B0/00B1 changed palette selection from 9 to 8. This supports a
+  during-display BAT update; exact write times still need instruction/scanline traces.
+- Frame 608's remaining 402 differing pixels occupy only rows 0..1, while control
+  changes from 200 to 8. Older registers alone produce 49,150 mismatches. The exact
+  disable/VRAM timing remains unresolved (`composite-components-608`).
+- Independently checked all six frame-758 BMP masks and every CSV row against
+  source/reference BMP bytes. A three-frame capture checks absent initial epochs
+  and consecutive exports. Release tests pass 5/5. No renderer timing behavior or
+  reference execution was changed; live integration remains open.
+
+Native composition with supplied raster writes:
+
+- `render::compose_raster` accepts up to 65,536 ordered writes with explicit
+  effective output rows. VRAM, palette, SAT, control, scroll and memory width are
+  supported. Writes on one row retain input order; row zero changes initial state.
+  Bounds and ordering are checked before rendering, and caller memory/registers
+  remain immutable. Rows already drawn are retained. Absolute sprite coordinates,
+  full-frame scroll origin, priority and the sixteen-piece row limit are preserved.
+- Composition renders bands between writes; background lookup samples only the
+  required output pixels instead of decoding a complete BAT image per band.
+  Bus-to-render latency, register latches, burst mode, and changes within a row
+  must be handled by a future scheduler. This API does not infer effective rows.
+- `--render-raster <video directory> --raster-writes <CSV> --capture <new directory>`
+  loads an exported state and reference BMP without executing the reference core.
+  The strict CSV schema is `row,target,address,value` using decimal uint16 fields
+  and the target names from the public API. Header-only input renders the initial
+  snapshot. Results include `raster.bmp`, exact difference mask, per-row counts,
+  the supplied writes, and input hashes. Pixel mismatch is diagnostic, not an error.
+- `out/captures/raster-palette-19`: row-zero palette entry 0 uses the previous
+  value; at row 183 it takes the current value. All 61,440 pixels match.
+  `out/captures/raster-bat-758`: row zero explicitly supplies previous SAT and
+  previous BAT words 0090/0091/00B0/00B1; row 43 supplies their current values.
+  All 61,440 pixels match. Both BMPs are byte-identical to exported references.
+  These are reconstruction experiments using boundaries identified from pixels,
+  not independently scheduled emulation-equivalence tests. They do not raise
+  the automatic 1,793/1,799 fixed-candidate match count.
+- Empty schedule frame 758 is byte-identical to the current frozen composite
+  (237 mismatching pixels). Bad field counts, negative values, unknown targets,
+  out-of-range rows and backwards order are rejected before output creation.
+  ROM-free tests additionally cover same-row ordering, last-row writes, state
+  immutability, SAT/pattern changes, scroll origin, map width and event bounds.
+- `out/captures/raster-regression-1800` retains all six fixed candidate counts for
+  every frame and the exact frozen RAM/video/audio census. Release passes 5/5;
+  Debug passes 2/2. Live renderer integration remains open.
+
+Observed display control scheduling:
+
+- `cmake/ReferenceVideo.cmake` generates a copy of pinned `vdc.cpp` with an optional
+  callback at its existing HPHASE_HDW draw boundary during VDW. It reports RCRCount,
+  CR_cache and burst_mode only. The original dependency source is not rewritten;
+  no game RAM/ROM, register, cycle count or renderer decision is changed. The
+  callback is disabled at runtime unless explicitly requested and can be removed
+  entirely by configuring `AC_REFERENCE_VIDEO_OBSERVER=OFF`.
+- Runtime observations use a bounded buffer and do not allocate or throw inside
+  the callback. Overflow is reported by the diagnostic accessor. Load, reset,
+  restore and frame advance clear stale observations; close detaches the callback.
+  Observer state is not serialized and does not change quick-state compatibility.
+- `--compare-display` adds a seventh, reference-assisted candidate. Current VRAM,
+  palette, scroll and MWR combine with previous SAT and observed per-row control.
+  `display_control_schedule` emits explicit control and burst-mode values,
+  including initial values, and coalesces unchanged consecutive values. Burst mode
+  suppresses both layers and selects border palette entry 256. It requires
+  exactly one ordered observation for each output row. Missing/duplicate/extra rows
+  are unavailable, not filled from post-frame state. This translates latched
+  observations; it does not independently implement hardware latch timing.
+- `out/captures/display-observer-1800`: 1,795/1,798 complete comparable frames match.
+  Frames 1/2 have 372/242 observations and are excluded; frames 3..1800 have 240.
+  On that same comparable subset, the previous-SAT-only candidate matches 1,792.
+  Observed control resolves frames 622/1573/1594 without manual row choices.
+  Remaining differences: frame 19 (46,848 pixels), 608 (470), 758 (72). Frame 608
+  already differed by 402 pixels in the fixed candidate; using correctly observed
+  control alone exposes additional differences from frozen VRAM/other video state.
+- Frame 608 observes control C8 on rows 0/1 and 08 from row 2, with burst mode off.
+  Frame 622 observes control 08 on rows 0/1 then C8, but burst mode stays on, so
+  effective rendering remains disabled. Exported `display-writes.csv` reproduces
+  frame 622 exactly via offline `--render-raster` (`display-replay-622`).
+- `display-rows.csv` retains every raw observation; `display-comparison.csv` records
+  coverage and differences; `display-manifest.txt` records the hook, candidate and
+  limitations. The initial three-frame capture verifies explicit missing coverage.
+  With `--verify-replay`, `display-restore-1800` verifies all 900 post-checkpoint
+  row observations as well as RAM/video/audio. Repeat and initial-state replay pass.
+- Observer-enabled and compiled-out captures retain the exact frozen census
+  (`display-observer-off-1800` for the latter). Compiled-out builds explicitly reject
+  observation requests. The final workspace build has observation support enabled.
+  Release passes 5/5 and Debug 2/2, including complete-coverage and burst-mode tests.
+  Palette/VRAM timing and independent native scheduling remain open.
+
+Pixel-timed palette continuation:
+
+- Added a VCE observer after `Sync`, before each palette byte write, recording the
+  complete old/new nine-bit color and next framebuffer cursor. The final display
+  rectangle normalizes both coordinates; no pixel-alignment search or hand-picked
+  row is used. `ReferenceVideo.cmake` composes this observer with the serialization
+  extension in generated copies, preserving the optional observer-off build.
+- Corrected an earlier inference about the startup split: while burst mode is
+  active, the VDC emits border index 256 (its no-line-buffer path), not palette zero.
+  Entry 0 changes before row 175. Entry 256 changes beyond the right edge of row
+  182, so the visible transition starts at row 183. The earlier manual palette-zero
+  experiment reproduced pixels under a simplified model; it did not identify the
+  hardware palette entry. Native burst mode is now explicit in `Viewport` and
+  raster writes, separate from both layer-enable bits being cleared.
+- `compose_palette_raster` retains palette indices through background/sprite
+  composition, then applies ordered palette updates before individual output pixels.
+  Equal RGB values from different palette entries remain distinct, and within-row
+  changes do not recolor earlier pixels. Inputs remain immutable; invalid positions,
+  backwards order and ambiguous row/pixel palette timelines are rejected.
+- `palette_pixel_schedule` verifies every old/new write against the previous full
+  palette and requires the complete final palette to match. Pre-display writes
+  affect pixel zero; writes beyond the right edge affect the next row; writes after
+  frame completion only participate in final-state verification. No-op writes stay
+  in raw evidence but need no pixel event. All observed writes fit these rules in
+  the canonical run; missing chains or nonchronological output positions fail.
+- `palette-timed-1800`: display control plus palette timing matches 1,796/1,798
+  complete frames. Frame 19 now matches automatically. Only 608 (470 pixels) and
+  758 (72 pixels) remain; VRAM timing is still frozen. All six original fixed
+  candidate counts remain unchanged. Display-only remains 1,795/1,798.
+- Exports retain `palette-writes.csv` (raw ordered observations), normalized
+  `palette-pixels.csv`, `palette-initial.bin`, `palette-timed.bmp`, its exact mask
+  and row counts. Frame 19's exported BMP is byte-identical to the reference.
+  Evidence directories: `palette-timed-export-19` and `palette-timed-export-758`.
+  These observations still depend on the reference; this is not independent device
+  scheduling or live presentation integration.
+- All 900 restored display and palette observations repeat, alongside existing
+  RAM/video/audio replay gates. Enabled and compiled-out observers retain the
+  frozen census (`palette-observer-off-1800`); the final build enables observers.
+  Release passes 5/5 and Debug 2/2, including burst border selection, palette identity,
+  same-pixel ordering, within-row timing, event bounds and full-palette validation.
+
 RGB conversion follows the reference's RGB565 quantization. ROM-free tests cover
 bounded field parsing, tile planes, universal background color zero, dormant patterns,
 sprite geometry, RLE edge cases and strided scores. Capturing diagnostic video every
 120 frames preserves the exact frozen 1,800-frame RAM/video/audio census.
 
-Mesen can optionally trace VDC writes for the final 1..10 frames. Callbacks return
-no replacement values. `Find-VideoRomMatches.ps1` locates exact runs, but repeated
+Mesen can optionally trace VDC/VCE bus writes for the final 1..10 frames. Callbacks
+return no replacement values. The `video-bus-timing-v1` manifest describes ports,
+coordinates and limitations. The original CSV fields remain first; appended fields
+record device, master clock, raw scanline/hclock/RCR, pre-write VRAM address/latch
+and palette address/color. Snapshots cover the end of the preceding frame, the
+trace window and the final frame. Only CPU ports 0000..0003 and 0400..0405 are
+observed, including ST0/ST1/ST2; mirrored ports, DMA and delayed commits are not.
+
+`Inspect-VideoTiming.ps1` validates schema, ROM, record count, chronology and numeric
+bounds before decoding VRAM high-byte requests, control low bytes and palette
+byte writes into `video-events.csv`. It preserves raw coordinates and does not
+assign native update times. Evidence from `out/mesen/video-timing-*`:
+
+- Frame 758: four BAT requests from 03:9337 target 0090/0091/00B0/00B1 with values
+  80F3/80F4/8113/8114. Raw (scanline, hclock, RCR) values are (59,291,42),
+  (59,753,42), (59,1353,43), (60,450,43). This supports the raster-42/43 change
+  inferred from Beetle pixels, while leaving exact fetch/commit latency open.
+  All 235 last requested VRAM/palette values across the two-frame window match
+  final Mesen memory. The trace has 1,320 bus writes / 456 decoded data requests.
+- Frame 608 disables layers at 00:E2F6, raw (18,315,1), writing CR low byte 08.
+  Frame 622 enables layers at 00:E2E3, (18,408,1), writing C8. Pinned Beetle
+  `vdc.cpp` sets `burst_mode` on entry to VDW from CR bits C0 and caches CR each
+  scanline. Enabling after entering a disabled display therefore cannot be modeled
+  by simply using post-frame CR. These traces support the transition timing
+  explanation; native scheduling is still unimplemented.
+- Frame 19 writes palette zero from 0B0 to 000 at 1C:4090, raw (188,291,171),
+  followed by its high byte at hclock 312. Mesen's startup timing does not match
+  Beetle's observed palette split at output row 183. Do not substitute Mesen's
+  startup coordinates into the Beetle renderer.
+- The traced and untraced 758-frame captures have identical complete RAM and
+  CPU/clock logs. Their pixel differences are confined to frames 1..19, before
+  trace output begins at 757; frames 20..758 match exactly. This reproduces the
+  previously observed startup-only capture variation, not full pixel equality.
+- A three-frame capture verifies snapshots at 1/2/3 and normal trace completion.
+  Inspector rejects truncated, backwards-clock, out-of-range-value and unknown
+  schema fixtures. Existing native/reference source and test binaries are unchanged
+  by this tracing increment.
+
+`Find-VideoRomMatches.ps1` locates exact runs, but repeated
 artwork means a match alone does not prove the loader path.
 
 Next: scene/launcher validity, launch arithmetic, ball update epochs,
