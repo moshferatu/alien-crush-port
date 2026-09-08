@@ -63,6 +63,11 @@ Use `--replay session.acrec` to diagnose a recorded play session instead of the 
 Add `--video-every 120` to a capture to export native background, sprite and combined
 `composite.bmp` previews. Composition uses frozen registers and latched sprites;
 scanline timing and live renderer integration remain open.
+Exports also include the reference image, exact difference masks and per-row counts.
+`--compare-video --capture <directory> --compact` writes `composite-epochs.csv` for
+every frame, comparing current and previous-frame latched sprite tables separately.
+The previous-frame table matches 1,767/1,799 comparable canonical frames; remaining
+differences are diagnostic, and this option does not enforce an equality gate.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/Verify-Baseline.ps1 -RomPath '.\Alien Crush.pce'

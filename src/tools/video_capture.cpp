@@ -108,7 +108,10 @@ void export_table_assets(const std::filesystem::path& directory,const std::files
         <<"\npreview=digits 0..9; lower initial palette 15; dark gray background\n";
     manifest.close();
 }
-void export_video(const std::filesystem::path& directory,const state::SaveStateContainer& saved) {
+void export_video(const std::filesystem::path& directory,const state::SaveStateContainer& saved,const render::Image* reference,
+    const std::array<std::uint16_t,256>* previous_sat) {
+    if(reference && (reference->width!=256 || reference->height!=240 || reference->pixels.size()!=256*240))
+        throw std::runtime_error("Video comparison requires a complete 256x240 reference frame");
     const auto snapshot=decode_reference_snapshot(saved);
     std::filesystem::create_directories(directory);
     core::write_file_atomic(directory/"reference.state",state::encode(saved));
@@ -118,8 +121,9 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     bitmap(directory/"background.bmp",render::background(snapshot.vram,snapshot.palette,snapshot.bat_width(),snapshot.bat_height()));
     const auto sprites=render::sprites(snapshot.vram,snapshot.palette,snapshot.sat,snapshot.memory_width);
     bitmap(directory/"sprites.bmp",render::sprite_sheet(sprites));
-    bitmap(directory/"composite.bmp",render::compose(snapshot.vram,snapshot.palette,snapshot.sat,
-        {256,240,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control}));
+    const auto composite=render::compose(snapshot.vram,snapshot.palette,snapshot.sat,
+        {256,240,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control});
+    bitmap(directory/"composite.bmp",composite);
     std::ofstream table; table.exceptions(std::ios::failbit|std::ios::badbit); table.open(directory/"sprites.csv");
     table<<"slot,x,y,width,height,pattern,flags,foreground\n";
     for(std::size_t i=0;i<sprites.size();++i) {
@@ -134,6 +138,43 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     for(std::size_t i=0;i<8;++i) manifest<<"mpr"<<i<<'='<<static_cast<unsigned>(snapshot.mpr[i])<<'\n';
     manifest<<"phase=post-frame; register values are not a scanline history\n";
     manifest<<"composite=frozen registers, 256x240, raw scroll origin, latched SAT; no scanline changes or sprite limits\n";
+    if(reference) {
+        bitmap(directory/"reference.bmp",*reference);
+        const auto compare=[&](const render::Image& candidate,const std::string& name) {
+            render::Image difference{256,240,std::vector<std::uint32_t>(256*240,0xff000000)};
+            std::ofstream rows; rows.exceptions(std::ios::failbit|std::ios::badbit);
+            rows.open(directory/(name+"-difference.csv"));
+            rows<<"frame,y,compared_pixels,different_pixels,first_x,last_x\n";
+            std::size_t total=0;
+            for(int y=0;y<240;++y) {
+                unsigned different=0; int first=-1,last=-1;
+                for(int x=0;x<256;++x) {
+                    const auto p=static_cast<std::size_t>(y)*256+x;
+                    if(candidate.pixels[p]==reference->pixels[p]) continue;
+                    ++different; if(first<0) first=x; last=x;
+                    difference.pixels[p]=0xffff00ff;
+                }
+                total+=different;
+                rows<<saved.frame_number<<','<<y<<",256,"<<different<<','<<first<<','<<last<<'\n';
+            }
+            rows.close();
+            bitmap(directory/(name+"-difference.bmp"),difference);
+            manifest<<name<<"_compared_pixels=61440\n"<<name<<"_different_pixels="<<total<<"\n";
+            std::cout<<name<<" frame "<<saved.frame_number<<": "<<total<<" / 61440 pixels differ (diagnostic).\n";
+        };
+        manifest<<"comparison=exact ARGB, same frame and coordinates, complete viewport; no crop or alignment search\n"
+            <<"difference_image=black matches, magenta differs\n";
+        compare(composite,"composite");
+        if(previous_sat) {
+            const auto previous=render::compose(snapshot.vram,snapshot.palette,*previous_sat,
+                {256,240,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control});
+            core::write_file_atomic(directory/"previous-sat.bin",std::as_bytes(std::span(*previous_sat)));
+            bitmap(directory/"previous-sat-composite.bmp",previous);
+            manifest<<"previous_sat_frame="<<saved.frame_number-1<<"\n"
+                <<"previous_sat_candidate=only latched SAT from preceding frame; all other state from current frame\n";
+            compare(previous,"previous-sat-composite");
+        }
+    }
     manifest.close();
 }
 void verify_palette_pulse_trace(const std::filesystem::path& trace) {

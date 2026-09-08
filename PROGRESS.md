@@ -168,6 +168,20 @@ Native diagnostic composition continuation:
 - This remains a frozen-register preview. Scanline limits/timing, continuous-table
   presentation and live renderer integration remain open.
 
+Composition timing comparison continuation:
+
+- Added reference images, exact pixel masks and per-row mismatch reports to video
+  exports, plus compact `--compare-video` reports for every captured frame.
+- Compared current and preceding-frame latched SAT independently. Current SAT
+  matches 503/1,800 canonical frames; previous SAT matches 1,767/1,799, including
+  all 15 periodic samples. The first preceding-frame result is explicitly absent.
+- The remaining 32 mismatching frames are retained for investigation; frame 938
+  has five mismatching pixels on one row. Independently verified its exported
+  masks/counts against BMP bytes. No full-frame equality gate is claimed.
+- Comparison retains the exact frozen reference census. Live renderer integration
+  and the remaining scanline/transition differences remain open.
+- Release regression tests pass 5/5; ROM-free Debug passes 2/2.
+
 Palette fade-in continuation:
 
 - Translated the original discrete channel-by-channel fade-in, including brightness

@@ -510,6 +510,32 @@ checked lower/upper tables at frames 600/720. Its complete RAM/video/audio censu
 retains the frozen SHA-256
 `ee560dad47ece1a3c2e55a4326bcd4ef97276ad1ac0912d6c36eb29298c6572e`.
 
+Composition timing comparison:
+
+- `--video-every N` now saves the corresponding `reference.bmp`, exact ARGB
+  `composite-difference.bmp` (magenta differs, black matches), and per-row counts
+  with inclusive first/last differing x coordinates (`-1` for matching rows).
+- A separate `previous-sat-composite` candidate uses the preceding frame's latched
+  SAT and current-frame VRAM, palette and registers. Both candidates remain visible;
+  neither is aligned, cropped or selected opportunistically. The saved
+  `previous-sat.bin` and manifest identify the input epoch. Frame pixels are copied
+  before save operations can invalidate the runtime's borrowed views.
+- `--compare-video --capture <directory> --compact` writes compact all-frame
+  `composite-epochs.csv` without requiring image exports. Its columns count complete
+  viewport pixel differences for both fixed candidates. The first frame has an
+  empty previous-SAT result because no preceding frame was captured.
+- `out/captures/composite-all-1800`: current SAT matches 503/1,800 frames; previous
+  SAT matches 1,767/1,799, including all 15 samples at 120-frame intervals. These
+  results support a sprite-table timing explanation for most original differences,
+  but do not establish complete scanline equivalence.
+- Previous-SAT mismatches remain at frames 19, 608, 622, 758, 938..958, 961..963,
+  966..967, 1573 and 1594. Their causes remain unverified. A separate frame-938
+  capture has five differing pixels on row 64 (x 113..118); an independent BMP
+  byte comparison verifies both candidate masks and row counts for that sample.
+- The all-frame comparison retains the exact frozen 1,800-frame RAM/video/audio
+  census hash above. Initial three-frame capture checks the missing first epoch
+  and consecutive exports. Full native gameplay/presentation integration remains open.
+
 RGB conversion follows the reference's RGB565 quantization. ROM-free tests cover
 bounded field parsing, tile planes, universal background color zero, dormant patterns,
 sprite geometry, RLE edge cases and strided scores. Capturing diagnostic video every

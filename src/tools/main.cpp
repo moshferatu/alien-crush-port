@@ -5,6 +5,7 @@
 #include "alien_crush/core/rom_image.hpp"
 #include "video_capture.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
+#include "alien_crush/diagnostics/reference_snapshot.hpp"
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -26,23 +27,31 @@ void bitmap(const std::filesystem::path& path,const Frame& frame) {
 std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint64_t frames,
     const std::filesystem::path& output, bool check_restore,
     const recording::Recording* playback=nullptr, bool restore_initial=false,
-    std::uint64_t video_every=0,bool raw=true) {
+    std::uint64_t video_every=0,bool raw=true,bool compare_video=false) {
     auto runtime=make_reference_runtime(); runtime->load(rom_path);
     if(playback) runtime->restore(playback->initial);
     else if(restore_initial) runtime->restore(runtime->save());
     std::vector<std::string> hashes;
     std::optional<state::SaveStateContainer> checkpoint;
+    std::optional<std::array<std::uint16_t,256>> previous_sat;
     recording::Recording recording{runtime->save(),{}};
     std::ofstream census;
     std::ofstream ram_stream;
     std::ofstream pixel_stream;
     std::ofstream observations;
+    std::ofstream composition;
+    std::size_t current_exact=0,previous_exact=0,previous_compared=0;
     if(!output.empty()) {
         std::filesystem::create_directories(output);
         census.exceptions(std::ios::failbit|std::ios::badbit);
         ram_stream.exceptions(std::ios::failbit|std::ios::badbit);
         pixel_stream.exceptions(std::ios::failbit|std::ios::badbit);
         census.open(output/"census.csv");
+        if(compare_video) {
+            composition.exceptions(std::ios::failbit|std::ios::badbit);
+            composition.open(output/"composite-epochs.csv");
+            composition<<"frame,compared_pixels,current_sat_different_pixels,previous_sat_different_pixels\n";
+        }
         observations.exceptions(std::ios::failbit|std::ios::badbit);
         observations.open(output/"game-observations.csv");
         observations<<"frame,score,table_code,ball_counter,score_pending,high_score_1,high_score_2,high_score_3,high_score_4,high_score_5,pulse_flags,pulse_green,pulse_red,pulse_blue\n";
@@ -57,6 +66,10 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
         recording.inputs.push_back(input);
         const auto frame=runtime->advance(input);
         if(frame.pixels.empty() || frame.stereo.empty()) throw std::runtime_error("Missing reference frame/audio");
+        const bool export_frame=!output.empty() && video_every && ((n+1)%video_every==0 || n+1==frames);
+        std::optional<render::Image> reference_image;
+        // Runtime frame views expire at the next runtime operation, including save.
+        if(export_frame || compare_video) reference_image=render::Image{frame.width,frame.height,{frame.pixels.begin(),frame.pixels.end()}};
         hashes.push_back(recording::fingerprint(frame,runtime->work_ram()));
         if(!output.empty()) census<<hashes.back()<<'\n';
         if(!output.empty()) {
@@ -77,11 +90,41 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
             bitmap(output/("frame-"+std::to_string(n+1)+".bmp"),frame);
             core::write_file_atomic(output/("ram-"+std::to_string(n+1)+".bin"),runtime->work_ram());
         }
-        if(!output.empty() && video_every && ((n+1)%video_every==0 || n+1==frames))
-            diagnostics::export_video(output/("video-"+std::to_string(frame.number)),runtime->save());
+        if(export_frame)
+            diagnostics::export_video(output/("video-"+std::to_string(frame.number)),runtime->save(),&*reference_image,
+                previous_sat?&*previous_sat:nullptr);
+        if(compare_video) {
+            const auto snapshot=diagnostics::decode_reference_snapshot(runtime->save());
+            const auto compare=[&](const std::array<std::uint16_t,256>& sat) {
+                const auto candidate=render::compose(snapshot.vram,snapshot.palette,sat,
+                    {reference_image->width,reference_image->height,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control});
+                std::size_t different=0;
+                for(std::size_t p=0;p<candidate.pixels.size();++p)
+                    if(candidate.pixels[p]!=reference_image->pixels[p]) ++different;
+                return different;
+            };
+            const auto current=compare(snapshot.sat);
+            current_exact+=current==0;
+            composition<<frame.number<<','<<reference_image->pixels.size()<<','<<current<<',';
+            if(previous_sat) {
+                const auto previous=compare(*previous_sat);
+                previous_exact+=previous==0; ++previous_compared;
+                composition<<previous;
+            }
+            composition<<'\n';
+            previous_sat=snapshot.sat;
+        }
+        // Capture only the immediately preceding frame for each requested sample.
+        if(!compare_video && !output.empty() && video_every && n+1<frames && ((n+2)%video_every==0 || n+2==frames))
+            previous_sat=diagnostics::decode_reference_snapshot(runtime->save()).sat;
     }
     if(!output.empty()) {
         census.close(); observations.close();
+        if(compare_video) {
+            composition.close();
+            std::cout<<"Diagnostic composition: current SAT exact "<<current_exact<<'/'<<frames
+                <<", previous SAT exact "<<previous_exact<<'/'<<previous_compared<<" frames.\n";
+        }
         if(raw) {ram_stream.close(); pixel_stream.close();}
         recording::write(output/"session.acrec",recording);
     }
@@ -102,7 +145,7 @@ int main(int argc,char** argv) {
     try {
         std::filesystem::path rom_path="Alien Crush.pce",output,replay_path,asset_path,actor_trace,background_trace,palette_trace,pulse_trace;
         std::uint64_t frames=1800,video_every=0;
-        bool validate=false,verify=false,cold=false,raw=true,discovery=false;
+        bool validate=false,verify=false,cold=false,raw=true,discovery=false,compare_video=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){ if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]); };
@@ -112,6 +155,7 @@ int main(int argc,char** argv) {
             else if(arg=="--replay") replay_path=core::path_from_utf8(value());
             else if(arg=="--video-every") { video_every=std::stoull(value()); if(!video_every) throw std::runtime_error("Video interval must be positive"); }
             else if(arg=="--compact") raw=false;
+            else if(arg=="--compare-video") compare_video=true;
             else if(arg=="--extract-assets") asset_path=core::path_from_utf8(value());
             else if(arg=="--verify-discovery") discovery=true;
             else if(arg=="--verify-actor-trace") actor_trace=core::path_from_utf8(value());
@@ -127,7 +171,8 @@ int main(int argc,char** argv) {
                     <<"  [--frames N] [--replay <file>] [--capture <directory>] [--video-every N] [--compact]\n"
                     <<"  --extract-assets <directory>: decode both table backgrounds and sprite patterns without running the game.\n"
                     <<"Replay consumes the entire recording; --frames applies to the canonical route.\n"
-                    <<"--video-every exports background/sprite images and diagnostic video state every N frames.\n"
+                    <<"--video-every exports native/reference images, exact pixel differences, and diagnostic video state every N frames.\n"
+                    <<"--compare-video requires --capture; writes all-frame current/previous SAT pixel differences without extra images.\n"
                     <<"--compact omits large per-frame raw RAM/video streams.\n";
                 std::cout<<"--verify-discovery --capture <directory> writes actor comparison evidence and sprite-layer previews.\n";
                 std::cout<<"--verify-actor-trace <file> compares main actor (ACAT0001) or table overlay (ACOV0001) instruction-boundary traces.\n";
@@ -141,6 +186,7 @@ int main(int argc,char** argv) {
         }
         if(frames<2 || frames>10'000'000) throw std::runtime_error("Frames must be between 2 and 10000000");
         if(video_every && output.empty()) throw std::runtime_error("--video-every requires --capture");
+        if(compare_video && output.empty()) throw std::runtime_error("--compare-video requires --capture");
         const auto validation=rom::validate_file(rom_path);
         if(!validation.supported()) throw std::runtime_error(validation.message);
         std::cout<<"ROM SHA-256: "<<validation.digests.sha256<<'\n';
@@ -157,7 +203,7 @@ int main(int argc,char** argv) {
             if(frames<2) throw std::runtime_error("Replay requires at least two frames");
         }
         const auto* source=playback?&*playback:nullptr;
-        const auto first=capture(rom_path,frames,output,verify,source,false,video_every,raw);
+        const auto first=capture(rom_path,frames,output,verify,source,false,video_every,raw,compare_video);
         if(verify || cold) {
             const auto second=capture(rom_path,frames,{},false,source);
             for(std::size_t i=0;i<first.size();++i) if(first[i]!=second[i]) throw std::runtime_error("Cold-boot replay diverged at frame "+std::to_string(i+1));

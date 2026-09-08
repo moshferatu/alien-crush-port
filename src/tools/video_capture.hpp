@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include "alien_crush/core/save_state.hpp"
+#include "alien_crush/render/pce_graphics.hpp"
 #include <filesystem>
 namespace alien_crush::diagnostics {
-void export_video(const std::filesystem::path& directory,const state::SaveStateContainer& saved);
+void export_video(const std::filesystem::path& directory,const state::SaveStateContainer& saved,
+    const render::Image* reference=nullptr,const std::array<std::uint16_t,256>* previous_sat=nullptr);
 void export_table_assets(const std::filesystem::path& directory,const std::filesystem::path& rom);
 void verify_discovery(const std::filesystem::path& rom,const std::filesystem::path& report={});
 void verify_actor_trace(const std::filesystem::path& rom,const std::filesystem::path& trace);
