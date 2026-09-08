@@ -132,6 +132,9 @@ The palette fade-in step is also native. Bounded tracing produces
 the original step's output before palette upload.
 The verifier also accepts `palette-fade-outs.bin`, checking channel darkening
 and the original already-black completion count, including its final extra pass.
+Palette-zero pulse decoding and `--verify-pulse-trace <palette-pulses.bin>` are
+also available. Current traces cover the inactive path; active cycles have
+synthetic tests and still need an original-game execution sample.
 
 Captures include `game-observations.csv` with recovered score, ball/table counters
 and high scores. `--video-every` also exports background/sprite BMPs, attributes,

@@ -147,6 +147,16 @@ Palette fade-out continuation:
 - ROM-free tests cover all 512 PCE colors; Release passes 5/5 and Debug 2/2.
   Palette-zero pulsing, upload timing and live renderer integration remain open.
 
+Palette-zero pulse continuation:
+
+- Added native pulse state transitions, direction/completion flags and byte/VCE
+  packing, with synthetic coverage of the 14-write rise/fall cycle.
+- Added pulse observations and instruction-boundary traces. All 107 captured
+  inactive calls match state and complete palettes; RAM/CPU control logs match.
+- The 10,000-frame canonical route has no observed active pulse. Active execution
+  equivalence remains open and is reported separately from synthetic test coverage.
+- Release passes 5/5 and Debug 2/2. Upload scheduling and live integration remain open.
+
 Palette fade-in continuation:
 
 - Translated the original discrete channel-by-channel fade-in, including brightness

@@ -133,6 +133,32 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     manifest<<"phase=post-frame; register values are not a scanline history\n";
     manifest.close();
 }
+void verify_palette_pulse_trace(const std::filesystem::path& trace) {
+    const auto bytes=core::read_file(trace);
+    constexpr std::size_t record_size=16+2048;
+    if(bytes.size()<=8 || (bytes.size()-8)%record_size ||
+        std::string_view(reinterpret_cast<const char*>(bytes.data()),8)!="ACPZ0001")
+        throw std::runtime_error("Invalid, empty or truncated palette pulse trace");
+    auto b=[&](std::size_t p){return std::to_integer<std::uint8_t>(bytes[p]);};
+    auto u32=[&](std::size_t p){std::uint32_t v=0;for(unsigned s=0;s<32;s+=8) v|=static_cast<std::uint32_t>(b(p++))<<s;return v;};
+    std::size_t calls=0,active=0;
+    std::uint32_t previous_end=0;
+    for(std::size_t p=8;p<bytes.size();p+=record_size) {
+        const auto entry=u32(p),end=u32(p+4);
+        if(!entry || entry<previous_end || end<entry) throw std::runtime_error("Invalid pulse trace frame order");
+        previous_end=end;
+        const auto next=assets::advance_palette_pulse({b(p+8),b(p+9),b(p+10),b(p+11)});
+        if(next.state.flags!=b(p+12) || next.state.green!=b(p+13) || next.state.red!=b(p+14) || next.state.blue!=b(p+15))
+            throw std::runtime_error("Palette pulse state mismatch at frame "+std::to_string(entry));
+        for(std::size_t i=0;i<1024;++i) {
+            const auto expected=next.color_zero && i<2?static_cast<std::uint8_t>(*next.color_zero>>(i*8)):b(p+16+i);
+            if(expected!=b(p+16+1024+i)) throw std::runtime_error("Palette pulse color mismatch at frame "+std::to_string(entry));
+        }
+        ++calls; if(next.color_zero) ++active;
+    }
+    std::cout<<"PASS: "<<calls<<" palette pulse calls match state and all palette words; "<<active<<" active / "<<calls-active<<" inactive.\n";
+    if(!active) std::cout<<"Active pulse execution remains unverified by this trace.\n";
+}
 void verify_palette_fade_trace(const std::filesystem::path& trace) {
     const auto bytes=core::read_file(trace);
     if(bytes.size()<=8) throw std::runtime_error("Empty palette fade trace");

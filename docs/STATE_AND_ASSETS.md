@@ -454,6 +454,42 @@ counting and invalid colors/buffers. Release passes 5/5 and Debug passes 2/2.
 This function owns no reference RAM, waits or palette uploads. Palette-zero
 pulsing, VCE upload timing and native renderer integration remain open.
 
+### Palette-zero pulse
+
+`advance_palette_pulse` translates `00:F64B..F6A2` as a pure state transition.
+Its four bytes correspond to RAM `$8A..$8D`: flags, green, red and blue. An
+inactive flag (bit `$80` clear) leaves state unchanged and emits no palette write.
+Ascending calls increment all three bytes; when green is already seven, the
+routine replaces flags with `$C0` and starts decrementing. Descending calls clear
+flags after green reaches zero. Starting from black with flags `$80`, the cycle
+emits 14 colors: levels 1..7, then 6..0. The native function preserves original
+byte wrapping and eight-bit packing before VCE's nine-bit color mask.
+
+The diagnostic capture now appends pulse state to `game-observations.csv`.
+A 10,000-frame canonical run found no active flag in the post-frame observations.
+This route therefore does not supply active pulse execution coverage. Synthetic
+tests check the complete cycle, direction/completion flags, inactive preservation
+and byte underflow; these are not labeled as original-game active equivalence.
+
+Bounded tracing pairs `00:F64B` with its caller's continuation at `00:E1D3`.
+`palette-pulses.bin` uses schema `ACPZ0001` and 2,064-byte records: u32 entry/end
+frames, four input state bytes, four output state bytes, then complete 1,024-byte
+before/after VCE palettes. The manifest records completed, orphan and pending
+pairs. The verifier checks all state fields, palette-zero output when active,
+and preservation of all other colors:
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush-tools.exe --verify-pulse-trace out/mesen/pulse-trace/palette-pulses.bin
+```
+
+The 370-frame capture's final 120 frames contain 107 paired inactive calls,
+all exact, with no orphan or pending pairs. RAM and CPU/clock logs match the
+untraced control. An unexpected nonzero-index palette change is rejected.
+The verifier explicitly reports active/inactive counts and warns of missing
+active coverage when there are no active calls. Release passes 5/5 and Debug
+passes 2/2. Active gameplay coverage, VCE upload scheduling and live renderer
+integration remain open.
+
 ## Diagnostic graphics and validation
 
 `--video-every N` exports background/sprite BMPs, attributes, VRAM/SAT/palette and

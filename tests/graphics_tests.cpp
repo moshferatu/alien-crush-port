@@ -79,6 +79,19 @@ int main() {
         const std::array<std::byte,4> wrapping{std::byte{0x80},std::byte{0x34},std::byte{0x12},std::byte{0}};
         require(assets::decode_word_rle(wrapping,256).words.size()==256,"RLE repeat zero count preserves CPU wrap");
         std::array<std::byte,8192> ram{};
+        assets::PalettePulseState pulse{0x81,0,0,0};
+        for(unsigned step=1;step<=14;++step) {
+            const auto next=assets::advance_palette_pulse(pulse);
+            const unsigned level=step<=7?step:14-step;
+            require(next.color_zero==level*73 && next.state.green==level && next.state.red==level && next.state.blue==level,"Pulse rise/fall colors");
+            require(next.state.flags==(step<8?0x81:(step<14?0xc0:0)),"Pulse direction and completion flags");
+            pulse=next.state;
+        }
+        require(!assets::advance_palette_pulse(pulse).color_zero,"Completed pulse emits no further write");
+        const auto inactive=assets::advance_palette_pulse({0x40,9,8,7});
+        require(!inactive.color_zero && inactive.state.flags==0x40 && inactive.state.green==9,"Inactive pulse preserves state");
+        const auto wrapped=assets::advance_palette_pulse({0xc1,0,0,0});
+        require(wrapped.state.green==255 && wrapped.state.flags==0xc1 && wrapped.color_zero==511,"Pulse byte underflow and VCE packing");
         std::array<std::uint16_t,512> fade_current{},fade_target{};
         fade_target[0]=511; fade_target[1]=65; fade_target[2]=1;
         auto fade=assets::advance_palette_fade(fade_current,fade_target,21);

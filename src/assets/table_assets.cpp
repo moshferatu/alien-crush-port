@@ -4,6 +4,19 @@
 #include <algorithm>
 #include <stdexcept>
 namespace alien_crush::assets {
+PalettePulseStep advance_palette_pulse(PalettePulseState state) {
+    if(!(state.flags&0x80)) return {state,std::nullopt};
+    bool descending=(state.flags&0x40)!=0;
+    if(!descending && state.green==7) {state.flags=0xc0;descending=true;}
+    const int delta=descending?-1:1;
+    state.green=static_cast<std::uint8_t>(state.green+delta);
+    state.red=static_cast<std::uint8_t>(state.red+delta);
+    state.blue=static_cast<std::uint8_t>(state.blue+delta);
+    // F684 packs the low byte with 8-bit shifts; VCE retains one high bit.
+    const auto color=static_cast<std::uint16_t>(((state.green&7)<<6)|((state.red<<3)&255)|state.blue);
+    if(descending && state.green==0) state.flags=0;
+    return {state,color};
+}
 PaletteFadeOut advance_palette_fade_out(std::span<const std::uint16_t> current) {
     if(current.size()!=512) throw std::runtime_error("Palette fade-out requires 512 colors");
     PaletteFadeOut result;

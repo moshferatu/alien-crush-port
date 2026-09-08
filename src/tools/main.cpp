@@ -45,7 +45,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
         census.open(output/"census.csv");
         observations.exceptions(std::ios::failbit|std::ios::badbit);
         observations.open(output/"game-observations.csv");
-        observations<<"frame,score,table_code,ball_counter,score_pending,high_score_1,high_score_2,high_score_3,high_score_4,high_score_5\n";
+        observations<<"frame,score,table_code,ball_counter,score_pending,high_score_1,high_score_2,high_score_3,high_score_4,high_score_5,pulse_flags,pulse_green,pulse_red,pulse_blue\n";
         if(raw) {
             ram_stream.open(output/"work-ram.bin",std::ios::binary);
             pixel_stream.open(output/"pixels.argb",std::ios::binary);
@@ -64,6 +64,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
             observations<<frame.number<<','<<observed.score_points<<','<<static_cast<unsigned>(observed.table_code)<<','
                 <<static_cast<unsigned>(observed.ball_counter)<<','<<observed.score_update_pending;
             for(auto high:observed.high_scores) observations<<','<<high;
+            for(unsigned p=0x8a;p<=0x8d;++p) observations<<','<<std::to_integer<unsigned>(runtime->work_ram()[p]);
             observations<<'\n';
         }
         if(!output.empty() && raw) {
@@ -99,7 +100,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
 }
 int main(int argc,char** argv) {
     try {
-        std::filesystem::path rom_path="Alien Crush.pce",output,replay_path,asset_path,actor_trace,background_trace,palette_trace;
+        std::filesystem::path rom_path="Alien Crush.pce",output,replay_path,asset_path,actor_trace,background_trace,palette_trace,pulse_trace;
         std::uint64_t frames=1800,video_every=0;
         bool validate=false,verify=false,cold=false,raw=true,discovery=false;
         for(int i=1;i<argc;++i) {
@@ -117,6 +118,7 @@ int main(int argc,char** argv) {
             else if(arg=="--verify-background-trace") background_trace=core::path_from_utf8(value());
             else if(arg=="--verify-pattern-trace") background_trace=core::path_from_utf8(value());
             else if(arg=="--verify-palette-trace") palette_trace=core::path_from_utf8(value());
+            else if(arg=="--verify-pulse-trace") pulse_trace=core::path_from_utf8(value());
             else if(arg=="--validate-rom") validate=true;
             else if(arg=="--verify-replay") verify=true;
             else if(arg=="--verify-cold") cold=true;
@@ -132,6 +134,7 @@ int main(int argc,char** argv) {
                 std::cout<<"--verify-background-trace <file> checks actor BAT writes against complete before/after VRAM captures.\n";
                 std::cout<<"--verify-pattern-trace <file> checks dynamic sprite-pattern transfers against complete before/after VRAM captures.\n";
                 std::cout<<"--verify-palette-trace <file> checks native fade-in/out steps against captured palette buffers.\n";
+                std::cout<<"--verify-pulse-trace <file> checks palette-zero pulse state and complete palette output.\n";
                 return 0;
             }
             else throw std::runtime_error("Unknown option "+arg);
@@ -146,6 +149,7 @@ int main(int argc,char** argv) {
         if(!actor_trace.empty()) {diagnostics::verify_actor_trace(rom_path,actor_trace); return 0;}
         if(!background_trace.empty()) {diagnostics::verify_background_trace(rom_path,background_trace); return 0;}
         if(!palette_trace.empty()) {diagnostics::verify_palette_fade_trace(palette_trace); return 0;}
+        if(!pulse_trace.empty()) {diagnostics::verify_palette_pulse_trace(pulse_trace); return 0;}
         if(validate) return 0;
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) {

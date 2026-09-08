@@ -9,4 +9,5 @@ void verify_discovery(const std::filesystem::path& rom,const std::filesystem::pa
 void verify_actor_trace(const std::filesystem::path& rom,const std::filesystem::path& trace);
 void verify_background_trace(const std::filesystem::path& rom,const std::filesystem::path& trace);
 void verify_palette_fade_trace(const std::filesystem::path& trace);
+void verify_palette_pulse_trace(const std::filesystem::path& trace);
 }

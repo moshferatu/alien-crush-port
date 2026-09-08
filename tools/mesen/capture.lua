@@ -22,6 +22,8 @@ local fade_trace,fade_pending=nil,nil
 local fade_pairs,fade_orphans=0,0
 local fade_out_trace,fade_out_pending=nil,nil
 local fade_out_pairs,fade_out_orphans=0,0
+local pulse_trace,pulse_pending=nil,nil
+local pulse_pairs,pulse_orphans=0,0
 if actor_frames>0 then
   actor_trace=assert(io.open(directory..'/actor-passes.bin','wb'))
   actor_trace:write('ACAT0001')
@@ -35,6 +37,8 @@ if actor_frames>0 then
   fade_trace:write('ACPF0001')
   fade_out_trace=assert(io.open(directory..'/palette-fade-outs.bin','wb'))
   fade_out_trace:write('ACFD0001')
+  pulse_trace=assert(io.open(directory..'/palette-pulses.bin','wb'))
+  pulse_trace:write('ACPZ0001')
   actor_phases=assert(io.open(directory..'/actor-phases.csv','w'))
   actor_phases:write('frame,address,phase,table,slot,clock\n')
   local function memory_bytes(kind,start,count)
@@ -148,6 +152,23 @@ if actor_frames>0 then
       else fade_out_orphans=fade_out_orphans+1 end
     end,emu.callbackType.exec,address,address,emu.cpuType.pce,emu.memType.pceMemory)
   end
+  for _,address in ipairs({0xf64b,0xe1d3}) do
+    emu.addMemoryCallback(function()
+      if frame_count<frames-actor_frames then return end
+      local state=emu.getState()
+      if state['memoryManager.mpr[7]']~=0 then return end
+      if address==0xf64b then
+        assert(not pulse_pending,'Nested palette pulse call')
+        pulse_pending={frame=frame_count+1,state=memory_bytes(emu.memType.pceWorkRam,0x8a,4),
+          palette=memory_bytes(emu.memType.pcePaletteRam,0,1024)}
+      elseif pulse_pending then
+        pulse_trace:write(string.pack('<I4I4',pulse_pending.frame,frame_count+1),pulse_pending.state,
+          memory_bytes(emu.memType.pceWorkRam,0x8a,4),pulse_pending.palette,
+          memory_bytes(emu.memType.pcePaletteRam,0,1024))
+        pulse_pending=nil; pulse_pairs=pulse_pairs+1
+      else pulse_orphans=pulse_orphans+1 end
+    end,emu.callbackType.exec,address,address,emu.cpuType.pce,emu.memType.pceMemory)
+  end
 end
 if trace_frames>0 then
   video_trace=assert(io.open(directory..'/video-writes.csv','w'))
@@ -215,6 +236,7 @@ local function end_frame()
       pattern_trace:close()
       fade_trace:close()
       fade_out_trace:close()
+      pulse_trace:close()
       local manifest=assert(io.open(directory..'/actor-trace-manifest.txt','w'))
       manifest:write('schema=ACAT0001\nrom_sha256=1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f\n',
         'backend=Mesen-2.1.1\nroute=canonical\nfirst_frame=',math.max(1,frames-actor_frames+1),
@@ -229,7 +251,9 @@ local function end_frame()
         '\nfade_schema=ACPF0001\nfade_complete_pairs=',fade_pairs,'\nfade_orphan_ends=',fade_orphans,
         '\nfade_pending_entry=',fade_pending and 1 or 0,
         '\nfade_out_schema=ACFD0001\nfade_out_complete_pairs=',fade_out_pairs,
-        '\nfade_out_orphan_ends=',fade_out_orphans,'\nfade_out_pending_entry=',fade_out_pending and 1 or 0,'\n')
+        '\nfade_out_orphan_ends=',fade_out_orphans,'\nfade_out_pending_entry=',fade_out_pending and 1 or 0,
+        '\npulse_schema=ACPZ0001\npulse_complete_pairs=',pulse_pairs,'\npulse_orphan_ends=',pulse_orphans,
+        '\npulse_pending_entry=',pulse_pending and 1 or 0,'\n')
       manifest:close()
     end
     local done=assert(io.open(directory..'/complete.txt','w'))

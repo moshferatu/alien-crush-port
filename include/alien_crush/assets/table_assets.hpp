@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 #include <vector>
+#include <optional>
 namespace alien_crush::assets {
 struct WordStream { std::vector<std::uint16_t> words; std::size_t consumed{}; };
 // Original E3DD/E43B packet format. A zero packet terminates the stream.
@@ -39,6 +40,13 @@ struct PaletteFadeOut {
 };
 // 00:E605..E6AA counts colors already black before decrementing all channels.
 PaletteFadeOut advance_palette_fade_out(std::span<const std::uint16_t> current);
+struct PalettePulseState { std::uint8_t flags{},green{},red{},blue{}; };
+struct PalettePulseStep {
+    PalettePulseState state;
+    std::optional<std::uint16_t> color_zero;
+};
+// One 00:F64B invocation. Preserves original byte arithmetic and packed VCE bits.
+PalettePulseStep advance_palette_pulse(PalettePulseState state);
 // Initial sprite pattern memory only; actor placement and animation are separate.
 std::array<TableSprites,2> decode_table_sprites(std::span<const std::byte> rom);
 }
