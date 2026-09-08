@@ -9,12 +9,16 @@ class Presentation {
     SDL_Texture* source_{};
     SDL_Texture* stage_{};
     int sw{},sh{},iw{},ih{};
+    int rotation_{};
 public:
-    Presentation(const char* title,int width,int height);
+    Presentation(const char* title,int width,int height,bool hidden=false);
     ~Presentation();
     Presentation(const Presentation&)=delete;
     Presentation& operator=(const Presentation&)=delete;
     SDL_Window* window() const { return window_; }
     void show(const Frame&);
+    void panel(const char* text);
+    int rotation() const { return rotation_; }
+    void rotation(int degrees) { rotation_=degrees; }
 };
 }

@@ -2,17 +2,19 @@
 #include "presentation.hpp"
 #include "alien_crush/render/sharp_pixel_scaler.hpp"
 #include <stdexcept>
+#include <algorithm>
 namespace alien_crush::host {
 namespace { void checked(bool ok) { if(!ok) throw std::runtime_error(SDL_GetError()); } }
-Presentation::Presentation(const char* title,int width,int height) {
-    checked(SDL_CreateWindowAndRenderer(title,width,height,SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY,&window_,&renderer_));
+Presentation::Presentation(const char* title,int width,int height,bool hidden) {
+    checked(SDL_CreateWindowAndRenderer(title,width,height,SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|(hidden?SDL_WINDOW_HIDDEN:0),&window_,&renderer_));
     SDL_SetRenderVSync(renderer_,0); // A single game clock, independent of display refresh.
 }
 Presentation::~Presentation() { SDL_DestroyTexture(stage_); SDL_DestroyTexture(source_); SDL_DestroyRenderer(renderer_); SDL_DestroyWindow(window_); }
 void Presentation::show(const Frame& frame) {
     if(frame.pixels.empty()) return;
     int width{},height{}; checked(SDL_GetRenderOutputSize(renderer_,&width,&height));
-    const auto layout=render::calculate_scale_layout(width,height,frame.width,frame.height,4,3);
+    const bool sideways=rotation_==90 || rotation_==270;
+    const auto layout=render::calculate_scale_layout(sideways?height:width,sideways?width:height,frame.width,frame.height,4,3);
     if(!layout.valid()) return;
     if(sw!=frame.width || sh!=frame.height) {
         SDL_DestroyTexture(source_); source_=nullptr;
@@ -29,7 +31,16 @@ void Presentation::show(const Frame& frame) {
     checked(SDL_UpdateTexture(source_,nullptr,frame.pixels.data(),frame.width*4));
     checked(SDL_SetRenderTarget(renderer_,stage_)); checked(SDL_RenderTexture(renderer_,source_,nullptr,nullptr));
     checked(SDL_SetRenderTarget(renderer_,nullptr)); checked(SDL_SetRenderDrawColor(renderer_,0,0,0,255)); checked(SDL_RenderClear(renderer_));
-    const SDL_FRect dest{static_cast<float>(layout.destination.x),static_cast<float>(layout.destination.y),static_cast<float>(layout.destination.width),static_cast<float>(layout.destination.height)};
-    checked(SDL_RenderTexture(renderer_,stage_,nullptr,&dest)); checked(SDL_RenderPresent(renderer_));
+    const SDL_FRect dest{static_cast<float>(width-layout.destination.width)/2,static_cast<float>(height-layout.destination.height)/2,static_cast<float>(layout.destination.width),static_cast<float>(layout.destination.height)};
+    checked(SDL_RenderTextureRotated(renderer_,stage_,nullptr,&dest,rotation_,nullptr,SDL_FLIP_NONE)); checked(SDL_RenderPresent(renderer_));
+}
+void Presentation::panel(const char* text) {
+    int width{},height{}; checked(SDL_GetRenderOutputSize(renderer_,&width,&height));
+    checked(SDL_SetRenderDrawColor(renderer_,0,0,0,255)); checked(SDL_RenderClear(renderer_));
+    const auto scale=static_cast<float>(std::max(1,std::min(width/256,height/80)));
+    checked(SDL_SetRenderScale(renderer_,scale,scale));
+    checked(SDL_SetRenderDrawColor(renderer_,232,152,48,255));
+    checked(SDL_RenderDebugText(renderer_,8,8,text));
+    checked(SDL_SetRenderScale(renderer_,1,1)); checked(SDL_RenderPresent(renderer_));
 }
 }

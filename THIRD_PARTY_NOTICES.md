@@ -55,6 +55,11 @@ and vce.cpp to serialize audio history and timestamps omitted upstream. These
 serialization-only changes are defined in cmake/ReferenceState.cmake and can be
 disabled with AC_REFERENCE_STATE_EXTENSION=OFF. Upstream source files remain intact.
 
+`cmake/ReferenceVideo.cmake` also generates optional read-only VDC/VCE observation
+callbacks for display control, palette timing and scanline VRAM diagnostics.
+These callbacks do not replace device updates or modify game state, are inactive
+unless diagnostics request them, and compile out with AC_REFERENCE_VIDEO_OBSERVER=OFF.
+
 The pinned upstream tree includes Mednafen files offered under
 GPL-2.0-or-later and `mednafen/msvc_compat.h` under GPL-3.0-or-later. That
 compatibility header is compiled by the MSVC Windows build, making

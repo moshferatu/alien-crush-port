@@ -50,6 +50,8 @@ public:
     virtual void observe_display(bool enabled) = 0;
     virtual std::span<const diagnostics::DisplayRow> display_rows() const = 0;
     virtual std::span<const diagnostics::PaletteWrite> palette_writes() const = 0;
+    // Full initial VRAM at the first observed row, followed by row-boundary deltas.
+    virtual std::span<const render::RasterWrite> vram_rows() const = 0;
 };
 class ReferenceRuntime : public GameRuntime, public ReferenceDiagnostics {};
 std::unique_ptr<ReferenceRuntime> make_reference_runtime();

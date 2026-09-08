@@ -9,10 +9,19 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <algorithm>
 #include <stdexcept>
 
 using namespace alien_crush;
 namespace {
+std::string memory_signature(std::span<const render::RasterWrite> writes) {
+    std::vector<std::byte> bytes;
+    bytes.reserve(writes.size()*6);
+    for(const auto& write:writes) for(const auto value:{write.row,write.address,write.value}) {
+        bytes.push_back(static_cast<std::byte>(value&255)); bytes.push_back(static_cast<std::byte>(value>>8));
+    }
+    return rom::compute_digests(bytes).sha256;
+}
 std::string display_signature(std::span<const diagnostics::DisplayRow> rows) {
     std::string result;
     for(const auto& row:rows) result+=std::to_string(row.row)+":"+std::to_string(row.control)+":"+(row.burst_mode?"1;":"0;");
@@ -38,7 +47,7 @@ void bitmap(const std::filesystem::path& path,const Frame& frame) {
 std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint64_t frames,
     const std::filesystem::path& output, bool check_restore,
     const recording::Recording* playback=nullptr, bool restore_initial=false,
-    std::uint64_t video_every=0,bool raw=true,bool compare_video=false,bool compare_display=false) {
+    std::uint64_t video_every=0,bool raw=true,bool compare_video=false,bool compare_display=false,bool require_display=false) {
     auto runtime=make_reference_runtime(); runtime->load(rom_path);
     if(compare_display) runtime->observe_display(true);
     if(playback) runtime->restore(playback->initial);
@@ -46,6 +55,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
     std::vector<std::string> hashes;
     std::vector<std::string> display_signatures;
     std::vector<std::string> palette_signatures;
+    std::vector<std::string> memory_signatures;
     std::optional<state::SaveStateContainer> checkpoint;
     std::optional<diagnostics::ReferenceSnapshot> previous_video;
     recording::Recording recording{runtime->save(),{}};
@@ -57,6 +67,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
     std::ofstream display_trace,display_comparison,palette_trace;
     std::size_t display_exact=0,display_compared=0;
     std::size_t palette_exact=0;
+    std::size_t memory_exact=0;
     std::size_t current_exact=0,previous_exact=0,previous_compared=0;
     if(!output.empty()) {
         std::filesystem::create_directories(output);
@@ -71,7 +82,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
             palette_trace.exceptions(std::ios::failbit|std::ios::badbit); palette_trace.open(output/"palette-writes.csv");
             palette_trace<<"frame,row,x,address,before,after,frame_done\n";
             display_trace<<"frame,row,control,burst_mode\n";
-            display_comparison<<"frame,observed_rows,complete,different_pixels,palette_different_pixels\n";
+            display_comparison<<"frame,observed_rows,complete,different_pixels,palette_different_pixels,vram_different_pixels\n";
         }
         if(compare_video) {
             composition.exceptions(std::ios::failbit|std::ios::badbit);
@@ -127,6 +138,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
                     palette_trace<<frame.number<<','<<write.row<<','<<write.x<<','<<write.address<<','<<write.before<<','<<write.after<<','<<write.frame_done<<'\n';
                 if(check_restore) display_signatures.push_back(display_signature(observed));
                 if(check_restore) palette_signatures.push_back(palette_signature(runtime->palette_writes()));
+                if(check_restore) memory_signatures.push_back(memory_signature(runtime->vram_rows()));
                 bool complete=observed.size()==static_cast<std::size_t>(reference_image->height);
                 for(std::size_t i=0;i<observed.size();++i) {
                     const auto& row=observed[i];
@@ -150,7 +162,26 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
                     for(std::size_t p=0;p<timed.pixels.size();++p) palette_different+=timed.pixels[p]!=reference_image->pixels[p];
                     palette_exact+=palette_different==0;
                     display_comparison<<','<<palette_different;
+                    auto memory_writes=writes;
+                    const auto memory=runtime->vram_rows();
+                    memory_writes.insert(memory_writes.end(),memory.begin(),memory.end());
+                    std::stable_sort(memory_writes.begin(),memory_writes.end(),[](const auto& a,const auto& b){return a.row<b.row;});
+                    const auto memory_timed=render::compose_palette_raster(snapshot.vram,previous_video->palette,previous_video->sat,
+                        {reference_image->width,reference_image->height,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control},memory_writes,palette_writes);
+                    std::size_t memory_different=0;
+                    for(std::size_t p=0;p<memory_timed.pixels.size();++p) memory_different+=memory_timed.pixels[p]!=reference_image->pixels[p];
+                    memory_exact+=memory_different==0;
+                    display_comparison<<','<<memory_different;
                     if(export_frame) {
+                        const auto memory_path=output/("video-"+std::to_string(frame.number))/"vram-timed";
+                        std::filesystem::create_directories(memory_path);
+                        diagnostics::export_palette_comparison(memory_path,frame.number,
+                            previous_video->palette,palette_writes,memory_timed,*reference_image);
+                        std::ofstream memory_csv(memory_path/"vram-rows.csv");
+                        memory_csv.exceptions(std::ios::failbit|std::ios::badbit);
+                        memory_csv<<"row,target,address,value\n";
+                        for(const auto& write:memory) memory_csv<<write.row<<",vram,"<<write.address<<','<<write.value<<'\n';
+                        memory_csv.close();
                         diagnostics::export_palette_comparison(output/("video-"+std::to_string(frame.number)),frame.number,
                             previous_video->palette,palette_writes,timed,*reference_image);
                         std::ofstream schedule; schedule.exceptions(std::ios::failbit|std::ios::badbit);
@@ -160,7 +191,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
                         for(const auto& write:writes) schedule<<write.row<<','<<(write.target==render::RasterTarget::burst_mode?"burst_mode":"control")<<",0,"<<write.value<<'\n';
                         schedule.close();
                     }
-                } else display_comparison<<',';
+                } else display_comparison<<",,";
                 display_comparison<<'\n';
             }
             const auto candidates=diagnostics::compose_video_epochs(snapshot,previous_video?&*previous_video:nullptr,
@@ -189,18 +220,23 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
             display_trace.close(); display_comparison.close(); palette_trace.close();
             std::ofstream manifest; manifest.exceptions(std::ios::failbit|std::ios::badbit);
             manifest.open(output/"display-manifest.txt");
-            manifest<<"schema=reference-display-rows-v2\nrom_sha256="<<rom::kSupportedSha256<<"\nbackend="<<runtime->revision()
+            manifest<<"schema=reference-display-rows-v3\nrom_sha256="<<rom::kSupportedSha256<<"\nbackend="<<runtime->revision()
                 <<"\nobserver=existing VDC HPHASE_HDW boundary; RCRCount, CR_cache, burst_mode\n"
                 <<"schedule=explicit CR_cache and burst mode; burst suppresses both layers and selects palette 256\n"
                 <<"candidate=current VRAM/palette/scroll/MWR; previous SAT; observed display control\n"
                 <<"coverage=one consecutive observation per viewport row; otherwise unavailable\n"
                 <<"palette_observer=VCE after Sync before byte write; coordinates normalized by final display rectangle\n"
                 <<"palette_schedule=before/after chain validated against full initial/final palettes; pixel writes use the next output cursor\n"
-                <<"limits=reference-assisted control and palette schedule, not independent device timing; no VRAM timing\n"
+                <<"vram_observer=full VRAM at first HDW row followed by changes at subsequent HDW boundaries, after pending commits\n"
+                <<"limits=reference-assisted control, palette and VRAM schedule, not independent device timing\n"
+                <<"vram_exact_frames="<<memory_exact<<'\n'
                 <<"compared_frames="<<display_compared<<"\nexact_frames="<<display_exact<<"\npalette_exact_frames="<<palette_exact<<'\n';
             manifest.close();
             std::cout<<"Observed display control: "<<display_exact<<'/'<<display_compared<<" complete comparable frames exact.\n";
             std::cout<<"Observed display and palette: "<<palette_exact<<'/'<<display_compared<<" complete comparable frames exact.\n";
+            std::cout<<"Observed display, palette and VRAM: "<<memory_exact<<'/'<<display_compared<<" complete comparable frames exact.\n";
+            if(require_display && (memory_exact!=display_compared || display_compared!=frames-2 || frames<3))
+                throw std::runtime_error("Display parity gate failed: requires every frame after the two startup frames to match");
         }
         if(compare_video) {
             composition.close();
@@ -220,10 +256,12 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
                 throw std::runtime_error("Restored display observation diverged at frame "+std::to_string(n+1));
             if(compare_display && palette_signatures.at(static_cast<std::size_t>(n))!=palette_signature(runtime->palette_writes()))
                 throw std::runtime_error("Restored palette observation diverged at frame "+std::to_string(n+1));
+            if(compare_display && memory_signatures.at(static_cast<std::size_t>(n))!=memory_signature(runtime->vram_rows()))
+                throw std::runtime_error("Restored VRAM observation diverged at frame "+std::to_string(n+1));
             auto actual=recording::fingerprint(frame,runtime->work_ram());
             if(actual!=hashes[static_cast<std::size_t>(n)]) throw std::runtime_error("Quick-state replay diverged at frame "+std::to_string(n+1)+"\nexpected: "+hashes[static_cast<std::size_t>(n)]+"\nactual: "+actual);
         }
-        if(compare_display) std::cout<<"PASS: restored display-row and palette observations match for "<<frames-frames/2<<" frames.\n";
+        if(compare_display) std::cout<<"PASS: restored display-row, palette and VRAM observations match for "<<frames-frames/2<<" frames.\n";
     }
     return hashes;
 }
@@ -234,6 +272,7 @@ int main(int argc,char** argv) {
         std::filesystem::path raster_video,raster_writes;
         std::uint64_t frames=1800,video_every=0;
         bool validate=false,verify=false,cold=false,raw=true,discovery=false,compare_video=false,compare_display=false;
+        bool require_display=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){ if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]); };
@@ -245,6 +284,7 @@ int main(int argc,char** argv) {
             else if(arg=="--compact") raw=false;
             else if(arg=="--compare-video") compare_video=true;
             else if(arg=="--compare-display") {compare_display=true; compare_video=true;}
+            else if(arg=="--require-display-match") {require_display=true; compare_display=true; compare_video=true;}
             else if(arg=="--render-raster") raster_video=core::path_from_utf8(value());
             else if(arg=="--raster-writes") raster_writes=core::path_from_utf8(value());
             else if(arg=="--extract-assets") asset_path=core::path_from_utf8(value());
@@ -273,6 +313,7 @@ int main(int argc,char** argv) {
                 std::cout<<"--verify-pulse-trace <file> checks palette-zero pulse state and complete palette output.\n";
                 std::cout<<"--render-raster <video directory> --raster-writes <CSV> --capture <new directory> compares a supplied row schedule offline.\n";
                 std::cout<<"--compare-display adds observed reference display-row control to --compare-video (requires observer build).\n";
+                std::cout<<"--require-display-match also fails unless every frame after startup frames 1/2 is complete and exact (canonical route only).\n";
                 return 0;
             }
             else throw std::runtime_error("Unknown option "+arg);
@@ -280,6 +321,7 @@ int main(int argc,char** argv) {
         if(frames<2 || frames>10'000'000) throw std::runtime_error("Frames must be between 2 and 10000000");
         if(video_every && output.empty()) throw std::runtime_error("--video-every requires --capture");
         if(compare_video && output.empty()) throw std::runtime_error("--compare-video requires --capture");
+        if(require_display && !replay_path.empty()) throw std::runtime_error("--require-display-match requires the canonical route");
         if((!raster_video.empty() || !raster_writes.empty()) && (raster_video.empty() || raster_writes.empty() || output.empty()))
             throw std::runtime_error("--render-raster requires --raster-writes and --capture");
         const auto validation=rom::validate_file(rom_path);
@@ -299,7 +341,7 @@ int main(int argc,char** argv) {
             if(frames<2) throw std::runtime_error("Replay requires at least two frames");
         }
         const auto* source=playback?&*playback:nullptr;
-        const auto first=capture(rom_path,frames,output,verify,source,false,video_every,raw,compare_video,compare_display);
+        const auto first=capture(rom_path,frames,output,verify,source,false,video_every,raw,compare_video,compare_display,require_display);
         if(verify || cold) {
             const auto second=capture(rom_path,frames,{},false,source);
             for(std::size_t i=0;i<first.size();++i) if(first[i]!=second[i]) throw std::runtime_error("Cold-boot replay diverged at frame "+std::to_string(i+1));

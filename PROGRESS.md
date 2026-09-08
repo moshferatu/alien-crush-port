@@ -1,13 +1,13 @@
 # Progress
 
 The approved plan is [PLAN.md](PLAN.md). This file records verified implementation,
-not intended capabilities. Last updated: 2026-09-07.
+not intended capabilities. Last updated: 2026-09-08.
 
 | Milestone | Status |
 | --- | --- |
 | 1. Trustworthy desktop baseline | Playable and deterministic; independent-emulator differences remain under investigation |
 | 2. State and assets | Native extraction of both table backgrounds and sprite pattern sets; score, high-score storage, ball counter and level observations recovered; remaining gameplay mapping open |
-| 3. Playable full-table cabinet | Not yet implemented |
+| 3. Playable full-table cabinet | Three-window prototype with saved placement/rotation; stitched playfield and physical controls pending |
 | 4. Native gameplay | Not yet implemented |
 | 5. Standalone native release | Not yet implemented |
 
@@ -18,7 +18,7 @@ RAM/video/audio census and screenshots, core utility tests, and PinOne calibrati
 
 Verified on Windows x64 with MSVC 19.43 / Windows SDK 10.0.22621:
 
-- Release CTest: 5/5 pass (core, graphics, 1,800-frame replay, asset discovery, SDL dummy desktop smoke).
+- Release CTest: 7/7 pass (core, graphics, 1,800-frame replay, reference video parity, asset discovery, desktop and cabinet smoke).
 - ROM-free Debug CTest: 2/2 pass, with both reference and SDL disabled.
 - All 1,800 canonical frames match across cold boots and initial-state restore;
   all 900 frames after midpoint restore match RAM, pixels, and PCM exactly.
@@ -34,9 +34,25 @@ Verified on Windows x64 with MSVC 19.43 / Windows SDK 10.0.22621:
 - Raw named state inspection extracts 251 CPU, VDC, palette, PSG and other fields
   without inserting execution hooks.
 
-No native gameplay ownership, full-table
-rendering, DMD presentation, or game-specific analog launcher support is claimed yet.
+No native gameplay ownership, full-table rendering, finished DMD presentation,
+or game-specific analog launcher support is claimed yet.
 Physical cabinet, three-monitor, focus/hotplug and prolonged-play acceptance remain open.
+
+Scanline VRAM and cabinet host continuation:
+
+- Read-only VRAM observations at the existing VDC HDW boundary resolve frames
+  608 and 758 automatically. All 1,798 complete canonical frames now match;
+  startup frames 1/2 remain explicitly unavailable. No frame-specific timing or
+  pixel-derived decisions are used. This is reference-assisted native rendering.
+- All 900 restored VRAM schedules repeat, and the enabled/compiled-out observer
+  preserves the frozen 1,800-frame RAM/video/audio census. Both remaining frame
+  exports have byte-identical reference and native BMPs.
+- Added the required-equality `reference_video` regression gate, including coverage.
+- Added `--cabinet`: three windows, named-monitor placement, atomic layout saving,
+  missing-monitor recovery, playfield rotation, per-window fullscreen and shared
+  focus. Uses Devil's Crush's host/display-placement pattern; no game state maps
+  or execution patches were copied. Backglass and score presentation are preliminary;
+  the playfield still scrolls. Tests use SDL dummy displays, not physical monitors.
 
 State/asset continuation:
 

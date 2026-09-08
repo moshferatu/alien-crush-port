@@ -48,6 +48,17 @@ Record with `--record session.acrec`, replay with `--replay session.acrec`.
 Recordings embed the initial state and every sampled controller input with an integrity hash.
 Quick-state operations are disabled during recording and replay to retain a linear timeline.
 
+For the initial three-window cabinet host, add `--cabinet`. Move and resize the
+playfield, backglass and score windows onto your monitors; F11 toggles fullscreen
+for the focused window and R rotates the playfield clockwise by 90 degrees.
+Placement, monitor names and rotation save on normal exit to
+`portable-data/cabinet-windows.txt` (or your `--data-dir`). Missing monitors fall
+back to connected displays with the windows clamped into view. Moving focus
+between cabinet windows keeps the game running; switching away pauses it.
+This prototype uses the original scrolling view, a plain title backglass and
+observed score/ball fields. Stitched full-table rendering, ROM backglass artwork,
+scene-aware score presentation and physical plunger integration remain pending.
+
 ## Diagnostics
 
 ```powershell
@@ -95,11 +106,18 @@ pixel, and feeds them to the native raster renderer.
 It writes `display-rows.csv`, `display-comparison.csv`, and a provenance manifest;
 video exports include replayable `display-writes.csv`. This candidate matches
 1,795/1,798 frames with complete observations using display control alone;
-including palette timing raises this to 1,796/1,798. The first two startup frames
+including palette timing raises this to 1,796/1,798, and observed scanline VRAM
+raises it to **1,798/1,798**. The first two startup frames
 have incomplete coverage and are excluded. Video exports also contain
 `palette-timed.bmp`, its mask and row counts, initial palette and pixel-write schedule.
 The schedule still depends on reference timing. The observer is inactive by default
 at runtime and can be compiled out with `-DAC_REFERENCE_VIDEO_OBSERVER=OFF`.
+Exports include a `vram-timed/` directory with the combined image, mask, palette
+inputs and `vram-rows.csv` (full initial VRAM followed by row deltas).
+`--require-display-match --capture <directory> --compact --verify-replay` enforces
+exact rendering and complete coverage after the two startup frames on the canonical
+route. The ROM-enabled `reference_video` test runs this 1,800-frame gate and checks
+restored display, palette and VRAM observations as well as RAM/video/audio output.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/Verify-Baseline.ps1 -RomPath '.\Alien Crush.pce'

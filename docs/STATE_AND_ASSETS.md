@@ -750,5 +750,27 @@ assign native update times. Evidence from `out/mesen/video-timing-*`:
 `Find-VideoRomMatches.ps1` locates exact runs, but repeated
 artwork means a match alone does not prove the loader path.
 
+Scanline VRAM observation (2026-09-08):
+
+- `ReferenceVideo.cmake` now passes read-only VRAM at the existing HDW observation
+  after `CheckAndCommitPending`, before background drawing. The host stores a full
+  first-row image followed by deltas, bounded to 65,536 words/events per frame;
+  callbacks do not allocate or mutate emulation. Incomplete row coverage fails closed.
+- `vram-timed-1800` matches all 1,798 complete frames using current scroll/MWR,
+  previous SAT, observed CR/burst, palette pixels and scanline VRAM. No reference
+  pixels are consulted to construct schedules. Frames 1/2 remain excluded.
+- Frame 758 actually observes BAT 0090/0091 at row 42 and 00B0/00B1 at row 43.
+  This replaces the earlier manually inferred simultaneous row-43 schedule.
+  Frame 608 also becomes exact by retaining the VRAM read during its early rows.
+- `vram-timed-export` includes byte-identical native/reference BMPs at 608 and 758.
+  Schema `reference-display-rows-v3` retains earlier comparison columns and adds
+  `vram_different_pixels`. Exported `vram-timed/vram-rows.csv` contains full initial
+  VRAM and deltas; combine with the parent display/SAT schedule and palette inputs.
+- All 900 restored VRAM schedules match field-encoded SHA-256 signatures. Both
+  observer-enabled and compiled-out runs retain census SHA-256
+  `ee560dad47ece1a3c2e55a4326bcd4ef97276ad1ac0912d6c36eb29298c6572e`.
+  This verifies the canonical route, not arbitrary raster programs or independent
+  hardware timing. Live cabinet presentation still uses the reference framebuffer.
+
 Next: scene/launcher validity, launch arithmetic, ball update epochs,
 actors and palette rules; then continuous table rendering and cabinet integration.

@@ -31,3 +31,10 @@ Alien Crush validation before admission.
 Local build caches may be populated from a pristine `git archive` at the pinned
 upstream revision. Modified Devil's Crush dependency working trees must not be used
 as Alien Crush's reference source directory.
+
+The initial cabinet host follows the display enumeration, named-monitor placement,
+auxiliary-window and shared-clock patterns in Devil's Crush `src/app/main.cpp` and
+`src/cabinet/display_config.cpp`, inspected at commit
+`e0cfb2f0be41bbda7a0c98af84f727ce0c4b6592`. Alien Crush's smaller window-only format,
+renderer ownership and focus handling are implemented locally; no input remapping
+patches or Devil's Crush game-specific score/launcher logic are reused.

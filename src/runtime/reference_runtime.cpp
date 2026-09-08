@@ -12,7 +12,7 @@
 #include <thread>
 #include <vector>
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
-extern "C" void ac_set_display_observer(void (*)(unsigned,unsigned,unsigned));
+extern "C" void ac_set_display_observer(void (*)(unsigned,unsigned,unsigned,const unsigned short*));
 extern "C" void ac_set_palette_observer(void (*)(int,int,unsigned,unsigned,unsigned,unsigned),void (*)(int,int));
 #endif
 
@@ -35,11 +35,24 @@ class Reference final : public ReferenceRuntime {
     std::size_t observed_count{};
     std::vector<diagnostics::PaletteWrite> observed_palette=std::vector<diagnostics::PaletteWrite>(65536);
     std::size_t palette_count{};
+    std::array<std::uint16_t,32768> observed_vram{};
+    std::vector<render::RasterWrite> observed_memory=std::vector<render::RasterWrite>(65536);
+    std::size_t memory_count{};
     bool observation_failed{};
-    static void observe_row(unsigned row,unsigned control,unsigned burst) noexcept {
+    static void observe_row(unsigned row,unsigned control,unsigned burst,const unsigned short* vram) noexcept {
         auto* self=active.load();
         if(!self) return;
         if(self->observed_count==self->observed_rows.size() || row>65535 || control>65535) {self->observation_failed=true;return;}
+        const bool first=self->observed_count==0;
+        if(first) self->memory_count=0;
+        if(first || std::memcmp(self->observed_vram.data(),vram,65536)!=0) {
+            for(unsigned i=0;i<32768;++i) if(first || self->observed_vram[i]!=vram[i]) {
+                if(self->memory_count==self->observed_memory.size()) {self->observation_failed=true;return;}
+                self->observed_memory[self->memory_count++]={static_cast<std::uint16_t>(row),render::RasterTarget::vram,
+                    static_cast<std::uint16_t>(i),vram[i]};
+            }
+            std::memcpy(self->observed_vram.data(),vram,65536);
+        }
         self->observed_rows[self->observed_count++]={static_cast<std::uint16_t>(row),static_cast<std::uint16_t>(control),burst!=0};
     }
     static void observe_palette(int row,int x,unsigned address,unsigned before,unsigned after,unsigned done) noexcept {
@@ -211,6 +224,11 @@ public:
         check_loaded();
         if(observation_failed) throw std::runtime_error("Reference video observation overflow");
         return {observed_palette.data(),palette_count};
+    }
+    std::span<const render::RasterWrite> vram_rows() const override {
+        check_loaded();
+        if(observation_failed) throw std::runtime_error("Reference video observation overflow");
+        return {observed_memory.data(),observed_count?memory_count:0};
     }
     state::SaveStateContainer save() const override {
         check_loaded();

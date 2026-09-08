@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "presentation.hpp"
+#include "cabinet.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/core/recording.hpp"
 #include <SDL3/SDL_main.h>
@@ -37,6 +38,7 @@ int main(int argc,char** argv) {
     try {
         std::filesystem::path rom_path,record_path,replay_path,data_path;
         std::uint64_t limit=0;
+        bool cabinet_mode=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]);};
@@ -45,7 +47,8 @@ int main(int argc,char** argv) {
             else if(arg=="--record") record_path=core::path_from_utf8(value());
             else if(arg=="--replay") replay_path=core::path_from_utf8(value());
             else if(arg=="--data-dir") data_path=core::path_from_utf8(value());
-            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter start/pause; Left Shift left flipper; Right Shift/Z right flipper and launcher; X nudge; Backspace select. F5/F9 quick save/load, F11 fullscreen, Escape exit.\n"; return 0; }
+            else if(arg=="--cabinet") cabinet_mode=true;
+            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter start/pause; Left Shift left flipper; Right Shift/Z right flipper and launcher; X nudge; Backspace select. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the playfield. Layout saves on normal exit.\n"; return 0; }
             else throw std::runtime_error("Unknown option "+arg);
         }
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
@@ -57,7 +60,9 @@ int main(int argc,char** argv) {
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) { playback=recording::read(replay_path); runtime->restore(playback->initial); }
         recording::Recording recorded{runtime->save(),{}};
-        host::Presentation display("Alien Crush",960,720);
+        host::Presentation display(cabinet_mode?"Alien Crush - Playfield":"Alien Crush",cabinet_mode?540:960,720,cabinet_mode);
+        std::unique_ptr<host::Cabinet> cabinet;
+        if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,data_path);
         Audio audio;
         const SDL_AudioSpec spec{SDL_AUDIO_S16,2,runtime->sample_rate()};
         audio.stream=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&spec,nullptr,nullptr);
@@ -74,11 +79,13 @@ int main(int argc,char** argv) {
                 if(event.type==SDL_EVENT_QUIT || event.type==SDL_EVENT_WINDOW_CLOSE_REQUESTED) running=false;
                 if(event.type==SDL_EVENT_GAMEPAD_ADDED) open_pad(gamepad);
                 if(event.type==SDL_EVENT_GAMEPAD_REMOVED && gamepad.pad && SDL_GetGamepadID(gamepad.pad)==event.gdevice.which) { SDL_CloseGamepad(gamepad.pad); gamepad.pad=nullptr; open_pad(gamepad); }
-                if(event.type==SDL_EVENT_WINDOW_FOCUS_LOST) { focused=false; SDL_ClearAudioStream(audio.stream); }
-                if(event.type==SDL_EVENT_WINDOW_FOCUS_GAINED) { focused=true; deadline=SDL_GetTicksNS(); }
                 if(event.type==SDL_EVENT_KEY_DOWN && !event.key.repeat) {
                     if(event.key.scancode==SDL_SCANCODE_ESCAPE) running=false;
-                    if(event.key.scancode==SDL_SCANCODE_F11) SDL_SetWindowFullscreen(display.window(),!(SDL_GetWindowFlags(display.window())&SDL_WINDOW_FULLSCREEN));
+                    if(event.key.scancode==SDL_SCANCODE_F11) {
+                        auto* window=cabinet?SDL_GetWindowFromID(event.key.windowID):display.window();
+                        if(window && !SDL_SetWindowFullscreen(window,!(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN))) throw std::runtime_error(SDL_GetError());
+                    }
+                    if(cabinet && event.key.scancode==SDL_SCANCODE_R) display.rotation((display.rotation()+90)%360);
                     if(event.key.scancode==SDL_SCANCODE_F5 || event.key.scancode==SDL_SCANCODE_F9) {
                         try {
                             if(playback || !record_path.empty()) throw std::runtime_error("Quick states are disabled during recording/replay to keep the input timeline reproducible");
@@ -90,6 +97,11 @@ int main(int argc,char** argv) {
                     }
                 }
             }
+            const auto* keyboard=SDL_GetKeyboardFocus();
+            const bool now_focused=cabinet?cabinet->owns(SDL_GetKeyboardFocus()):keyboard==display.window();
+            if(focused && !now_focused) SDL_ClearAudioStream(audio.stream);
+            if(!focused && now_focused) deadline=SDL_GetTicksNS();
+            focused=now_focused;
             if(!running) break;
             if(!focused && !limit) { SDL_Delay(10); continue; }
             const auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(gamepad.pad);
@@ -98,13 +110,16 @@ int main(int argc,char** argv) {
             if(!SDL_PutAudioStreamData(audio.stream,frame.stereo.data(),static_cast<int>(frame.stereo.size_bytes()))) throw std::runtime_error(SDL_GetError());
             // A stalled output device must not accumulate minutes of queued sound.
             if(SDL_GetAudioStreamQueued(audio.stream)>runtime->sample_rate()*4/4) SDL_ClearAudioStream(audio.stream);
-            display.show(frame); ++count;
+            display.show(frame);
+            if(cabinet) cabinet->show(runtime->work_ram());
+            ++count;
             deadline+=frame_ns;
             const auto now=SDL_GetTicksNS();
             if(deadline>now) SDL_DelayPrecise(deadline-now);
             else if(now-deadline>frame_ns*4) deadline=now;
         }
         if(!record_path.empty()) recording::write(record_path,recorded);
+        if(cabinet) cabinet->save();
         return 0;
     } catch(const std::exception& e) { std::cerr<<"Alien Crush: "<<e.what()<<'\n'; return 1; }
 }
