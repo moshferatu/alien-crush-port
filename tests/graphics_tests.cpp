@@ -69,6 +69,43 @@ int main() {
         sat[2]=64*2+1; sat[3]=0x80; vram[64*64+32]=0x8000;
         require(render::sprites(vram,palette,sat,4)[0].image.pixels[0]==render::pce_color(palette[256+3]),"Two-bit alternate plane selection");
         diagnostics::ReferenceSnapshot snapshot;
+        {
+            std::array<std::uint16_t,32768> memory{};
+            std::array<std::uint16_t,512> colors{};
+            std::array<std::uint16_t,256> attributes{};
+            colors[0]=colors[1]=7; // Equal RGB values must not erase background opacity.
+            colors[256]=7<<6; colors[257]=7<<3; colors[273]=7<<6;
+            memory[0]=128; memory[128*16]=0x80;
+            memory[64*64]=0xc000;
+            attributes[0]=attributes[4]=64; attributes[1]=attributes[5]=32;
+            attributes[2]=attributes[6]=128; attributes[7]=0x81;
+            render::Viewport view{2,1};
+            auto composed=render::compose(memory,colors,attributes,view);
+            require(composed.pixels[0]==render::pce_color(7),"Hidden earlier sprite blocks later foreground sprite");
+            require(composed.pixels[1]==render::pce_color(7<<3),"Background color zero admits rear sprite");
+            attributes[3]=0x80;
+            require(render::compose(memory,colors,attributes,view).pixels[0]==render::pce_color(7<<3),"Foreground sprite covers opaque background");
+            memory[64*64]=0x4000; attributes[2]=130; memory[65*64]=0x8000;
+            require(render::compose(memory,colors,attributes,view).pixels[1]==render::pce_color(7<<6),"Transparent earlier sprite admits later sprite");
+            view.control=0x80; view.scroll_x=256; view.scroll_y=256;
+            require(render::compose(memory,colors,attributes,view).pixels[0]==render::pce_color(7),"Scroll wraps at BAT dimensions");
+            colors[1]=7<<3;
+            require(render::compose(memory,colors,attributes,view).pixels[0]==render::pce_color(7<<3),"Wrapped background samples nonzero pixel");
+            view.scroll_x=255;
+            require(render::compose(memory,colors,attributes,view).pixels[1]==render::pce_color(7<<3),"Horizontal viewport crosses BAT seam");
+            view.control=0x40; attributes.fill(0);
+            require(render::compose(memory,colors,attributes,view).pixels[0]==render::pce_color(colors[256]),"Sprite-only backdrop selects palette 256");
+            attributes[0]=64; attributes[1]=31; attributes[2]=128; attributes[3]=0x80;
+            require(render::compose(memory,colors,attributes,view).pixels[0]==render::pce_color(colors[257]),"Partially clipped sprite samples visible column");
+            view.control=0;
+            require(render::compose(memory,colors,attributes,view).pixels[0]==render::pce_color(colors[0]),"Both layers disabled select universal backdrop");
+            view.width=0;
+            rejects([&]{(void)render::compose(memory,colors,attributes,view);},"Empty composition rejected");
+            view.width=1025;
+            rejects([&]{(void)render::compose(memory,colors,attributes,view);},"Oversized composition rejected");
+            view.width=2;
+            rejects([&]{(void)render::compose(memory,std::span(colors).first(256),attributes,view);},"Incomplete composition palette rejected");
+        }
         snapshot.memory_width=0x70;
         require(snapshot.bat_width()==128 && snapshot.bat_height()==64,"MWR map dimensions");
         const std::array<std::byte,10> packed{std::byte{2},std::byte{0x34},std::byte{0x12},std::byte{0x78},std::byte{0x56},std::byte{0x83},std::byte{0xbc},std::byte{0x9a},std::byte{0},std::byte{0xff}};

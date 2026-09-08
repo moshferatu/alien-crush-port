@@ -118,6 +118,8 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
     bitmap(directory/"background.bmp",render::background(snapshot.vram,snapshot.palette,snapshot.bat_width(),snapshot.bat_height()));
     const auto sprites=render::sprites(snapshot.vram,snapshot.palette,snapshot.sat,snapshot.memory_width);
     bitmap(directory/"sprites.bmp",render::sprite_sheet(sprites));
+    bitmap(directory/"composite.bmp",render::compose(snapshot.vram,snapshot.palette,snapshot.sat,
+        {256,240,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,snapshot.control}));
     std::ofstream table; table.exceptions(std::ios::failbit|std::ios::badbit); table.open(directory/"sprites.csv");
     table<<"slot,x,y,width,height,pattern,flags,foreground\n";
     for(std::size_t i=0;i<sprites.size();++i) {
@@ -131,6 +133,7 @@ void export_video(const std::filesystem::path& directory,const state::SaveStateC
         <<"\nscroll_x="<<snapshot.scroll_x<<"\nscroll_y="<<snapshot.scroll_y<<"\nbat_width="<<snapshot.bat_width()<<"\nbat_height="<<snapshot.bat_height()<<'\n';
     for(std::size_t i=0;i<8;++i) manifest<<"mpr"<<i<<'='<<static_cast<unsigned>(snapshot.mpr[i])<<'\n';
     manifest<<"phase=post-frame; register values are not a scanline history\n";
+    manifest<<"composite=frozen registers, 256x240, raw scroll origin, latched SAT; no scanline changes or sprite limits\n";
     manifest.close();
 }
 void verify_palette_pulse_trace(const std::filesystem::path& trace) {

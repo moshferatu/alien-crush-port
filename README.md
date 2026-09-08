@@ -60,6 +60,9 @@ RAM snapshots, raw per-frame RAM/pixels, and a replayable input recording. A 1,8
 capture takes about 440 MB. No game-specific execution patches are installed.
 `--verify-replay` checks repeated execution, midpoint restore, and boot-state restore.
 Use `--replay session.acrec` to diagnose a recorded play session instead of the canonical route.
+Add `--video-every 120` to a capture to export native background, sprite and combined
+`composite.bmp` previews. Composition uses frozen registers and latched sprites;
+scanline timing and live renderer integration remain open.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/Verify-Baseline.ps1 -RomPath '.\Alien Crush.pce'

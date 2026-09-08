@@ -492,11 +492,23 @@ integration remain open.
 
 ## Diagnostic graphics and validation
 
-`--video-every N` exports background/sprite BMPs, attributes, VRAM/SAT/palette and
+`--video-every N` exports background/sprite/composite BMPs, attributes, VRAM/SAT/palette and
 metadata from named save fields. Observation installs no execution hooks. Sprite
 decoding handles bitplanes, sizes, alignment, flips, transparency, palette selection
-and alternate 2-bit mode. It does not implement scanline limits or composition.
-Post-frame registers are not scanline histories.
+and alternate 2-bit mode. `composite.bmp` combines a frozen 256x240 viewport using
+the latched SAT, raw scroll origin and layer-enable bits. It preserves background
+color-index opacity independently of RGB, resolves SAT priority before background
+priority, wraps scroll at BAT boundaries, and clips sprites at viewport edges.
+Sprite-only display uses palette entry 256 as its backdrop; both layers disabled
+use entry zero, following the pinned VDC implementation.
+Post-frame registers are not scanline histories: this preview omits scanline sprite
+limits, register/VRAM/palette changes during display, and display-window timing.
+It does not replace the live renderer or establish full-frame pixel equivalence.
+
+`out/captures/compositor-1800` contains 15 exported previews, including visually
+checked lower/upper tables at frames 600/720. Its complete RAM/video/audio census
+retains the frozen SHA-256
+`ee560dad47ece1a3c2e55a4326bcd4ef97276ad1ac0912d6c36eb29298c6572e`.
 
 RGB conversion follows the reference's RGB565 quantization. ROM-free tests cover
 bounded field parsing, tile planes, universal background color zero, dormant patterns,

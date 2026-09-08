@@ -10,7 +10,8 @@ std::uint32_t pce_color(std::uint16_t raw) noexcept {
     const auto b=(36U*(raw&7))>>3;
     return 0xff000000U | (((r<<3)|(r>>2))<<16) | (((g<<2)|(g>>4))<<8) | (b<<3)|(b>>2);
 }
-Image background(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,int width_tiles,int height_tiles) {
+namespace {
+Image background_layer(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,int width_tiles,int height_tiles,bool transparent_zero) {
     if(vram.size()!=32768 || palette.size()<256 || (width_tiles!=32 && width_tiles!=64 && width_tiles!=128) || (height_tiles!=32 && height_tiles!=64))
         throw std::runtime_error("Invalid PCE background dimensions or memory");
     Image result{width_tiles*8,height_tiles*8,{}};
@@ -24,9 +25,13 @@ Image background(std::span<const std::uint16_t> vram,std::span<const std::uint16
         const auto high=tile+15<vram.size()?vram[tile+8+y%8]:0;
         const auto pixel=((low>>shift)&1)|(((low>>(shift+8))&1)<<1)|(((high>>shift)&1)<<2)|(((high>>(shift+8))&1)<<3);
         const auto index=pixel?((bat>>12)*16+pixel):0;
-        result.pixels[static_cast<std::size_t>(y)*result.width+x]=pce_color(palette[index]);
+        result.pixels[static_cast<std::size_t>(y)*result.width+x]=transparent_zero && !pixel?0:pce_color(palette[index]);
     }
     return result;
+}
+}
+Image background(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,int width_tiles,int height_tiles) {
+    return background_layer(vram,palette,width_tiles,height_tiles,false);
 }
 std::array<Sprite,64> sprites(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
     std::span<const std::uint16_t> sat,std::uint16_t memory_width) {
@@ -67,6 +72,43 @@ Image sprite_sheet(const std::array<Sprite,64>& sprites) {
         for(int y=0;y<image.height;++y) for(int x=0;x<image.width;++x) {
             const auto color=image.pixels[static_cast<std::size_t>(y)*image.width+x];
             if(color>>24) result.pixels[((i/8)*64+y)*result.width+(i%8)*32+x]=color;
+        }
+    }
+    return result;
+}
+Image compose(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
+    std::span<const std::uint16_t> sat,const Viewport& viewport) {
+    if(vram.size()!=32768 || palette.size()!=512 || sat.size()!=256 ||
+        viewport.width<1 || viewport.width>1024 || viewport.height<1 || viewport.height>1024)
+        throw std::runtime_error("Invalid PCE composition memory or viewport");
+    const bool bg_enabled=(viewport.control&0x80)!=0;
+    const bool sprites_enabled=(viewport.control&0x40)!=0;
+    const auto count=static_cast<std::size_t>(viewport.width)*viewport.height;
+    Image result{viewport.width,viewport.height,std::vector<std::uint32_t>(count,
+        pce_color(palette[!bg_enabled && sprites_enabled?256:0]))};
+    std::vector<bool> opaque(count),claimed(count);
+    if(bg_enabled) {
+        constexpr int widths[]{32,64,128,128};
+        const auto bg=background_layer(vram,palette,widths[(viewport.memory_width>>4)&3],
+            (viewport.memory_width&0x40)?64:32,true);
+        for(int y=0;y<viewport.height;++y) for(int x=0;x<viewport.width;++x) {
+            const auto color=bg.pixels[static_cast<std::size_t>((y+viewport.scroll_y)%bg.height)*bg.width+
+                (x+viewport.scroll_x)%bg.width];
+            const auto dest=static_cast<std::size_t>(y)*viewport.width+x;
+            opaque[dest]=(color>>24)!=0;
+            if(opaque[dest]) result.pixels[dest]=color;
+        }
+    }
+    if(sprites_enabled) for(const auto& sprite:sprites(vram,palette,sat,viewport.memory_width)) {
+        for(int y=0;y<sprite.height;++y) for(int x=0;x<sprite.width;++x) {
+            const int dx=sprite.x+x,dy=sprite.y+y;
+            if(dx<0 || dy<0 || dx>=viewport.width || dy>=viewport.height) continue;
+            const auto color=sprite.image.pixels[static_cast<std::size_t>(y)*sprite.width+x];
+            const auto dest=static_cast<std::size_t>(dy)*viewport.width+dx;
+            if(!(color>>24) || claimed[dest]) continue;
+            // SAT priority is resolved before background priority, even if hidden.
+            claimed[dest]=true;
+            if(sprite.foreground || !opaque[dest]) result.pixels[dest]=color;
         }
     }
     return result;

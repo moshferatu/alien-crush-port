@@ -157,6 +157,17 @@ Palette-zero pulse continuation:
   equivalence remains open and is reported separately from synthetic test coverage.
 - Release passes 5/5 and Debug 2/2. Upload scheduling and live integration remain open.
 
+Native diagnostic composition continuation:
+
+- Combined background and sprites with scroll wrapping, clipping, layer-enable
+  behavior and SAT priority resolved before background priority.
+- Added `composite.bmp` to video exports. Lower/upper previews at frames 600/720
+  were visually checked; all 1,800 reference RAM/video/audio fingerprints retain
+  the frozen census hash with exports enabled.
+- Release passes 5/5 and ROM-free Debug 2/2, including composition edge cases.
+- This remains a frozen-register preview. Scanline limits/timing, continuous-table
+  presentation and live renderer integration remain open.
+
 Palette fade-in continuation:
 
 - Translated the original discrete channel-by-channel fade-in, including brightness
