@@ -6,7 +6,9 @@ param(
     [string] $OutputDirectory = 'out/mesen/baseline',
     [ValidateRange(2,100000)][int] $Frames = 1800,
     [ValidateRange(0,10)][int] $TraceVideoLastFrames = 0,
-    [ValidateRange(0,120)][int] $TraceActorsLastFrames = 0
+    [ValidateRange(0,120)][int] $TraceActorsLastFrames = 0,
+    [ValidateRange(0,120)][int] $TraceLauncherLastFrames = 0,
+    [ValidateRange(0,210)][int] $LauncherHoldFrames = 0
 )
 $ErrorActionPreference = 'Stop'
 $acMesen = (Resolve-Path -LiteralPath $MesenPath).Path
@@ -42,11 +44,15 @@ $acOldOutput=$env:AC_MESEN_OUTPUT
 $acOldFrames=$env:AC_MESEN_FRAMES
 $acOldTrace=$env:AC_MESEN_TRACE_VIDEO
 $acOldActors=$env:AC_MESEN_TRACE_ACTORS
+$acOldLauncher=$env:AC_MESEN_TRACE_LAUNCHER
+$acOldHold=$env:AC_MESEN_LAUNCHER_HOLD
 try {
     $env:AC_MESEN_OUTPUT=$acOutput.Replace('\','/')
     $env:AC_MESEN_FRAMES="$Frames"
     $env:AC_MESEN_TRACE_VIDEO="$TraceVideoLastFrames"
     $env:AC_MESEN_TRACE_ACTORS="$TraceActorsLastFrames"
+    $env:AC_MESEN_TRACE_LAUNCHER="$TraceLauncherLastFrames"
+    $env:AC_MESEN_LAUNCHER_HOLD="$LauncherHoldFrames"
     $acScript=Join-Path $PSScriptRoot 'mesen/capture.lua'
     $acProcess=Start-Process -FilePath (Join-Path $acRuntime 'Mesen.exe') -ArgumentList ('--testRunner --timeout=120 "{0}" "{1}"' -f $acScript,$acRom) -WindowStyle Hidden -PassThru
     if (-not $acProcess.WaitForExit(130000)) { $acProcess.Kill(); throw 'Mesen capture timed out' }
@@ -58,4 +64,6 @@ try {
     $env:AC_MESEN_FRAMES=$acOldFrames
     $env:AC_MESEN_TRACE_VIDEO=$acOldTrace
     $env:AC_MESEN_TRACE_ACTORS=$acOldActors
+    $env:AC_MESEN_TRACE_LAUNCHER=$acOldLauncher
+    $env:AC_MESEN_LAUNCHER_HOLD=$acOldHold
 }

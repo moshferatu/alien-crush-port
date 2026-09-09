@@ -19,10 +19,9 @@ struct PlungerCalibration {
     // out, and only the inch or two of push travel is reachable, so every shot
     // comes out at the bottom of the range.
     //
-    // The defaults are a Cleveland Software Design PinOne's, which reports its
-    // plunger on an eight-bit Z axis resting at the centre and reading
-    // positive as the rod is drawn -- SDL widens that to the range below. So a
-    // PinOne needs only its axis named, and every other board needs the probe.
+    // These inherited endpoints are provisional. Use the host's --input-probe
+    // to measure the actual board's axis, rest and full-pull values before
+    // configuring a game-specific launcher adapter.
     std::int32_t rest = 0;
     std::int32_t drawn = 32767;
 
@@ -53,7 +52,7 @@ struct PlungerSample {
 
 // Which controller the plunger is, and how it is read. Held as a name and an
 // axis index rather than an SDL instance ID because it is written down in
-// `cabinet.ini` and has to survive the controller being unplugged, renumbered
+// configuration and has to survive the controller being unplugged, renumbered
 // by Windows, or plugged into a different socket.
 struct PlungerBinding {
     // Matched against the controller's name as a case-insensitive substring.
@@ -65,13 +64,12 @@ struct PlungerBinding {
     // default.
     //
     // Off rather than on, and that is a measurement rather than caution. A
-    // plunger is indistinguishable from a stick: the PinOne's rests at the
-    // centre of its axis and reads negative when drawn, which is exactly what
-    // a thumbstick pushed one way looks like. Axis 2 on an ordinary gamepad is
+    // plunger is indistinguishable from a stick: a centered plunger axis can
+    // look exactly like a thumbstick pushed one way. Axis 2 on an ordinary gamepad is
     // the right stick, so a plunger that defaulted to on would let a stick
     // charge the shooter on any desktop with a pad plugged in. Nothing can
     // tell the two apart from here, so somebody has to say -- which costs one
-    // run of `--cabinet-plunger-probe`, and that has to be run anyway to learn
+    // run of `--input-probe`, and that has to be run anyway to learn
     // the two endpoints below.
     std::int32_t axis = -1;
 
@@ -96,7 +94,7 @@ public:
 
     // One frame's axis reading. The value is the host's raw axis, unscaled and
     // unclamped: a rod pushed *past* its rest position -- which every spring
-    // does on the way back, and which the PinOne reports as positive -- reads
+    // can do on the way back -- reads
     // as no draw rather than as a negative one.
     [[nodiscard]] PlungerSample update(std::int32_t raw) noexcept;
 

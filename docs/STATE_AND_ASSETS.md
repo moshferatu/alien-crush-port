@@ -1,12 +1,664 @@
 # State and asset discovery
 
+The paused high-score viewer is recognized by RAM 7A=1, demo selector 76=0,
+and the complete nine-byte stack signature at 01F7..01FF:
+`FD EB 03 02 01 B0 41 8E 40`. Original 01:408C calls 4187; Run enters the
+pause loop and Select sets 7A=1 before 41AE calls EBE6. That wrapper pushes
+MPR2..4 and calls 1C:4003 at EBFB. Mode 7A remains 1 after return, so the mode
+alone must not select the cabinet score-table layout. This signature covers
+the paused ordinary-play viewer; post-game name entry is not inferred from it.
+The score window shows the five numerical ranks; original names remain on the
+playfield. This presentation reads RAM only and adds no persistence writes.
+
+The score-viewer replay uses canonical inputs through frame 600, Run at input
+600, Select at 650, Select at 900 and Run at 1050. The viewer signature spans
+exactly frames 651..900. The original viewport replaces the stitched table in
+the settled viewer and stitching resumes after leaving pause. All five scores
+remain 1,000,000 and their three name bytes remain 40. Restoring frame 600 and
+replaying through 1200 reproduces RAM/video/audio and the frame-800 score panel
+exactly. The 600-frame recording runs in the three-window host. Both the original
+viewer and the cabinet panel were visually inspected.
+
+High-score storage research, not yet a persistence implementation: boot
+00:E0B5..E0DC copies five six-byte records from ROM 0018F into the six RAM
+columns at 1219/121F/1225 (score / 100) and 122B/1231/1237 (name bytes).
+The sixth column in each row belongs to the current candidate and must not be
+treated as a ranked entry. 1C:470A sorts only in post-game mode 7A=2, outside
+demo; 4B2E compares all six entries with unsigned 24-bit subtraction and swaps
+all six score/name bytes, tracking the candidate's rank in RAM 1C. Equal
+comparisons do not swap entries. A candidate left at rank 5 bypasses name entry.
+Name codes cycle 40..5B using Left/Right (4877/4885); I advances the character,
+II goes back, and Run/Select confirms. The qualifying replay below verifies
+Left/Right changes, decrement wrap and I advancement/confirmation. II-back,
+increment wrap and Run/Select confirmation remain disassembly-only coverage.
+Devil's Crush's HighScoreAutosave provides the persistence reference: restore at
+the verified boot initialization boundary, sample settled table/name changes,
+write atomically, and isolate recording/replay. Alien Crush still needs its own
+validated restore integration before persistence is complete.
+
+The qualifying name-entry route starts from the room-3 clear recording at 4800,
+replays it through 5500, then sends I for n%9<4, Left for (n+3)%9<4 and II for
+n%181=100 while the current score is below 1,100,000. It then releases the pad.
+At frame 9656, the original sort promotes 1,505,700 points above the five default
+scores. The other four retained ranks stay at 1,000,000. No RAM or ROM is changed
+to force this qualification. A distinct verified stack signature at 01F7..01FF,
+`FD EB 03 02 01 8F 44 08 40`, with mode 7A=2 and practice 7C=1, identifies
+01:448D's score-screen call. The cabinet now uses the ranking layout throughout
+this 280-frame call instead of displaying the candidate field, which the sort
+has replaced with a displaced score. Ordinary-play post-game call signatures
+remain to be verified separately.
+
+Right at input 9800 changes the first name byte 40->41; I at 9802 advances.
+Left at 9804 wraps the second byte 40->5B; I at 9806 advances. Right at 9808
+changes the third byte 40->41; I at 9810 confirms, setting RAM 120C=80. The
+ranking layout remains during the confirmation pause. The title is present by
+10000, then Run at 10100/10160/10220 starts another three-ball game with zero
+current score. The new top score and raw name 41/5B/41 remain intact through
+10500, and the other four names remain unchanged. These are original character
+codes, not a claimed ASCII mapping.
+
+Frame-9400 restore through 10500 reproduces RAM/video/audio and the frame-9809
+score panel exactly. The 1100-frame recording also runs in the three-window
+stitched host. The cabinet ranking preview was visually inspected. This covers
+session retention, not disk persistence or restoration after process restart.
+
+Ordinary game-over presentation requires table code 0/1, zero remaining balls,
+no practice/demo selector and RAM 78 bits 0 and 1 both set. 01:40D0 consumes a
+ball; zero branches to 410F, which sets bit 1 before the end sequence. 417E..4182
+clears both bits before E0DE returns to the title. The score window shows GAME
+OVER while retaining the final score and lower fields; title/demo take precedence.
+This observation changes presentation only, never the emulated state.
+
+The game-over replay continues the ordinary bonus-return fixture from frame 2150.
+It uses canonical inputs from index 2450 to 2799, then only I for n%240<100 to
+launch subsequent balls with Left released (I also operates the right flipper).
+Ball counts drop at frames
+2845/3760/4732. The final score is 22,200; game-over state lasts 771 frames,
+4732..5502. Title appears at 5517 with the current score reset. Frame-4700 restore
+through 5700 reproduces RAM/video/audio and the frame-4800 score panel exactly.
+The generated 1000-frame recording spans the final drain, game over and title
+return in the three-window host. The score-panel preview was visually inspected.
+The previously named "continue selection" gap is the original score-digit match
+award described below. High-score entry and persistence remain separate gaps.
+
+The winning controller-only route branches from the same ordinary return fixture.
+It retains the losing route through frame 3760, then uses I when
+`(input_index+168)%240<100`, with Left released. The final drain is at 4785,
+with 21,700 points. At 4874 the game grants one ball and sets RAM 78 bit 3;
+the score panel stops showing GAME OVER because the ball count is now one.
+The award flag lasts 437 frames through 5310. Frame 5311 clears 53/78 and
+resumes the original ball setup. Stitched play and ball movement resume without
+a title restart. The frame-4800 checkpoint replays through 5700 with exact
+RAM/video/audio and frame-4900 score-panel parity; the generated 900-frame
+recording also runs through the three-window host. The route has 1,282 stitched
+frames in the tested ending interval, including 375 after return; their active
+pixels match outside intentional HUD removal and the seam. The score-panel
+preview was visually inspected with 21,700 points and one ball.
+
+Original match code: 03:82CC seeds the digit through F993 with range 10;
+03:834A tests new I/II presses (RAM 27 bits 0/1) to stop the spin, otherwise
+the timer expires. 03:83CC divides the internal score (displayed points / 100)
+by 10 using F856 and compares the remainder with actor field 3C40. A match
+sets RAM 78 bit 3 at 83E9, sets 53 bit 5 and calls 9196 to award a ball.
+01:414D tests that flag; 4153 clears 53/78 and jumps to 40D7 for ball setup.
+ED3B reloads graphics; it is not a continue-selection menu.
+
+The winning route exposed a moving-score sprite mismatch at frame 4792,
+pixel (89,62), during the digit upload to VRAM 0500..07FF. The reference
+FetchSpriteData caches pattern words separately from the later visible-row
+VRAM observation. TablePlayfield now declines stitching when a visible,
+unsuppressed HUD digit coincides with a nonzero-row digit-pattern upload.
+The host presents the original viewport without a stale transition hold for
+that frame. This is a conservative presentation guard, not a recovered sprite
+fetch-timing implementation; normal standard-HUD suppression is unaffected.
+
+The losing route exposed a scanline overflow error at frame 4952, pixel (178,16).
+Removing HUD SAT entries had freed fetch slots and exposed sprite pixels the
+original console dropped during the GAME OVER animation. Compositors now accept
+a 64-bit hidden-slot mask: hidden sprites still consume their original 16-pixel
+fetch pieces but do not draw or claim pixels. Table HUD removal and ball-backdrop
+rendering use this mask instead of erasing SAT entries. ROM-free checks cover
+wide hidden sprites, overflow/block masks, slot 63 and both raster paths. All
+964 stitched frames in the last-ball/end interval match the active original
+raster outside the deliberately removed HUD and fixed overlap seam.
+
+Bonus room presentation uses RAM 79=2 and room selector RAM 83=0..3, displayed
+as BONUS 1..4. FDE5 clears the main-table actors; FE18 temporarily sets 79=83+2
+for E942's actor-list loader, and FE23 restores shared table code 2. The score
+panel retains the same cumulative score mapping and replaces only the ball field.
+Unknown room selectors keep the normal layout; title and demo take precedence.
+
+The original bonus-practice selector at 01:4444 checks title input counters:
+RAM 123E/1241=3, 123F=6, 1240=8; RAM 1242&3 chooses the initial room. These
+correspond to Up/Right/Down/Left/I presses counted by 1C:42A1. It sets 7C=1,
+then runs FDC1 and advances 83 through four rooms (01:447D..4487). Tests enter
+all four rooms using pad input, preserve this practice flag, and verify exact
+frame-450 restore through frame 900. They establish score awards in rooms 1..3,
+but this short route does not establish room-4 awards or ordinary-play bonus entry/return.
+The cabinet host fixture verifies original-view fallback while stitched mode is on.
+
+Bonus round-over presentation requires a known bonus room and RAM 78 bit 0.
+FDDF exits the FDC7 gameplay loop on this bit; FEC0..FED3 waits 150 frames then
+clears 78 before the teardown/return path. The score header changes to ROUND OVER
+without changing score or room. The extended room-1 practice route observes
+endings at 740/1463/2404, followed by failed results, room progression
+and ball consumption at 1064/1787, zero balls at 2728, and title at 2877.
+Frame-450 restoration through frame 3000 preserves exact final RAM/video/audio.
+This covers practice losses and exit. The host's 300-frame loss fixture
+covers the first round end and following fade in three-window stitched mode.
+
+Completion is evaluated later, not at the initial round-over boundary: FED5 calls
+EE86, which maps 1D..21 and calls 1D:400C -> 1F:946E. The results routine tallies
+points, then 1F:9534 calls 970B. It requires RAM 84=16/15/9 for rooms 1/3/4 or
+RAM 81=6 for room 2; 9736 sets RAM 85 bit 0 and 97C5 awards completion points.
+The score panel shows BONUS CLEAR for that bit in a known bonus room; title/demo
+still take precedence. FE7C resets the flag during the next room's initialization.
+A zero flag during the initial 150-frame pause alone does not establish failure;
+practice ball consumption and the later results flag establish the outcome.
+
+Two additional controller-only routes cover the results sequence. Room 1 uses
+21-frame flipper cycles (I for n%21<10, Left for (n+7)%21<10) and II at n%181=100,
+starting at frame index 360. Live play ends at frame 2836 with 13,200 points;
+five tally changes add 80,000 before room 2 begins at 3244 with two balls.
+Room 3 uses 8-frame cycles (I for n%8<4, Left for (n+2)%8<4) and the same II
+pulses. Its clear flag first appears at frame 4974 with 448,200 points, remains
+observed for 241 frames, and the route reaches room 4 with all three balls.
+Frame-2800/4800 restores reproduce final RAM/video/audio at 3300/5500 exactly.
+The generated 700-frame clear recording also runs through all three cabinet
+windows in stitched mode; its BONUS CLEAR panel preview was visually inspected.
+Other room clears remain unverified. Ordinary-play return coverage follows below.
+
+The ordinary bonus replay uses canonical inputs before frame index 360, then
+I when n%240<100 or n%39<19, Left when (n+13)%39<19, and II at n%181=100.
+It resumes canonical inputs at index 2199. RAM 7C remains zero and demo mode
+remains off throughout. It enters room 2 at frame 854, spends 1,345 frames in
+the bonus scene, and returns to main table code 1 at 2199 with 14,400 points
+and all three balls. This exercises 01:40B4 -> FDC1 and the ordinary FF04 return.
+FF47 loads the lower actor list, FF61 exchanges it into the stored bank, and
+FF67 loads the upper actors. The first restored lower bank matches all 19
+types in ROM 997B's six-byte entries (04:B97A count/list); its 1,920 actor bytes
+remain dormant until the next lower-table handoff.
+
+The return exposed a presentation issue: a stitched image at frame 2214 used a
+partially faded upper palette alongside the fully lit inactive lower table.
+TablePlayfield now precomputes the black and partial E4A1 fade-in palettes using
+the existing, trace-verified advance_palette_fade helper. Exact 512-color matches
+in either current or previous video state keep the original viewport; no palette
+or gameplay state is modified. This is recognition of known table fade-ins,
+not a general reconstruction of offscreen palette animation. Stitching resumes
+at frame 2243, and a preview of that full table was visually inspected.
+
+Through frame 2800, 386 lower and 112 upper returned stitched frames match the
+active original raster outside the intentional HUD removal and overlap seam.
+Frame-800 restore reproduces final RAM/video/audio and the first complete
+stitched return image exactly. Generated 200-frame entry and 300-frame return
+recordings remain local; the return runs through the three-window host test.
+The original 1800-frame table test now yields 1009 lower and 253 upper ready
+frames (30 initial partial-fade frames use the original viewport); its 150
+transition holds and 75/75 ball updates are unchanged. Broader ordinary routes,
+other bonus clears and physical cabinet acceptance remain pending.
+
+The title-menu score panel uses a complete outer-call signature at RAM
+1F7..1FF: `0C EB 18 04 03 02 01 05 40`. Original 01:4003 calls EAEB (return
+4005), EAEB pushes MPR2..6, and EB0A calls the mapped title entry (return EB0C).
+Canonical frames 15..318 retain this outer frame through menus and fades;
+01:4006 replaces it as gameplay setup proceeds. This signature selects a
+presentation layout only and grants no authority to modify gameplay RAM.
+The panel displays high_scores[0] and a host-authored PRESS RUN prompt, hiding
+score and ball. Restoring a quick state recomputes the choice from its RAM.
+
+Demo presentation follows the nonzero RAM 76 branch at 01:4009. The title timeout
+sets it to 1 at 1C:404E/4050, and 01:4021 increments it to 2 before the demo loop.
+The cabinet shows high score, DEMO and PRESS RUN instead of simulated score/ball
+values. The title signature takes precedence during the fade into demo setup.
+With neutral input, demo setup starts at frame 1563, active demo at 1609, RAM 76
+clears at 5513, and the title signature returns at 5526. The attract replay test
+covers 6000 frames, a frame-1800 restore with exact final RAM/video/audio, and
+Run returning from demo to title. Bonus room mapping is described above.
+
+The default cabinet backglass is the original title actor B9, not a captured
+gameplay frame. Title initialization 1C:4055 calls 00:EC58, which maps bank 12 and
+loads the RLE sprite stream at CPU 4125 (ROM 24125) into VRAM 4000..5FFF. The
+title palette comes from 1C:4BD0 (ROM 38BD0), copied by 1C:4089. B9's thirteen
+pieces are at ROM 2D1F2; 1C:42DD initializes X=128 and 1C:4309 sets settled Y=78.
+The cabinet renders its piece bounds (x32..223, y14..157) on black using the
+initial sprite palette, without menu text, scrolling background or color cycling.
+It uses 5:4 pixel aspect. The title-logo test verifies the naturally loaded stream,
+palette and settled sprite composition during the first 300 canonical frames.
+
 All addresses apply only to ROM SHA-256
 `1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f`.
 CPU work RAM at `$2000..$3FFF` corresponds to capture offsets `$0000..$1FFF`.
 ROM offsets are physical file byte offsets; `bank:PC` uses 8-KiB banks.
 Generated disassemblies, traces and artwork remain in ignored local output.
 
+## Local backglass artwork
+
+The cabinet can load `backglass.bmp` from the data directory at startup. This is
+user-supplied presentation art, not a recovered ROM asset or game-state capture.
+Only uncompressed Windows BMP with a DIB header of at least 40 bytes and 24/32-bit
+pixels is accepted, bounded to 4096x4096 and 64 MiB. Both row orientations work;
+32-bit BI_RGB's reserved byte is ignored and output is opaque. Invalid files are
+preserved and reported. The optional image is outside recordings and save states.
+It uses the existing aspect-preserving scaler and saved backglass rotation.
+No runtime execution, RAM, ROM or replay input changes are needed for this image.
+When absent, the cabinet uses the ROM-derived title logo described above.
+
+## Initial stitched presentation
+
+Bank 03 is mapped at `$8000` for the table transition routines. `$89B9..89C7`
+adds `$00E0` to actor Y before `$89CA` increments the table code; `$8A0A..8A18`
+subtracts it before `$8A21` selects the lower table. Canonical frames 607/608
+show Y 59/283, an exact +224 translation. The reverse path updates Y before
+waiting for the frame boundary, so comparing only frames with changed table codes
+does not expose its subtraction reliably.
+
+This establishes upper origin 0 and lower origin 224. Preserving the two visible
+240-row regions yields 256×464 pixels. The original 256×240 image is displayed
+at 4:3 (pixel aspect 5:4); the stitched display therefore uses 320:464, or 20:29.
+The ROM BAT's final 16 rows are not added below the visible lower viewport.
+The 16 overlapping visible rows have different artwork. Upper-half artwork now
+owns them consistently; visible sprites from either half are retained as described
+below, with no inferred blend or modified ROM art.
+
+`TablePlayfield` seeds both backgrounds directly from ROM and composes the active
+half from current VRAM/palette and previous SAT. Standard HUD sprites are removed
+using their recovered positions, pattern range and attributes. Inactive actors
+now use the stored bank described below. Two consecutive matching pattern
+loads, enabled layers, zero scroll/camera and standard MWR are required. Unsupported
+states use the original display. With the reference observer available, the active
+half now uses the full observed raster candidate described below; builds without
+that observer retain frozen presentation. Seamless transitions are still pending.
+
+Local evidence: `out/captures/stitched-1800/stitched.csv` records 1,039 lower and
+253 upper images, with 508 fallbacks. The 1,800-frame reference census SHA-256 stays
+`ee560dad47ece1a3c2e55a4326bcd4ef97276ad1ac0912d6c36eb29298c6572e`,
+including cold/initial/midpoint restore verification. Native stitched BMPs at 600
+and `out/captures/stitched-upper-720/stitched-720.bmp` were visually inspected.
+ROM-free tests cover bounds, overlap ownership and clipping. The table replay test
+checks both halves, scene/epoch guards and restored output, and produces a short
+gameplay recording for the SDL dummy three-window stitched smoke test.
+
+### Stored inactive actors
+
+`01:46FD..4740` exchanges 32 arrays of 60 bytes starting at CPU `$2204` and
+`$3504`, advancing both pointers by 64 after each array. These are actor slots
+4..63; slots 0..3, including the ball, never participate. `inactive_table_actor_ram`
+projects those stored fields into an independent presentation buffer for the
+existing actor assembler. The reference RAM is never written. Camera zero,
+pattern base `$0200` and ten reserved HUD slots match the recovered main tables.
+
+Each half uses its own decoded sprite streams and original palette. Lower actor
+types 26/27 reconstruct their stored dynamic pattern selection even when the
+pending upload flag has cleared. No frame cache or off-screen simulation is
+needed, so quick-state restore naturally restores inactive presentation too.
+
+The table code changes at frame 608, but the swap is not complete until frame 620.
+The renderer's loading gate excludes that interval. All 1,920 bytes stored at 620
+match the active bank at 607 exactly, and inactive lower pixels remain identical
+through frame 720. These checks are part of `table_replay`; ROM-free tests check
+bank bounds, reserved-slot exclusion and source immutability. Local capture
+`out/captures/inactive-actors-1800` records both halves with inactive actors.
+The later table overlay and persistent indicator colors are now included as
+described below. Other inactive BAT modifications remain omitted; this is not a
+claim that every off-screen pixel matches the table when next activated.
+
+### Persistent inactive indicators and overlay
+
+The transition calls `03:9415` after exchanging the actor banks. This iterates
+set bits in RAM `$D6..D9`, calling `03:925F` to restore lit regions. The 29
+six-byte descriptors at physical ROM `$7357` (CPU `$9357`) supply a table number,
+BAT address, width, height and enabled/disabled palette bytes. `$92B9..9356`
+preserves each tile's low 12 bits and replaces its palette nibble, advancing
+rows by 32 words. `decode_table_indicators` and `restore_table_indicators`
+translate this restoration path directly. They do not execute actor scripts or
+write reference RAM/VRAM. Only enabled bits are reapplied to the ROM BAT, as in
+the return-to-table routine. The transient blink routine at `$9437..94B6` is not
+advanced for an inactive table.
+
+The inactive sprite pass now also invokes the established `01:4741` overlay
+assembler after the main actors, retaining its SAT capacity guard. Its selector
+comes from the corresponding half's RAM `$99/$9A`, with global visibility flags
+`$53/$54`, local camera zero and that half's sprite patterns.
+
+At canonical frame 720, all 26 tiles in six enabled upper-table rectangles match
+the original palette assignments. ROM-free tests cover table isolation, tile
+identity preservation, rectangle stride, the final flag byte and validation
+before mutation. The expanded table replay still preserves inactive lower pixels
+through frames 620..720 and restores the complete stitched image after quick load.
+Local visual evidence is `out/captures/inactive-indicators-1080/stitched-1080.bmp`.
+
+### Background actors restored on table return
+
+`01:45A8` dispatches actor scripts through the type-minus-one return-address tables
+at `04:BC8E/BCE8`. Type 7 enters `01:4FE9`, type 20 enters `01:52A1`, and types
+74..77 enter `01:5BF2/5CA5/5CFA/5D50`. The table transition sets RAM `$68` bit 1
+around the actor update at `03:89D6..89DB` / `$8A31..8A36`. Types 7/20 test that
+bit at `01:4FFB` / `$52C1` and set their background upload request regardless of
+the earlier one-shot flag. Types 74..77 do not share this forced-redraw test.
+
+`restored_actor_backgrounds` therefore restores only eligible types 7/20 from
+their current descriptor and attribute override, using the existing bounded BAT
+decoder. Inactive rendering supplies the stored-bank projection. Actor updates
+precede indicator palette restoration, matching the transition's `45E2` then
+`9415` call order. Reference RAM remains untouched and no actor script advances.
+At frames 600/720, all 25/100 tiles in the selected lower/upper regions match the
+original after indicator restoration. The other actors' stale descriptors remain
+excluded; this is a partial background restoration, not an exact inactive BAT.
+Visual capture: `out/captures/inactive-backgrounds-1080/stitched-1080.bmp`.
+
+### Holding the stitched image during table loading
+
+Canonical frames 608..622 and 845..859 lack a complete target table image. The
+game changes RAM `$79`, reloads graphics, exchanges actor banks, then resumes
+display. `TableTransitionHold` retains the immediately preceding complete stitched
+image through that interval. It arms only on an adjacent-frame change between
+main-table codes 0/1, with local camera zero and visibility flags `$53/$54` clear
+of their sign bits. Same-table failures cannot start a hold. A second table change
+while holding cancels it, and 32 frames is an explicit presentation timeout,
+not a recovered game constant.
+
+The host and capture tool share this class. Quick load and the V toggle reset it;
+nonconsecutive epochs and unsupported camera/visibility states clear its cache.
+It changes only presentation: game frames/audio continue normally. Background
+pixels remain held while the ball may be replaced as described below. The next
+complete native image replaces the hold immediately. `stitched.csv` adds a `held`
+column so these images remain distinguishable from directly composed frames.
+
+The 1,800-frame replay covers 150 held images across ten table changes, in addition
+to the unchanged 1,292 directly composed images. Tests verify both initial loading
+intervals and the first held image's exact pixels; ROM-free tests cover timeout,
+ready-image replacement, resets and cancellation. The 32-frame SDL dummy smoke
+recording now spans the first switch. The ball's handoff is not yet seamless.
+
+### Ball presentation during loading
+
+The standard type-1 ball uses descriptor 0 or 155..157: a single 16x16 foreground
+sprite, offsets (-6,-6), pattern `$20/$22/$24/$26`, flags `$0080`. The table's
+pattern base is `$0200`. `transition_ball` decodes that ROM form with stored
+actor-0 X/Y, subtracts the hardware origin (32,64), and adds 224 for the lower
+half. At frame 608 this gives (234,213); at 845 it gives (112,218). It does not
+advance physics or interpolate. Attribute override modes outside this form retain
+the original hold.
+
+For each complete frame, an optional second composition removes the uniquely
+matching *visible* SAT ball and preserves everything behind it, including raster
+timing. Off-screen entries are excluded from matching: the upper table also has
+a ball-form entry at hardware coordinates `$FFFA/$FFFA`. Zero or multiple visible
+matches disable replacement. The clean composition avoids erasing an image
+rectangle, which would destroy table artwork or leave a duplicate ball.
+
+During a hold, the new ball replaces the old one only when none of its opaque
+pixels intersects another sprite's claimed pixels or a row with all sixteen fetch
+slots occupied. The compositor exports these blockers before background priority,
+so hidden sprite pixels remain blocking but transparent portions do not. Frozen
+and raster paths generate the mask in the same pass as the cached background;
+palette RGB equality does not determine coverage. Ambiguous cases retain the
+original complete held image. The ball uses
+the corresponding half's ROM sprite palette while background graphics load.
+This is cabinet presentation, not a claim to reproduce the cartridge's blanked
+loading display.
+
+The 1,800-frame replay now requires 150 ball replacements (75 lower / 75 upper),
+covering every held frame. The earlier rectangle guard produced 18 unnecessary
+fallbacks. Synthetic tests verify hidden-pixel blocking, transparent-pixel freedom,
+exhausted fetch rows, raster disabling, old-ball removal and exact overlap fallback.
+The CSV distinguishes `held` background and `ball_updated`; local frame 850 is
+exported in `out/captures/pixel-ball-860`, and the earlier frame 622 view remains in
+`out/captures/live-ball-622`. Actual opaque overlaps still use a conservative hold;
+this does not claim complete handoff coverage for every possible gameplay route.
+
+### Fixed artwork at the join
+
+The upper half supplies background artwork for global rows 224..239. The lower
+half supplies rows 240..463. Within the overlap, visible lower sprites replace
+upper artwork unless an upper sprite has already claimed the pixel and the upper
+half is active. This preserves both halves' sprites and gives the active half
+priority in an actual sprite conflict. It is an explicit cabinet presentation
+choice; the cartridge never displays this combined region simultaneously.
+
+Optional compositor masks record visible sprite coverage after the existing
+SAT ordering, background priority and sixteen-piece scanline limit. Raster bands
+clear and populate their own rows; pixel palette changes preserve that coverage.
+RGB comparison is not used to infer transparency. Thus a sprite matching the
+background color remains visible when placed over the other half's artwork.
+Tests cover fixed artwork across active-half changes, sprite conflicts and mask
+behavior with hidden sprites, equal colors and raster-disabled sprites.
+Local views: `out/captures/fixed-join-1080/stitched-720.bmp` and `stitched-1080.bmp`.
+
+### Live stitched raster timing
+
+The host and stitched capture enable the existing read-only observer when the
+runtime supports it. `TableRaster` supplies complete display rows, pixel palette
+writes and initial VRAM plus row deltas to `TablePlayfield`. The renderer uses
+previous SAT and initial palette with the same schedules as the exact diagnostic
+candidate. It removes HUD sprites before composition, preserving table pixels
+beneath the digits. Missing rows or incomplete initial VRAM reject the stitched
+frame instead of silently substituting frozen timing. Observer-free builds keep
+the explicit frozen path; there is no independent device-timing implementation yet.
+
+The expanded 1,800-frame `table_replay` checks every active pixel outside the two
+removed HUD areas and intentional 16-row cabinet join against the reference on
+all 1,292 supported frames. One image
+differs from frozen stitching and is corrected by raster timing. Tests also cover
+incomplete observations and save-state restoration. Inactive rendering remains
+derived solely from stored RAM and ROM.
+
+A read-only background reconstruction probe against the existing
+`out/captures/inactive-actors-1800` checkpoints found that simply replaying stored
+descriptors is insufficient: frame 360's BAT reconstructs exactly, but frames
+720/1080/1440/1800 retain 25/16/36/36 differing words. Some flagged descriptors
+are sprite forms, and even valid background descriptors can differ from the last
+uploaded tiles. No such speculative updates were added to the inactive renderer.
+
 ## Established observations
+
+### Launcher discovery (2026-09-08)
+
+Actor type `$06` dispatches to `01:4E23`; the canonical lower table uses slot 6.
+Type `$1C` at `01:49C8` first brings the ball from `(272,259)` upward for 64
+updates, then changes it to type 1 and sets RAM `$67=1`. Neither launcher
+presence nor `$67=1` alone establishes complete scene validity.
+
+The launcher checks `$67=1`, the sign of `$53`, pad `$22 & 3`, and its contact
+byte `$1AC0+slot` before starting a draw. It accepts either low pad bit. Phase
+is `$1840+slot`, timer `$1880+slot`, travel `$1C00/1C40+slot`, and signed travel
+step `$1B80/1BC0+slot` (low/high byte arrays).
+
+- Phase 1 advances travel by `$0040` through `00:FD2B/FD35`. At descriptor
+  limit 9 it clamps to `$0800`, reverses the step, and enters phase 2 with
+  timer `$80`.
+- Phase 2 holds for 128 updates. Continued button input enters phase 3 and
+  returns travel toward zero. Release in phases 1, 2 or 3 calls `01:4F51`
+  and enters phase 4. Holding longer does not always increase strength.
+- Release negates travel, calls signed multiplication `00:F796` with `$A6/A7`,
+  and writes launcher Y velocity `$1780/17C0+slot`. It sets the travel step to
+  `$FF00` and clears ball X velocity/increments. At canonical factor `$0100`,
+  tested travel 512/1024/2048 produces launcher velocity -512/-1024/-2048.
+  This is not a direct assignment of ball launch velocity.
+- `01:4F8F` positions the waiting ball from the nine-entry offset table `$4FC2`,
+  indexed by integer travel. Phase 4 calls `03:852F`; its vertical collision
+  response is recovered below. Complete eligibility and analog wiring remain open.
+
+`launcher_replay` restores natural frame 480 and varies only controller input:
+9, 17, 33, 100 and 177 held updates followed by release. It verifies travel,
+release velocity and phase, plus the long-hold plateau/return cycle, without RAM
+writes. The 177-update case releases in phase 3 at travel 1536.
+Canonical frame 481 begins drawing and frame 581 releases at full travel.
+
+`tools/Inspect-LauncherCapture.ps1 -RamPath <capture>/work-ram.bin -FirstFrame 420
+-LastFrame 600` emits CSV for each active type-6 actor with raw travel, signed
+velocity, pad, contact and scene fields. Frame numbers are one-based file block
+indices, not embedded emulator timestamps. It accepts complete 8 KiB frames up
+to 64 MiB and never modifies the capture. Local report: `out/launcher-baseline.csv`.
+
+### Native vertical launcher contact response
+
+`03:852F` sets collision-mode bit 7, finds ball/launcher overlap through `03:85B8`,
+then calls `03:858F`. The type-6 collision dispatch tables at `04:BD42/BD9C`
+select `01:4FD4`, which clears ball X velocity and enters `03:8B5E`. Velocity
+projection is complete at `03:8B69`. The observed launcher surface is `$60`,
+with basis `$D0/D1=$0100`, `$D2/D3=$0000` and zero ball tangent velocity.
+
+`gameplay::vertical_launcher_contact` translates the response for that surface
+and basis. It implements the original contact/separation branches, five-bit
+arithmetic-shift damping and 16-bit wrap. With a new contact, the outgoing Y
+velocity is `launcher_y + floor(-abs(ball_y)/32)`, where both inputs are raw
+signed velocity words. Without a new contact, an already upward-moving ball is
+ignored; an upward launcher may catch a stationary/downward ball. The receding
+launcher branch retains the original response without adding launcher velocity.
+This helper does not detect overlap, establish scene validity, or advance physics.
+
+Read-only Mesen callbacks capture projected input at `$8B69` and output at
+`$8BE1/$8BE4/$8BA1/$8BF8`. `-TraceLauncherLastFrames N` enables them.
+`-LauncherHoldFrames N` optionally keeps the canonical first 480 inputs, then
+holds only I for N frames and releases all controls; it never writes game RAM.
+Manifests distinguish this route from canonical and record the hold duration.
+
+The binary schema is `ACLC0001`, followed by fixed records: little-endian entry
+frame u32, exit frame u32, exit PC u16, entry RAM[8192], exit RAM[8192]. The
+`ac_launcher_contact_tests` executable accepts one or more trace paths, bounds
+input to 64 MiB, validates records/actors/surface/basis/chronology, and checks
+native branch choice and resulting ball velocity against each executed call.
+Header, truncation, chronology, basis and output-corruption fixtures are rejected.
+
+Local captures `out/mesen/launcher-contact-{600,quarter,half,return}` contain
+7 matching calls, 6 applying a response. They cover canonical full travel,
+9/17-update draws and a 177-update release during return. The canonical calls
+at frames 582/583/584 ignore velocity -3, then produce -2049 and -2113 with
+launcher velocity -2048. This verifies the actual contact response rather than
+assuming ball velocity equals launcher velocity.
+
+The untraced `launcher-contact-control-600` matches complete RAM and CPU/clock
+logs byte-for-byte. Pixels match on frames 20..600; startup frames 1..19 retain
+the previously observed Mesen capture variation. The native helper is verified
+in isolation and is not yet used to replace the reference runtime's collisions.
+
+### Cabinet score presentation
+
+`render::ScorePanel` composes a 256x96 image from the decoded current score,
+first high-score entry and ball-counter byte. It uses original 16x16 HUD digit
+sprites (patterns 20..29, flags `$008F`, uploaded at VRAM `$0500`) with the lower
+table's palette. The ROM palette is decoded independently from bank `1B:A000`,
+avoiding a full two-table background allocation just to obtain HUD colors.
+Small field labels are host-authored bitmap glyphs. The upper score uses a fixed
+2x scale and lower fields 1x; all ten decimal digits of a uint32 value fit without
+clipping or changing glyph size. The score window uses the existing sharp scaler
+at 8:3 and therefore also honors its persisted rotation. Values are read from the
+existing diagnostic mapping. Title menus use the separate layout described above;
+demo mode adds a label and hides simulated values. Bonus rooms replace the ball
+field with their room number. Ten rendered digits match the original loaded VRAM/palette at frame
+600, including transparent pixels on black. ROM-free layout tests cover maximum
+values, zero and invalid glyph dimensions. The table replay emits a private
+`table-smoke.score.ppm` preview beside its recording; its frame-600 image was
+converted to PNG locally for visual inspection. This does not alter the runtime
+or replay timeline.
+
+### Lower table counter artwork
+
+The lower-only branch at `03:94B9` reads RAM `$7F`, stops at 7, otherwise
+increments it and jumps to `03:94F6`. That drawing routine returns immediately
+on the upper half, indexes `03:9565` by `12*(value-1)`, then writes three words
+at BAT `$022D` and three at `$024D` (32-word row stride). The seven entries end
+immediately before code resumes at `03:95B9`. Each word includes palette `$A`.
+`decode_lower_counter_tiles` extracts those data entries from the supported ROM;
+`restore_lower_counter` applies them after inactive actors and persistent indicator
+restoration. It reads global RAM `$7F`, not an inactive actor field, and never
+changes game state or advances an off-screen actor. Values outside 1..7 preserve
+the base BAT. The patch covers local pixels x=104..127, y=136..151, corresponding
+to stitched y=360..375. All 1,039 usable lower frames in the 1,800-frame canonical
+route match original video memory. That route only observes value 1 (plus zero
+during initialization). Values 2..7 have synthetic rendering tests with copied
+RAM only: every changed inactive pixel stays within that rectangle. This is not
+natural gameplay evidence for reaching those higher values.
+
+### Guarded reference plunger draw adapter
+
+`ReferenceRuntime::apply_plunger_draw(percent)` is an explicit cabinet adapter,
+separate from read-only observation and canonical pad input. It accepts 1..100;
+false leaves RAM intact. It is tested through the runtime API but not yet wired
+to general native gameplay. The SDL and recording bridges described below now support these operations.
+
+The seat gate requires the active lower table, mode `$67=1`, demo selector `$76=0`,
+clear scene bytes `$53/$54`, no death/game-over bits `$78 & $13`, active bit
+`$68 & 1`, zero camera, and a visible type-1 ball. Exactly one active-table type-6
+actor must have flags `$88`, phase 0..3, normal descriptor mode, limit 9, travel
+0..2048 and descriptor 23..31 consistent with integer travel. The ball's contact
+`$1A40` must name that slot. Launcher position must be `(258,240)`, ball X must
+be 272, and ball Y must be within one pixel of its current ROM-defined seat.
+The check is against the old draw position, before carrying the ball to a new one.
+
+Pause calls `00:E9E8 -> 19:A00C -> 19:BA7F`, setting `$F6=3`; the sound driver
+consumes bit 0 while bit 1 remains set. The gate rejects that bit. It also
+requires the outermost stack return word at RAM `$01FE/01FF` to be `$4088`,
+the normal `01:4086` frame wait. Pause and its 16-frame resume delay retain
+the `$408E` caller of `01:4187`, so clearing the sound pause bit does not
+prematurely reopen the gate. These are supported-ROM execution checks, not a
+general scene classifier or proof for every possible gameplay route.
+
+Accepted draw maps to `floor(percent*2048/100)`. The adapter writes travel,
+phase 1, zero travel step, descriptor, and the seated ball's integer position.
+The descriptor sequence comes from `04:BEC2` (23..31), selected by `00:FD8F`;
+seat offsets come from `01:4FC2`. Ball velocity and fractional position are
+untouched. While I is held, original phase-1 code maintains the chosen draw.
+Clearing both I and II lets original `01:4F51` calculate release velocity and
+phase 4 transfer motion through the original collision routine. No extra frames
+are advanced by the adapter. Pinning the chosen draw is a cabinet control choice;
+the original digital button still retains its timed draw/plateau/return behavior.
+
+`launcher_replay` separates these modified-input trials from natural-ROM evidence:
+five percentages (1/25/50/75/100) each stay fixed for 300 updates and release at
+the expected strength. Charged save/restore repeats RAM/video/audio exactly.
+Large upward/downward draw changes retain the seat. Fifteen rejected-state
+mutations and invalid percentages leave every byte intact; natural pause/resume
+is rejected. The unmodified 1,800-frame route opens the gate on 135 pre-release
+frames and never during menus, flight or table transitions.
+
+`ReferenceRuntime::cancel_plunger_draw()` returns an adapter-pinned draw to rest.
+It uses the same seat/scene/identity checks, but also accepts the known `$408E`
+pause/resume caller. It additionally requires phase 1 and a zero travel step;
+natural digital draws and fired launchers are rejected without changing RAM.
+The caller must track adapter ownership: these fields identify the pinned state,
+not which input device requested it.
+
+Cancellation zeros launcher travel and velocity, restores phase 0 and descriptor
+23, and carries the ball to the rest seat (272,243). Ball velocities and fractional
+positions are untouched. The original phase-0 path at `01:4E55` returns without
+firing when I/II are clear. This is an explicit cabinet behavior, not a recovered
+cartridge cancellation feature. Twenty runtime cases cover five strengths with
+immediate cancellation, active play, pause and resume delay. All remain seated
+for 240 neutral frames, repeat exactly after save/restore, and accept a new draw
+and original release. Fifteen invalid-state mutations are transactional.
+
+The cabinet host now binds a raw SDL axis using opt-in `ACPLUNGER1` configuration.
+It reuses the Devil's Crush endpoint/deadzone/release normalization and records
+accepted bridge commands with the effective pad bits. A draw owns I/II only after
+the launcher gate accepts it. Releases clear both bits; other actions remain live.
+Focus loss or disconnect marks an owned draw for cancellation before the next
+emulated frame, keeping the cancellation on the recorded timeline even if the
+host waits for focus. A paused owned draw cancels when the draw gate rejects it.
+Rearming requires the rod currently at rest and I/II released; spring bounce and
+a held rod after reconnect cannot reacquire a ball. Quick-load drops old ownership
+and rearms; quick-save is refused while the rod owns a draw. A rejected out-of-seat
+pull must return to rest before acquiring a later ball. Four virtual SDL sessions
+verify launch, focus, disconnect and pause, with exact RAM/video/audio replay;
+quick-load also verifies that rearming does not mutate the restored state.
+Physical PinOne calibration and cabinet acceptance remain pending.
+
+The recording layer accepts `ACREC001` (unchanged four-byte pad records) and
+`ACREC002` (the same pad record followed by one command byte). Both retain the
+embedded initial state, frame count and trailing SHA-256. Command 0 does nothing,
+1..100 applies a draw percentage and 101 cancels. Release is expressed through
+I/II being clear, including a draw and release within one frame. Cancellation
+requires both buttons clear to prevent an immediate digital redraw. Commands
+execute before advancing the runtime; gate rejection throws without advancing.
+These are accepted gameplay bridge commands, not raw axis samples or calibration.
+Pad-only writers retain version 1. A nonempty command vector must match the pad
+timeline exactly; readers reject invalid commands even with a valid checksum.
+The 120-frame launcher fixture includes cancellation, a new draw, and a stronger
+same-frame draw/release. File playback matches RAM, video and audio, diagnostic
+checkpoint replay resumes inside a pinned draw, and SDL dummy playback exercises
+the same commands in the three-window stitched host.
 
 | Meaning | Work-RAM offsets | Evidence and limits |
 | --- | --- | --- |

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "cabinet.hpp"
+#include "window_layout.hpp"
+#include "alien_crush/render/title_logo.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include <algorithm>
@@ -11,9 +13,13 @@ namespace alien_crush::host {
 namespace {
 void checked(bool ok) { if(!ok) throw std::runtime_error(SDL_GetError()); }
 struct Monitor { SDL_DisplayID id; std::string name; SDL_Rect bounds; };
-std::vector<Monitor> monitors() {
+std::vector<Monitor> monitors(bool required=true) {
     int count{}; auto* ids=SDL_GetDisplays(&count);
-    if(!ids || count<1) {SDL_free(ids); throw std::runtime_error("No cabinet displays available");}
+    if(!ids || count<1) {
+        SDL_free(ids);
+        if(required) throw std::runtime_error("No cabinet displays available");
+        return {};
+    }
     std::vector<Monitor> result;
     for(int i=0;i<count;++i) {
         SDL_Rect bounds{};
@@ -23,7 +29,7 @@ std::vector<Monitor> monitors() {
         }
     }
     SDL_free(ids);
-    if(result.empty()) throw std::runtime_error("No usable cabinet displays available");
+    if(result.empty() && required) throw std::runtime_error("No usable cabinet displays available");
     return result;
 }
 constexpr std::array<const char*,3> roles{"playfield","backglass","score"};
@@ -47,8 +53,10 @@ std::array<Placement,3> read(const std::filesystem::path& path) {
     return placements;
 }
 }
-Cabinet::Cabinet(Presentation& playfield,const std::filesystem::path& data)
-    : windows_{&playfield,&backglass_,&score_},path_(data/"cabinet-windows.txt") {
+Cabinet::Cabinet(Presentation& playfield,const std::filesystem::path& data,std::span<const std::byte> rom)
+    : windows_{&playfield,&backglass_,&score_},path_(data/"cabinet-windows.txt"),score_panel_(render::ScorePanel::from_rom(rom)),
+      backglass_image_(load_backglass(data/"backglass.bmp")) {
+    if(!backglass_image_) {backglass_image_=render::title_logo(rom);backglass_from_rom_=true;}
     const auto displays=monitors();
     const bool saved=std::filesystem::exists(path_);
     const auto placements=saved?read(path_):std::array<Placement,3>{};
@@ -81,11 +89,78 @@ Cabinet::Cabinet(Presentation& playfield,const std::filesystem::path& data)
 bool Cabinet::owns(SDL_Window* window) const {
     return std::any_of(windows_.begin(),windows_.end(),[&](const auto* output){return output->window()==window;});
 }
+bool Cabinet::handle_key(const SDL_KeyboardEvent& key) {
+    if(key.type!=SDL_EVENT_KEY_DOWN || key.repeat) return false;
+    auto* window=SDL_GetWindowFromID(key.windowID);
+    const auto found=std::find_if(windows_.begin(),windows_.end(),[&](const auto* output){return output->window()==window;});
+    if(found==windows_.end()) return false;
+    const bool reverse=(key.mod&SDL_KMOD_SHIFT)!=0;
+    if(key.scancode==SDL_SCANCODE_R) {
+        auto* output=*found;
+        output->rotation((output->rotation()+(reverse?270:90))%360);
+    } else if(key.scancode==SDL_SCANCODE_F6) {
+        const auto index=static_cast<std::size_t>(found-windows_.begin());
+        checked(SDL_RaiseWindow(windows_[(index+(reverse?2:1))%windows_.size()]->window()));
+    } else if(key.scancode==SDL_SCANCODE_F11) {
+        checked(SDL_SetWindowFullscreen(window,!(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)));
+    } else if(key.scancode==SDL_SCANCODE_F10) {
+        const auto displays=monitors(false);
+        if(displays.size()<2) return true;
+        const auto current=SDL_GetDisplayForWindow(window);
+        const auto display=std::find_if(displays.begin(),displays.end(),[&](const auto& m){return m.id==current;});
+        const auto index=display==displays.end()?0:static_cast<std::size_t>(display-displays.begin());
+        const auto& target=displays[(index+(reverse?displays.size()-1:1))%displays.size()];
+        const bool fullscreen=(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0;
+        // Leave fullscreen before changing its windowed placement; wait for the
+        // platform to finish so the next request uses the new display.
+        if(fullscreen) {checked(SDL_SetWindowFullscreen(window,false));checked(SDL_SyncWindow(window));}
+        int w{},h{};checked(SDL_GetWindowSize(window,&w,&h));
+        const auto& b=target.bounds;
+        w=std::min(w,b.w);h=std::min(h,b.h);
+        checked(SDL_SetWindowSize(window,w,h));
+        checked(SDL_SetWindowPosition(window,b.x+(b.w-w)/2,b.y+(b.h-h)/2));
+        checked(SDL_SyncWindow(window));
+        if(fullscreen) checked(SDL_SetWindowFullscreen(window,true));
+        checked(SDL_RaiseWindow(window));
+    } else return false;
+    return true;
+}
+bool Cabinet::recover_displays() {
+    const auto displays=monitors(false);
+    if(displays.empty()) return false;
+    std::vector<SDL_Rect> usable,full;
+    for(const auto& display:displays) {
+        SDL_Rect bounds{};
+        if(!SDL_GetDisplayBounds(display.id,&bounds) || bounds.w<=0 || bounds.h<=0) return false;
+        usable.push_back(display.bounds);full.push_back(bounds);
+    }
+    for(std::size_t i=0;i<windows_.size();++i) {
+        auto* window=windows_[i]->window();
+        checked(SDL_SyncWindow(window));
+        const bool fullscreen=(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0;
+        SDL_Rect before{};
+        checked(SDL_GetWindowPosition(window,&before.x,&before.y));
+        checked(SDL_GetWindowSize(window,&before.w,&before.h));
+        const auto after=visible_window(before,fullscreen?full:usable,i);
+        if(!after) return false;
+        if(SDL_RectsEqual(&before,&*after)) continue;
+        if(fullscreen) {checked(SDL_SetWindowFullscreen(window,false));checked(SDL_SyncWindow(window));}
+        checked(SDL_SetWindowSize(window,after->w,after->h));
+        checked(SDL_SetWindowPosition(window,after->x,after->y));
+        checked(SDL_SyncWindow(window));
+        if(fullscreen) {checked(SDL_SetWindowFullscreen(window,true));checked(SDL_SyncWindow(window));}
+        // Do not raise windows: topology changes must not take focus from another app.
+    }
+    return true;
+}
 void Cabinet::show(std::span<const std::byte> ram) {
-    backglass_.panel("ALIEN CRUSH");
+    if(backglass_image_) {
+        const auto& art=*backglass_image_;
+        backglass_.show({0,art.width,art.height,art.pixels,{}},art.width*(backglass_from_rom_?5:1),art.height*(backglass_from_rom_?4:1));
+    } else backglass_.panel("ALIEN CRUSH");
     const auto state=diagnostics::observe_alien_state(ram);
-    const auto text="SCORE  "+std::to_string(state.score_points)+"\n\nBALL   "+std::to_string(state.ball_counter);
-    score_.panel(text.c_str());
+    const auto image=score_panel_.compose(state);
+    score_.show({0,image.width,image.height,image.pixels,{}},8,3);
 }
 void Cabinet::save() const {
     std::ostringstream stream; stream<<"ACWINDOWS 1\n";

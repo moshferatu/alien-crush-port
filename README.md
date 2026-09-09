@@ -46,18 +46,185 @@ Use `--data-dir` to select another location. Missing ROM paths default beside th
 
 Record with `--record session.acrec`, replay with `--replay session.acrec`.
 Recordings embed the initial state and every sampled controller input with an integrity hash.
+Replay also supports per-frame plunger draw/cancel commands (`ACREC002`); pad-only
+recordings retain `ACREC001`. Commands run before the frame and a rejected launcher
+operation stops playback. Both the SDL host and diagnostic tool support this format.
+Live cabinet recordings include accepted plunger commands when analog input is configured.
 Quick-state operations are disabled during recording and replay to retain a linear timeline.
 
 For the initial three-window cabinet host, add `--cabinet`. Move and resize the
-playfield, backglass and score windows onto your monitors; F11 toggles fullscreen
-for the focused window and R rotates the playfield clockwise by 90 degrees.
+playfield, backglass and score windows onto your monitors, or use these keys:
+
+| Cabinet key | Action |
+| --- | --- |
+| F6 / Shift+F6 | Focus the next / previous window: playfield, backglass, score |
+| F10 / Shift+F10 | Move the focused window to the next / previous connected monitor |
+| R / Shift+R | Rotate the focused window clockwise / counterclockwise by 90 degrees |
+| F11 | Toggle fullscreen for the focused window |
+
+Monitor changes center the window on the destination, fit its size to the usable
+area, and retain its rotation and fullscreen setting. F10 does nothing when only
+one monitor is connected. Keyboard repeats do not repeat setup actions.
 Placement, monitor names and rotation save on normal exit to
 `portable-data/cabinet-windows.txt` (or your `--data-dir`). Missing monitors fall
 back to connected displays with the windows clamped into view. Moving focus
 between cabinet windows keeps the game running; switching away pauses it.
-This prototype uses the original scrolling view, a plain title backglass and
-observed score/ball fields. Stitched full-table rendering, ROM backglass artwork,
-scene-aware score presentation and physical plunger integration remain pending.
+Live monitor connection, position, orientation and resolution changes also recover
+displaced windows. Visible windows stay on their current monitor; reconnecting a
+monitor does not automatically move them back (use F10). Recovery preserves
+rotation and fullscreen without explicitly raising windows. If no displays are
+available, gameplay waits for a usable layout; exiting during that wait preserves
+the previously saved window settings. Display changes clear queued audio and
+rearm cabinet controls, cancelling an owned analog draw before gameplay resumes.
+The score window uses the original game digits for score, high score and ball
+counter in a fixed layout with sharp scaling and black borders. Digit size stays
+stable as values grow. During the title and selection menus it shows the high
+score and a "PRESS RUN" prompt, hiding the inactive score and ball counter.
+Attract-mode demos show the same high score and prompt with a "DEMO" label;
+simulated scores and ball counts stay hidden. Run returns to the original menus.
+In a bonus room, the score remains the game's cumulative total and the lower-right
+field shows BONUS 1–4 instead of the main-table ball counter. Bonus rooms use the
+original single-screen playfield, including when `--stitched` is enabled.
+When the original bonus loop ends, the panel displays ROUND OVER while retaining
+the cumulative score and room number. It follows the game's timing and clears
+as the original scene advances.
+During results, BONUS CLEAR appears when the game's completion flag is set.
+The score continues to follow the original tally and completion awards. A
+controller-only room-3 clear replay verifies progression with all three balls
+preserved; clears in the other rooms still need coverage.
+An ordinary-play replay also verifies bonus-room-2 entry and return to both main
+table halves. Recognized table fade-ins keep the original viewport until the
+palette settles, then stitching resumes with both halves at full brightness.
+After the final ordinary ball is consumed, the score window shows GAME OVER
+with the final score. The original score-digit match can award another ball;
+I or II stops the match animation. A loss returns to the title menus, while a
+win resumes play with the score preserved. Replays cover both outcomes, the
+return to the stitched table and exact save/restore. During moving-score digit
+uploads, the original viewport is used because sprite fetch timing is not yet
+captured by the row-based VRAM trace.
+To view the five high scores during ordinary play, press **Enter** (Run) to
+pause, then **Backspace** (Select). The score window shows all five ranks while
+the playfield shows the original score-table screen. Press Backspace or Enter
+to leave that screen, then Enter to resume play. Scores currently last for the
+running session or a quick state; automatic persistence is not implemented yet.
+The cabinet also shows the ranked table during the verified bonus-practice
+name-entry sequence. Name editing remains on the original playfield screen.
+A qualifying replay checks a 1,505,700-point score, name confirmation and
+retention when starting another game in the same session.
+Put your artwork at `portable-data/backglass.bmp` (or in
+your `--data-dir`) to display it on the backglass. Use an uncompressed 24-bit or
+32-bit Windows BMP, at most 4096x4096 pixels and 64 MiB; pixels are opaque.
+Artwork loads at startup, fits without stretching or cropping, and honors saved
+backglass rotation. Black borders fill unused space. Restart to change artwork.
+Without a local image, the backglass displays the original Alien Crush title logo,
+decoded directly from your ROM. It uses the title's initial blue palette on black,
+with corrected cartridge pixel aspect, and honors saved rotation. This is a static
+logo without title-menu text or color animation. Invalid local artwork reports an
+error and is preserved for correction. Artwork stays local and is not stored in
+recordings. Other bonus-room clears, broader ordinary-play routes and
+physical cabinet acceptance still need broader testing.
+
+Raw cabinet buttons can be configured for boards such as PinOne, including devices
+SDL does not recognize as gamepads. First run the hardware probe (no ROM required):
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush.exe --input-probe
+```
+
+The window and console show controller names, zero-based pressed button numbers,
+and raw axis readings. Pull the plunger to identify its axis and rest/full-pull
+endpoints; these readings are diagnostic and do not control launch power yet.
+Escape closes the probe. `--frames N` limits it to N samples at 100ms intervals.
+
+Create `portable-data/cabinet-inputs.txt` beside the executable (or in your
+`--data-dir`) using the observed controller name and button numbers:
+
+```text
+ACINPUTS1
+"PinOne"
+0 1 2 3 4 -1 -1 -1
+```
+
+The eight numbers map, in order, to left flipper, right flipper/launcher, nudge,
+start/pause, select, up, down and right. **The numbers above are examples, not
+verified PinOne defaults.** Use `-1` to disable a mapping; valid indices are 0–255.
+The name is a nonempty case-insensitive substring; the first matching device with
+all configured buttons is selected. Choose a distinctive name when several boards
+are connected. Settings load at startup in `--cabinet` and `--stitched` modes.
+A missing file leaves raw buttons disabled; malformed settings report an error.
+Keyboard controls and other gamepads remain available. The selected board's default
+gamepad mapping is suppressed to prevent duplicate actions.
+
+Release all mapped buttons after startup, reconnect, quick-load or returning from
+another application before using them. Disconnecting clears held raw input and
+reconnecting finds the board by name even if its SDL instance ID changes. Recordings
+store the resulting controller bits and accepted plunger commands; replay ignores hardware mappings.
+These buttons retain the game's original shared right-flipper/launcher and
+start/pause behavior. Separate scene-aware button actions remain pending.
+
+The reference-runtime plunger adapter now has automated tests for seated-ball
+detection, stable draw strength, original-game release, and cancellation without
+firing during active play, pause or resume. New draws are rejected while paused.
+Enable analog input by creating `cabinet-plunger.txt` in the data directory:
+
+```text
+ACPLUNGER1
+"PinOne"
+2 0 32767 8 25
+```
+
+The five numbers are **axis index, rest value, full-pull value, deadzone percent,
+release-fall percent**. These are examples; measure your board with `--input-probe`.
+Endpoints may run in either direction and must be distinct values in -32768..32767.
+The deadzone is 0..99; release threshold is 1..100. Choose a specific device name
+substring; the first matching board with that axis is used. Buttons and the plunger
+may use different boards. Missing configuration disables analog input; invalid
+configuration reports an error without overwriting it. Restart after editing.
+
+The rod must rest after startup, reconnect and quick-load. A seated ball follows
+the calibrated draw and fires through the original game code when the rod releases.
+During a rod-controlled draw, I/II from buttons or keyboard cannot change the shot.
+Pause cancels the draw. Focus loss or disconnect queues cancellation before the
+next emulated frame; an unfocused game stays paused until focus returns. After
+cancellation or release, rest the rod and release I/II before another shot.
+F5 quick-save requires releasing an owned draw first; F9 discards the old input
+ownership. Replay reproduces accepted commands without needing the device.
+This has virtual SDL coverage; physical PinOne calibration and cabinet acceptance
+are still pending.
+
+Add `--stitched` (which also enables cabinet mode) for the experimental 256×464
+full-table view. V switches between it and the original view. Both backgrounds
+come from your ROM; the active half has live sprites and background changes,
+with standard score digits removed. The original pixel aspect ratio is preserved.
+The inactive half renders stored actors and flippers over its ROM background,
+preserving their last poses without advancing their animation or physics. The
+ball appears only on the active half. Persistent indicator colors and each half's
+table overlay are restored from game state, as is the lower table's seven-variant
+counter graphic and the two large background actors that redraw when a table
+is restored. Other inactive background changes
+and transient indicator blinking remain unfinished. During a confirmed table
+change, the last complete table artwork stays visible until the new half is
+ready, for at most 32 frames. The ball uses its actual stored coordinates where
+its sprite is unambiguous and clear of other opaque sprite pixels and full fetch
+rows; otherwise the complete
+held image is retained. Title and other unsupported scenes use the original
+display. Upper-half artwork stays fixed across the 16-row join, while visible
+sprites from both halves remain present. Ball movement is not interpolated.
+With the default reference observer enabled, the active half uses observed row
+timing for display/VRAM and pixel timing for palette changes. Pixels outside the
+removed HUD and deliberately changed overlap
+match the reference on all 1,292 supported canonical replay frames. Builds with
+the observer compiled out retain the frozen-state renderer.
+
+```powershell
+.\out\build\windows-vs2022\Release\alien-crush.exe --rom '.\Alien Crush.pce' --stitched
+```
+
+For reproducible screenshots and per-frame availability/hashes, add `--stitched`
+to a tools capture with `--video-every 120`. Stitched BMPs are written only for
+supported or held frames; `stitched.csv` records every fallback and marks held
+images in its `held` column. `ball_updated` marks held backgrounds with the ball
+redrawn from its stored state.
 
 ## Diagnostics
 
@@ -73,7 +240,7 @@ capture takes about 440 MB. No game-specific execution patches are installed.
 Use `--replay session.acrec` to diagnose a recorded play session instead of the canonical route.
 Add `--video-every 120` to a capture to export native background, sprite and combined
 `composite.bmp` previews. Composition uses frozen registers and latched sprites;
-scanline timing and live renderer integration remain open.
+  The stitched view uses the timed renderer when observation is available.
 Exports also include the reference image, exact difference masks and per-row counts.
 `--compare-video --capture <directory> --compact` writes `composite-epochs.csv` for
 every frame, comparing current and previous-frame latched sprite tables separately.

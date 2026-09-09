@@ -16,7 +16,7 @@ public:
     Presentation(const Presentation&)=delete;
     Presentation& operator=(const Presentation&)=delete;
     SDL_Window* window() const { return window_; }
-    void show(const Frame&);
+    void show(const Frame&,std::uint32_t aspect_width=4,std::uint32_t aspect_height=3);
     void panel(const char* text);
     int rotation() const { return rotation_; }
     void rotation(int degrees) { rotation_=degrees; }

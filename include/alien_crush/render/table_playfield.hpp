@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+#include "alien_crush/assets/table_assets.hpp"
+#include "alien_crush/assets/actor_assets.hpp"
+#include "alien_crush/diagnostics/reference_snapshot.hpp"
+#include "alien_crush/diagnostics/display_trace.hpp"
+#include "alien_crush/render/pce_graphics.hpp"
+#include <optional>
+namespace alien_crush::render {
+// 03:89B9 and 03:8A0A translate the ball between local table coordinates by E0.
+inline constexpr int table_half_offset=224;
+inline constexpr int table_playfield_height=table_half_offset+240;
+// Upper artwork owns the overlap. Visible sprites from either half survive;
+// the active half wins sprite conflicts. Masks describe the visible 256x240 area.
+Image stitch_table_views(const Image& lower,const Image& upper,unsigned active_table,
+    std::span<const std::uint8_t> lower_sprites={},std::span<const std::uint8_t> upper_sprites={});
+struct TableRaster {
+    std::span<const diagnostics::DisplayRow> rows;
+    std::span<const diagnostics::PaletteWrite> palette;
+    std::span<const RasterWrite> vram;
+};
+// Presentation-only bridge across a confirmed main-table change. Never advances
+// gameplay or invents intermediate ball positions. Reset on load or view change.
+struct TableBallBackdrop { Image image; std::vector<std::uint8_t> sprites; };
+class TableTransitionHold {
+    std::optional<Image> image_;
+    std::optional<TableBallBackdrop> backdrop_;
+    std::uint64_t frame_{};
+    unsigned table_{2},remaining_{};
+    bool held_{},ball_updated_{};
+public:
+    void reset();
+    bool held() const { return held_; }
+    bool ball_updated() const { return ball_updated_; }
+    std::optional<Image> present(std::optional<Image> live,std::uint64_t frame,
+        unsigned table,unsigned camera,std::span<const std::byte> ram,
+        const TableBallBackdrop* backdrop=nullptr,const Sprite* ball=nullptr);
+};
+class TablePlayfield {
+    std::array<assets::TableBackground,2> tables_;
+    std::array<assets::TableSprites,2> sprites_;
+    assets::ActorAssets actors_;
+    std::array<assets::TableIndicator,29> indicators_;
+    assets::LowerCounterTiles counter_;
+    std::array<std::vector<std::array<std::uint16_t,512>>,2> partial_fades_;
+    bool matches(const diagnostics::ReferenceSnapshot&,unsigned table) const;
+    std::optional<Image> compose_impl(const diagnostics::ReferenceSnapshot& current,
+        const diagnostics::ReferenceSnapshot& previous,unsigned table,unsigned camera,
+        std::span<const std::byte> ram,const TableRaster* raster,bool hide_ball,
+        std::vector<std::uint8_t>* coverage) const;
+public:
+    explicit TablePlayfield(std::span<const std::byte> rom);
+    // Experimental presentation. Unsupported scenes or incomplete raster inputs
+    // return empty. Without raster observations, uses frozen video state.
+    // Previous SAT preserves the established display epoch. Inactive actors
+    // come from the game's stored bank; no gameplay or presentation cache advances.
+    std::optional<Image> compose(const diagnostics::ReferenceSnapshot& current,
+        const diagnostics::ReferenceSnapshot& previous,unsigned table,unsigned camera,
+        std::span<const std::byte> ram,const TableRaster* raster=nullptr,
+        std::optional<TableBallBackdrop>* backdrop=nullptr) const;
+    std::optional<Sprite> transition_ball(unsigned table,std::span<const std::byte> ram) const;
+    Image inactive_view(unsigned table,std::span<const std::byte> ram,std::span<std::uint8_t> visible_sprites={},
+        std::span<std::uint8_t> blockers={}) const;
+};
+}

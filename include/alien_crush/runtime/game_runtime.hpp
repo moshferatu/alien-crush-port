@@ -47,12 +47,18 @@ class ReferenceDiagnostics {
 public:
     virtual ~ReferenceDiagnostics() = default;
     virtual std::span<const std::byte> work_ram() const = 0;
+    virtual bool supports_display_observation() const = 0;
     virtual void observe_display(bool enabled) = 0;
     virtual std::span<const diagnostics::DisplayRow> display_rows() const = 0;
     virtual std::span<const diagnostics::PaletteWrite> palette_writes() const = 0;
     // Full initial VRAM at the first observed row, followed by row-boundary deltas.
     virtual std::span<const render::RasterWrite> vram_rows() const = 0;
 };
-class ReferenceRuntime : public GameRuntime, public ReferenceDiagnostics {};
+class ReferenceRuntime : public GameRuntime, public ReferenceDiagnostics {
+public:
+    // Explicit optional cabinet bridge; never used by canonical pad replays.
+    virtual bool apply_plunger_draw(std::uint8_t percent) = 0;
+    virtual bool cancel_plunger_draw() = 0;
+};
 std::unique_ptr<ReferenceRuntime> make_reference_runtime();
 }

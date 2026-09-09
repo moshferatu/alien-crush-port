@@ -6,6 +6,32 @@
 #include <stdexcept>
 #include <string>
 namespace alien_crush::assets {
+std::vector<BackgroundWrite> restored_actor_backgrounds(const ActorAssets& assets,std::span<const std::byte> ram) {
+    if(ram.size()!=8192) throw std::runtime_error("Background restoration requires 8192-byte work RAM");
+    auto b=[&](std::size_t p){return std::to_integer<std::uint8_t>(ram[p]);};
+    std::vector<BackgroundWrite> result;
+    for(unsigned actor=4;actor<64;++actor) {
+        const auto type=b(0x1500+actor);
+        // 01:4FFB..5003 and 01:52C1..52C9 force a background upload when
+        // returning to a table. Do not infer this behavior from flags alone.
+        if((type!=7 && type!=20) || (b(0x1540+actor)&0xa0)!=0xa0) continue;
+        const auto writes=assets.background(b(0x1800+actor),(b(0x1a00+actor)&0x20)?b(0x1a80+actor):0);
+        for(const auto& write:writes)
+            if(write.address>=1024) throw std::runtime_error("Restored background actor writes outside table BAT");
+        result.insert(result.end(),writes.begin(),writes.end());
+    }
+    return result;
+}
+std::array<std::byte,8192> inactive_table_actor_ram(std::span<const std::byte> ram) {
+    if(ram.size()!=8192) throw std::runtime_error("Inactive actors require 8192-byte work RAM");
+    std::array<std::byte,8192> result{};
+    for(unsigned field=0;field<32;++field)
+        std::copy_n(ram.begin()+0x204+field*64,60,result.begin()+0x1504+field*64);
+    // Both recovered main tables use pattern base 0200 and ten reserved HUD slots.
+    // Camera is local zero; original ordering and SAT capacity remain unchanged.
+    result[0x2f]=std::byte{2}; result[0x50]=std::byte{10};
+    return result;
+}
 std::array<TableSprite,10> assemble_table_hud(std::uint32_t score_points,unsigned ball_counter) {
     if(score_points>999999900 || score_points%100 || ball_counter<1 || ball_counter>10)
         throw std::runtime_error("HUD requires settled main-table score and ball counter");

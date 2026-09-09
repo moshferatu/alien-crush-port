@@ -97,7 +97,15 @@ void validate_composition(std::span<const std::uint16_t> vram,std::span<const st
         throw std::runtime_error("Invalid PCE composition memory or viewport");
 }
 Image compose_rows(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
-    std::span<const std::uint16_t> sat,const Viewport& viewport,int first,int end,bool indexed=false) {
+    std::span<const std::uint16_t> sat,const Viewport& viewport,int first,int end,bool indexed=false,
+    std::span<std::uint8_t> visible={},std::span<std::uint8_t> blocked={},std::uint64_t hidden=0) {
+    if(!blocked.empty() && blocked.size()!=static_cast<std::size_t>(viewport.width)*viewport.height)
+        throw std::runtime_error("Invalid blocked sprite mask size");
+    if(!visible.empty()) {
+        if(visible.size()!=static_cast<std::size_t>(viewport.width)*viewport.height)
+            throw std::runtime_error("Invalid visible sprite mask size");
+        std::fill(visible.begin()+first*viewport.width,visible.begin()+end*viewport.width,std::uint8_t{0});
+    }
     const bool bg_enabled=!viewport.burst_mode && (viewport.control&0x80)!=0;
     const bool sprites_enabled=!viewport.burst_mode && (viewport.control&0x40)!=0;
     const auto count=static_cast<std::size_t>(viewport.width)*(end-first);
@@ -117,7 +125,9 @@ Image compose_rows(std::span<const std::uint16_t> vram,std::span<const std::uint
         }
     }
     std::vector<unsigned> fetched(static_cast<std::size_t>(end-first));
+    unsigned slot=0;
     if(sprites_enabled) for(const auto& sprite:sprite_layer(vram,palette,sat,viewport.memory_width,indexed)) {
+        const bool suppress=(hidden&(std::uint64_t{1}<<slot++))!=0;
         for(int y=0;y<sprite.height;++y) {
             const int row=sprite.y+y;
             if(row<first || row>=end) continue;
@@ -128,29 +138,40 @@ Image compose_rows(std::span<const std::uint16_t> vram,std::span<const std::uint
             const auto pieces=static_cast<unsigned>(sprite.width/16);
             const auto accepted=pieces<available?pieces:available;
             used+=accepted;
+            if(suppress) continue;
             for(int x=0;x<static_cast<int>(accepted)*16;++x) {
                 const int dx=sprite.x+x,dy=sprite.y+y;
                 if(dx<0 || dy<0 || dx>=viewport.width || dy>=viewport.height) continue;
                 const auto color=sprite.image.pixels[static_cast<std::size_t>(y)*sprite.width+x];
                 const auto dest=static_cast<std::size_t>(dy-first)*viewport.width+dx;
                 if(!(color>>24) || claimed[dest]) continue;
-                // SAT priority is resolved before background priority, even if hidden.
+                // SAT priority still applies when the background covers this sprite.
                 claimed[dest]=true;
-                if(sprite.foreground || !opaque[dest]) result.pixels[dest]=color;
+                if(sprite.foreground || !opaque[dest]) {
+                    result.pixels[dest]=color;
+                    if(!visible.empty()) visible[static_cast<std::size_t>(dy)*viewport.width+dx]=1;
+                }
             }
         }
+    }
+    if(!blocked.empty()) for(int row=first;row<end;++row) for(int x=0;x<viewport.width;++x) {
+        const auto local=static_cast<std::size_t>(row-first)*viewport.width+x;
+        blocked[static_cast<std::size_t>(row)*viewport.width+x]=
+            static_cast<std::uint8_t>(claimed[local] || fetched[row-first]>=16);
     }
     return result;
 }
 }
 Image compose(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
-    std::span<const std::uint16_t> sat,const Viewport& viewport) {
+    std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<std::uint8_t> visible,
+    std::span<std::uint8_t> blocked,std::uint64_t hidden) {
     validate_composition(vram,palette,sat,viewport);
-    return compose_rows(vram,palette,sat,viewport,0,viewport.height);
+    return compose_rows(vram,palette,sat,viewport,0,viewport.height,false,visible,blocked,hidden);
 }
 namespace {
 Image raster_layer(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
-    std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<const RasterWrite> writes,bool indexed) {
+    std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<const RasterWrite> writes,bool indexed,
+    std::span<std::uint8_t> visible={},std::span<std::uint8_t> blocked={},std::uint64_t hidden=0) {
     validate_composition(vram,palette,sat,viewport);
     if(writes.size()>65536) throw std::runtime_error("Too many raster writes");
     unsigned last_row=0;
@@ -176,7 +197,7 @@ Image raster_layer(std::span<const std::uint16_t> vram,std::span<const std::uint
         default: throw std::runtime_error("Unknown raster write target");
         }
     }
-    if(writes.empty()) return compose_rows(vram,palette,sat,viewport,0,viewport.height,indexed);
+    if(writes.empty()) return compose_rows(vram,palette,sat,viewport,0,viewport.height,indexed,visible,blocked,hidden);
     std::vector<std::uint16_t> memory(vram.begin(),vram.end()),colors(palette.begin(),palette.end()),attributes(sat.begin(),sat.end());
     auto view=viewport;
     Image result{view.width,view.height,std::vector<std::uint32_t>(static_cast<std::size_t>(view.width)*view.height)};
@@ -196,7 +217,7 @@ Image raster_layer(std::span<const std::uint16_t> vram,std::span<const std::uint
             }
         }
         const int end=next<writes.size()?writes[next].row:view.height;
-        const auto band=compose_rows(memory,colors,attributes,view,row,end,indexed);
+        const auto band=compose_rows(memory,colors,attributes,view,row,end,indexed,visible,blocked,hidden);
         std::copy(band.pixels.begin(),band.pixels.end(),result.pixels.begin()+static_cast<std::size_t>(row)*view.width);
         row=end;
     }
@@ -204,12 +225,13 @@ Image raster_layer(std::span<const std::uint16_t> vram,std::span<const std::uint
 }
 }
 Image compose_raster(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
-    std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<const RasterWrite> writes) {
-    return raster_layer(vram,palette,sat,viewport,writes,false);
+    std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<const RasterWrite> writes,
+    std::span<std::uint8_t> visible,std::span<std::uint8_t> blocked,std::uint64_t hidden) {
+    return raster_layer(vram,palette,sat,viewport,writes,false,visible,blocked,hidden);
 }
 Image compose_palette_raster(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
     std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<const RasterWrite> rows,
-    std::span<const PalettePixelWrite> colors) {
+    std::span<const PalettePixelWrite> colors,std::span<std::uint8_t> visible,std::span<std::uint8_t> blocked,std::uint64_t hidden) {
     validate_composition(vram,palette,sat,viewport);
     if(colors.size()>65536) throw std::runtime_error("Too many pixel palette writes");
     for(const auto& row:rows) if(row.target==RasterTarget::palette) throw std::runtime_error("Ambiguous row and pixel palette writes");
@@ -219,7 +241,7 @@ Image compose_palette_raster(std::span<const std::uint16_t> vram,std::span<const
             throw std::runtime_error("Invalid pixel palette write");
         previous=color.pixel;
     }
-    auto result=raster_layer(vram,palette,sat,viewport,rows,true);
+    auto result=raster_layer(vram,palette,sat,viewport,rows,true,visible,blocked,hidden);
     std::vector<std::uint16_t> current(palette.begin(),palette.end());
     std::size_t next=0;
     for(std::size_t p=0;p<result.pixels.size();++p) {

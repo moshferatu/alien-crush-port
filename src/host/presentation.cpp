@@ -10,11 +10,11 @@ Presentation::Presentation(const char* title,int width,int height,bool hidden) {
     SDL_SetRenderVSync(renderer_,0); // A single game clock, independent of display refresh.
 }
 Presentation::~Presentation() { SDL_DestroyTexture(stage_); SDL_DestroyTexture(source_); SDL_DestroyRenderer(renderer_); SDL_DestroyWindow(window_); }
-void Presentation::show(const Frame& frame) {
+void Presentation::show(const Frame& frame,std::uint32_t aspect_width,std::uint32_t aspect_height) {
     if(frame.pixels.empty()) return;
     int width{},height{}; checked(SDL_GetRenderOutputSize(renderer_,&width,&height));
     const bool sideways=rotation_==90 || rotation_==270;
-    const auto layout=render::calculate_scale_layout(sideways?height:width,sideways?width:height,frame.width,frame.height,4,3);
+    const auto layout=render::calculate_scale_layout(sideways?height:width,sideways?width:height,frame.width,frame.height,aspect_width,aspect_height);
     if(!layout.valid()) return;
     if(sw!=frame.width || sh!=frame.height) {
         SDL_DestroyTexture(source_); source_=nullptr;

@@ -4,6 +4,72 @@
 #include <algorithm>
 #include <stdexcept>
 namespace alien_crush::assets {
+std::array<std::uint16_t,512> decode_table_palette(std::span<const std::byte> image,unsigned table) {
+    if(table>1 || !rom::matches_supported_rom(image.size(),rom::compute_digests(image)))
+        throw std::runtime_error("Unsupported ROM/table for palette extraction");
+    std::array<std::uint16_t,512> result{};
+    for(unsigned color=0;color<512;++color) {
+        const auto offset=0x36000+table*0x400+color*2;
+        result[color]=static_cast<std::uint16_t>(std::to_integer<unsigned>(image[offset])|
+            (std::to_integer<unsigned>(image[offset+1])<<8));
+        if(result[color]>511) throw std::runtime_error("Invalid ROM table palette");
+    }
+    return result;
+}
+LowerCounterTiles decode_lower_counter_tiles(std::span<const std::byte> image) {
+    if(!rom::matches_supported_rom(image.size(),rom::compute_digests(image)))
+        throw std::runtime_error("Unsupported ROM for lower counter tiles");
+    LowerCounterTiles result;
+    for(unsigned value=0;value<7;++value) for(unsigned tile=0;tile<6;++tile) {
+        const auto offset=0x7565+value*12+tile*2;
+        result[value][tile]=static_cast<std::uint16_t>(std::to_integer<unsigned>(image[offset])|
+            (std::to_integer<unsigned>(image[offset+1])<<8));
+    }
+    return result;
+}
+bool restore_lower_counter(std::span<std::uint16_t> bat,const LowerCounterTiles& tiles,
+    unsigned table,std::span<const std::byte> ram) {
+    if(bat.size()!=1024 || ram.size()!=8192 || table>1)
+        throw std::runtime_error("Invalid lower counter inputs");
+    const auto value=std::to_integer<unsigned>(ram[0x7f]);
+    if(table!=0 || value<1 || value>7) return false;
+    for(unsigned y=0;y<2;++y) for(unsigned x=0;x<3;++x)
+        bat[0x22d+y*32+x]=tiles[value-1][y*3+x];
+    return true;
+}
+std::array<TableIndicator,29> decode_table_indicators(std::span<const std::byte> image) {
+    if(!rom::matches_supported_rom(image.size(),rom::compute_digests(image)))
+        throw std::runtime_error("Unsupported ROM for table indicators");
+    std::array<TableIndicator,29> result{};
+    for(unsigned i=0;i<result.size();++i) {
+        const auto p=0x7357+i*6;
+        const auto high=std::to_integer<unsigned>(image[p+1]);
+        result[i]={high>>4,std::to_integer<unsigned>(image[p])|((high&15)<<8),
+            std::to_integer<unsigned>(image[p+2]),std::to_integer<unsigned>(image[p+3]),
+            static_cast<std::uint16_t>(std::to_integer<unsigned>(image[p+4])<<8)};
+    }
+    return result;
+}
+void restore_table_indicators(std::span<std::uint16_t> bat,
+    std::span<const TableIndicator> indicators,unsigned table,std::span<const std::byte> ram) {
+    if(bat.size()!=1024 || ram.size()!=8192 || table>1 || indicators.size()!=29)
+        throw std::runtime_error("Invalid table indicator inputs");
+    for(unsigned i=0;i<indicators.size();++i) {
+        const auto& indicator=indicators[i];
+        if(indicator.table>1 || !indicator.width || indicator.width>32 || !indicator.height ||
+            indicator.height>32 || indicator.address>=1024 ||
+            indicator.address+(indicator.height-1)*32+indicator.width>1024 ||
+            (indicator.enabled_palette&0x0fff)) throw std::runtime_error("Invalid table indicator rectangle");
+    }
+    for(unsigned i=0;i<indicators.size();++i) {
+        const auto& indicator=indicators[i];
+        if(indicator.table!=table || !(std::to_integer<unsigned>(ram[0xd6+i/8])&(1u<<(i%8)))) continue;
+        for(unsigned y=0;y<indicator.height;++y) for(unsigned x=0;x<indicator.width;++x) {
+            auto& word=bat[indicator.address+y*32+x];
+            word=static_cast<std::uint16_t>((word&0x0fff)|indicator.enabled_palette);
+        }
+    }
+}
 PalettePulseStep advance_palette_pulse(PalettePulseState state) {
     if(!(state.flags&0x80)) return {state,std::nullopt};
     bool descending=(state.flags&0x40)!=0;
@@ -67,7 +133,6 @@ std::array<TableBackground,2> decode_table_backgrounds(std::span<const std::byte
     constexpr std::size_t patterns[]{0x0a0af,0x140af};
     constexpr std::size_t maps[]{0x132b8,0x1c832};
     // EB45/EB53 transfer the raw VCE palettes from bank 1B:A000/A400.
-    constexpr std::size_t palettes[]{0x36000,0x36400};
     std::array<TableBackground,2> result;
     for(std::size_t i=0;i<2;++i) {
         auto& table=result[i];
@@ -76,11 +141,7 @@ std::array<TableBackground,2> decode_table_backgrounds(std::span<const std::byte
         if(map.words.size()!=1024) throw std::runtime_error("Table asset schema changed");
         std::copy(tiles.words.begin(),tiles.words.end(),table.vram.begin()+0x800);
         std::copy(map.words.begin(),map.words.end(),table.vram.begin());
-        for(std::size_t color=0;color<512;++color) {
-            const auto offset=palettes[i]+color*2;
-            table.palette[color]=std::to_integer<std::uint16_t>(image[offset])|(std::to_integer<std::uint16_t>(image[offset+1])<<8);
-            if(table.palette[color]>511) throw std::runtime_error("Invalid ROM table palette");
-        }
+        table.palette=decode_table_palette(image,static_cast<unsigned>(i));
         table.pattern_words=tiles.words.size(); table.map_words=map.words.size(); table.palette_words=512;
     }
     return result;

@@ -48,6 +48,31 @@ int main() {
         auto bytes=core::read_file(path); bytes.back()^=std::byte{1}; core::write_file_atomic(path,bytes);
         bool rejected=false; try {recording::read(path);} catch(const std::exception&){rejected=true;}
         require(rejected,"Recording corruption rejected");
+        original.inputs={{1,0},{0,0},{0,0}};
+        original.plunger={25,101,75};
+        recording::write(path,original);
+        const auto analog=recording::read(path);
+        require(analog.inputs==original.inputs && analog.plunger==original.plunger,"Analog recording round trip");
+        const auto valid=core::read_file(path);
+        auto reject_write=[&]() {
+            bool failed=false;try {recording::write(path,original);}catch(const std::exception&){failed=true;}
+            require(failed && core::read_file(path)==valid,"Invalid recording write must preserve existing file");
+        };
+        original.plunger.pop_back();reject_write();original.plunger.push_back(75);
+        original.plunger[0]=102;reject_write();original.plunger[0]=25;
+        original.inputs[1].player_one=1;reject_write();original.inputs[1].player_one=0;
+        original.inputs[0].player_two=256;reject_write();original.inputs[0].player_two=0;
+        // Recompute the checksum so parser validation, not integrity checking, rejects these.
+        const auto state_size=state::encode(saved).size();
+        for(const auto offset:{16+state_size+4,16+state_size+5,16+state_size+1}) {
+            auto malformed=valid;
+            malformed[offset]=std::byte{255};
+            const auto digest=rom::compute_digests(std::span(malformed).first(malformed.size()-64)).sha256;
+            for(std::size_t i=0;i<64;++i) malformed[malformed.size()-64+i]=static_cast<std::byte>(digest[i]);
+            core::write_file_atomic(path,malformed);
+            rejected=false;try {recording::read(path);}catch(const std::exception&){rejected=true;}
+            require(rejected,"Checksummed invalid analog record rejected");
+        }
         std::filesystem::remove(path); std::filesystem::remove(dir);
         std::cout<<"PASS: hashes, ROM rejection, save/recording integrity, scaling, plunger and atomic file replacement\n";
         return 0;

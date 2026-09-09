@@ -2,6 +2,8 @@
 -- Read-only capture and real controller stimulus; never patch game RAM or ROM.
 local directory = assert(os.getenv('AC_MESEN_OUTPUT'))
 local frames = tonumber(os.getenv('AC_MESEN_FRAMES')) or 1800
+local launcher_hold=tonumber(os.getenv('AC_MESEN_LAUNCHER_HOLD')) or 0
+local route=launcher_hold>0 and 'launcher-hold' or 'canonical'
 local ram = assert(io.open(directory .. '/work-ram.bin', 'wb'))
 local pixels = assert(io.open(directory .. '/pixels.rgb', 'wb'))
 local cpu = assert(io.open(directory .. '/cpu.csv', 'w'))
@@ -25,6 +27,40 @@ local fade_out_trace,fade_out_pending=nil,nil
 local fade_out_pairs,fade_out_orphans=0,0
 local pulse_trace,pulse_pending=nil,nil
 local pulse_pairs,pulse_orphans=0,0
+local launcher_frames=tonumber(os.getenv('AC_MESEN_TRACE_LAUNCHER')) or 0
+local launcher_trace,launcher_pending=nil,nil
+local launcher_pairs=0
+if launcher_frames>0 then
+  launcher_trace=assert(io.open(directory..'/launcher-contacts.bin','wb'))
+  launcher_trace:write('ACLC0001')
+  local function work_ram()
+    local bytes={}
+    for i=0,8191 do bytes[#bytes+1]=string.char(emu.read(i,emu.memType.pceWorkRam)) end
+    return table.concat(bytes)
+  end
+  -- Capture after velocity projection, then after response/inverse projection.
+  -- Restrict to the moving-launcher path, where 1C bit 7 is set, actor type 6.
+  for _,address in ipairs({0x8b69,0x8be1,0x8be4,0x8ba1,0x8bf8}) do
+    emu.addMemoryCallback(function()
+      if frame_count<frames-launcher_frames then return end
+      local state=emu.getState()
+      if state['memoryManager.mpr[4]']~=3 then return end
+      if address==0x8b69 then
+        local slot=emu.read(0x39,emu.memType.pceWorkRam)
+        if slot<4 or slot>=64 or state['cpu.x']~=0 or
+          emu.read(0x1500+slot,emu.memType.pceWorkRam)~=6 or
+          (emu.read(0x1c,emu.memType.pceWorkRam)&0x80)==0 then return end
+        assert(not launcher_pending,'Nested launcher contact')
+        launcher_pending={frame=frame_count+1,ram=work_ram()}
+      elseif launcher_pending then
+        launcher_trace:write(string.pack('<I4I4I2',launcher_pending.frame,frame_count+1,address),
+          launcher_pending.ram,work_ram())
+        launcher_pending=nil; launcher_pairs=launcher_pairs+1
+      end
+      -- No return value or memory writes: preserve execution.
+    end,emu.callbackType.exec,address,address,emu.cpuType.pce,emu.memType.pceMemory)
+  end
+end
 if actor_frames>0 then
   actor_trace=assert(io.open(directory..'/actor-passes.bin','wb'))
   actor_trace:write('ACAT0001')
@@ -205,6 +241,11 @@ local function dump_memory(name, kind)
 end
 local function input()
   local n = emu.getState().frameCount
+  if launcher_hold>0 and n>=480 then
+    emu.setInput({run=false,i=n<480+launcher_hold,ii=false,left=false,
+      select=false,up=false,down=false,right=false},0)
+    return
+  end
   emu.setInput({
     run = (n>=180 and n<185) or (n>=240 and n<245) or (n>=300 and n<305),
     i = n>=360 and n%240<100,
@@ -240,10 +281,21 @@ local function end_frame()
   end
   if frame_count==frames then
     ram:close(); pixels:close(); cpu:close()
+    if launcher_trace then
+      launcher_trace:close()
+      assert(not launcher_pending,'Incomplete launcher contact at capture end')
+      local manifest=assert(io.open(directory..'/launcher-trace-manifest.txt','w'))
+      manifest:write('schema=ACLC0001\nbackend=Mesen-2.1.1\nroute=',
+        route,'\nlauncher_hold_frames=',launcher_hold,'\n',
+        'rom_sha256=1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f\n',
+        'first_frame=',math.max(1,frames-launcher_frames+1),'\nlast_frame=',frames,
+        '\ncomplete_pairs=',launcher_pairs,'\npending_entry=0\n')
+      manifest:close()
+    end
     if video_trace then
       video_trace:close()
       local manifest=assert(io.open(directory..'/video-trace-manifest.txt','w'))
-      manifest:write('schema=video-bus-timing-v1\nbackend=Mesen-2.1.1\nroute=canonical\n',
+      manifest:write('schema=video-bus-timing-v1\nbackend=Mesen-2.1.1\nroute=',route,'\nlauncher_hold_frames=',launcher_hold,'\n',
         'rom_sha256=1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f\n',
         'first_frame=',math.max(1,frames-trace_frames+1),'\nlast_frame=',frames,'\nwrites=',video_writes,'\n',
         'phase=before bus write; scanline/hclock/rcr are raw Mesen coordinates\n',
@@ -261,7 +313,7 @@ local function end_frame()
       pulse_trace:close()
       local manifest=assert(io.open(directory..'/actor-trace-manifest.txt','w'))
       manifest:write('schema=ACAT0001\nrom_sha256=1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f\n',
-        'backend=Mesen-2.1.1\nroute=canonical\nfirst_frame=',math.max(1,frames-actor_frames+1),
+        'backend=Mesen-2.1.1\nroute=',route,'\nlauncher_hold_frames=',launcher_hold,'\nfirst_frame=',math.max(1,frames-actor_frames+1),
         '\nlast_frame=',frames,'\ncomplete_pairs=',actor_pairs,'\norphan_ends=',actor_orphans,
         '\npending_entry=',actor_pending and 1 or 0,
         '\noverlay_schema=ACOV0001\noverlay_complete_pairs=',overlay_pairs,
@@ -279,7 +331,8 @@ local function end_frame()
       manifest:close()
     end
     local done=assert(io.open(directory..'/complete.txt','w'))
-    done:write('Captured ',frames,' frames with Mesen 2.1.1\n'); done:close()
+    done:write('Captured ',frames,' frames with Mesen 2.1.1\nroute=',route,
+      '\nlauncher_hold_frames=',launcher_hold,'\n'); done:close()
     emu.stop(0)
   end
 end

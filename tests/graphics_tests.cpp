@@ -5,6 +5,8 @@
 #include "alien_crush/assets/actor_assets.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include "alien_crush/diagnostics/display_trace.hpp"
+#include "alien_crush/render/table_playfield.hpp"
+#include "alien_crush/render/score_panel.hpp"
 #include <array>
 #include <cstring>
 #include <iostream>
@@ -22,6 +24,273 @@ void put32(std::vector<std::byte>& bytes,std::size_t offset,std::uint32_t value)
 }
 int main() {
     try {
+        {
+            std::array<render::Image,10> digits;
+            for(unsigned i=0;i<10;++i) digits[i]={16,16,std::vector<std::uint32_t>(256,0xff100000+i)};
+            const render::ScorePanel panel(digits);
+            diagnostics::AlienState state;
+            state.score_points=4294967295U;state.high_scores[0]=4294967295U;state.ball_counter=255;
+            const auto image=panel.compose(state);
+            require(image.width==256 && image.height==96 && image.pixels.size()==256*96,"Score canvas bounds");
+            const std::string maximum="4294967295";
+            for(unsigned i=0;i<maximum.size();++i) {
+                const auto color=0xff100000+static_cast<unsigned>(maximum[i]-'0');
+                require(image.pixels[20*256+22+i*20]==color,"Maximum score retains every digit at fixed scale");
+                require(image.pixels[74*256+35+i*10]==color,"Maximum high score fits reserved field");
+            }
+            require(image.pixels[74*256+198]==0xff100002 && image.pixels[74*256+208]==0xff100005 &&
+                image.pixels[74*256+218]==0xff100005,"Ball byte fits without clipping");
+            for(unsigned x=0;x<256;++x) require(image.pixels[x]==0xff000000 && image.pixels[95*256+x]==0xff000000,"Score outer black border");
+            state={};const auto zero=panel.compose(state);
+            require(zero.pixels[20*256+112]==0xff100000,"Zero score is visible");
+            require(panel.compose(state).pixels==zero.pixels,"Score rendering is deterministic");
+            state.title_menu=true;state.high_scores[0]=4294967295U;
+            const auto menu=panel.compose(state);
+            for(unsigned i=0;i<maximum.size();++i)
+                require(menu.pixels[20*256+22+i*20]==0xff100000+static_cast<unsigned>(maximum[i]-'0'),"Menu high score fits at fixed scale");
+            state.score_points=123456;state.ball_counter=255;
+            require(panel.compose(state).pixels==menu.pixels,"Menu hides stale score and ball values");
+            require(menu.pixels!=zero.pixels,"Menu presentation differs from gameplay");
+            state.demo_play=true;
+            require(panel.compose(state).pixels==menu.pixels,"Title takes precedence during demo-entry fade");
+            state.title_menu=false;const auto demo=panel.compose(state);
+            require(demo.pixels!=menu.pixels,"Demo has a visible label");
+            state.score_points=999;state.ball_counter=1;
+            require(panel.compose(state).pixels==demo.pixels,"Demo hides simulated score and ball values");
+            state.demo_play=false;
+            for(unsigned room=1;room<=4;++room) {
+                state.bonus_room=static_cast<std::uint8_t>(room);
+                const auto bonus=panel.compose(state);
+                require(bonus.pixels[74*256+208]==0xff100000+room,"Bonus room number uses original digit slot");
+                state.ball_counter=static_cast<std::uint8_t>(50+room);
+                require(panel.compose(state).pixels==bonus.pixels,"Bonus room replaces ball counter");
+            }
+            const auto active_bonus=panel.compose(state);state.bonus_round_over=true;
+            const auto ended_bonus=panel.compose(state);
+            require(ended_bonus.pixels!=active_bonus.pixels,"Round-over label is visible");
+            state.bonus_cleared=true;
+            const auto cleared_bonus=panel.compose(state);
+            require(cleared_bonus.pixels!=ended_bonus.pixels,"Clear result takes precedence over round-over label");
+            require(std::equal(cleared_bonus.pixels.begin()+18*256,cleared_bonus.pixels.end(),active_bonus.pixels.begin()+18*256),"Clear result retains score and lower fields");
+            state.title_menu=true;
+            const auto clear_title=panel.compose(state);
+            state.bonus_cleared=false;state.bonus_round_over=false;
+            require(panel.compose(state).pixels==clear_title.pixels,"Title hides stale bonus outcome");
+            state.title_menu=false;state.bonus_room=0;
+            const auto playing=panel.compose(state);state.game_over=true;
+            const auto game_over=panel.compose(state);
+            require(game_over.pixels!=playing.pixels,"Game-over heading is visible");
+            require(std::equal(game_over.pixels.begin()+18*256,game_over.pixels.end(),playing.pixels.begin()+18*256),"Game over retains final score and lower fields");
+            state.title_menu=true;
+            const auto game_over_title=panel.compose(state);state.game_over=false;
+            require(panel.compose(state).pixels==game_over_title.pixels,"Title takes precedence over stale game-over state");
+            require(std::equal(ended_bonus.pixels.begin()+18*256,ended_bonus.pixels.end(),active_bonus.pixels.begin()+18*256),"Round status retains score and lower fields");
+            std::array<std::byte,8192> scene{};
+            state={};state.high_score_menu=true;
+            state.high_scores={4294967295U,123456700,1000000,100,0};
+            const auto ranks=panel.compose(state);
+            for(unsigned rank=0;rank<5;++rank) {
+                require(ranks.pixels[(18+rank*16)*256+30]==0xff100001+rank,"Every rank is visible");
+                const auto text=std::to_string(state.high_scores[rank]);
+                const auto start=160-((text.size()-1)*10+16)/2;
+                for(unsigned digit=0;digit<text.size();++digit)
+                    require(ranks.pixels[(18+rank*16)*256+start+digit*10]==0xff100000+static_cast<unsigned>(text[digit]-'0'),"Every ranked score fits without clipping");
+            }
+            state.score_points=999;state.ball_counter=2;state.game_over=true;
+            require(panel.compose(state).pixels==ranks.pixels,"Score viewer hides stale gameplay fields");
+            state.title_menu=true;const auto title_ranks=panel.compose(state);
+            state.high_score_menu=false;
+            require(panel.compose(state).pixels==title_ranks.pixels,"Title takes precedence over stale score viewer");
+            constexpr std::array<std::byte,9> scores_signature{std::byte{0xfd},std::byte{0xeb},std::byte{3},
+                std::byte{2},std::byte{1},std::byte{0xb0},std::byte{0x41},std::byte{0x8e},std::byte{0x40}};
+            scene[0x7a]=std::byte{1};
+            require(!diagnostics::observe_alien_state(scene).high_score_menu,"Viewer mode alone is insufficient");
+            std::copy(scores_signature.begin(),scores_signature.end(),scene.begin()+0x1f7);
+            require(diagnostics::observe_alien_state(scene).high_score_menu,"Complete paused score-viewer call signature");
+            for(unsigned i=0;i<9;++i) {
+                scene[0x1f7+i]^=std::byte{1};
+                require(!diagnostics::observe_alien_state(scene).high_score_menu,"Partial score-viewer signature rejected");
+                scene[0x1f7+i]^=std::byte{1};
+            }
+            scene[0x76]=std::byte{1};
+            require(!diagnostics::observe_alien_state(scene).high_score_menu,"Demo excludes paused score viewer");
+            scene={};
+            auto practice_scores=scores_signature;
+            practice_scores[5]=std::byte{0x8f};practice_scores[6]=std::byte{0x44};practice_scores[7]=std::byte{8};
+            std::copy(practice_scores.begin(),practice_scores.end(),scene.begin()+0x1f7);
+            scene[0x7a]=std::byte{2};scene[0x7c]=std::byte{1};
+            require(diagnostics::observe_alien_state(scene).high_score_menu,"Practice game-end score call recognized");
+            for(unsigned i=0;i<9;++i) {
+                scene[0x1f7+i]^=std::byte{1};
+                require(!diagnostics::observe_alien_state(scene).high_score_menu,"Partial practice score call rejected");
+                scene[0x1f7+i]^=std::byte{1};
+            }
+            scene[0x7c]=std::byte{};
+            require(!diagnostics::observe_alien_state(scene).high_score_menu,"Practice score call requires practice mode");
+            scene={};
+            constexpr std::array<std::byte,9> signature{std::byte{0x0c},std::byte{0xeb},std::byte{0x18},
+                std::byte{4},std::byte{3},std::byte{2},std::byte{1},std::byte{5},std::byte{0x40}};
+            require(!diagnostics::observe_alien_state(scene).title_menu,"Zero RAM is not title evidence");
+            require(!diagnostics::observe_alien_state(scene).demo_play,"Zero demo selector is player mode");
+            for(unsigned table=0;table<6;++table) for(unsigned room=0;room<6;++room) {
+                scene[0x79]=static_cast<std::byte>(table);scene[0x83]=static_cast<std::byte>(room);
+                require(diagnostics::observe_alien_state(scene).bonus_room==(table==2 && room<4?room+1:0),"Bonus selector requires shared table code and known room");
+                for(unsigned flags=0;flags<32;++flags) {
+                    scene[0x78]=static_cast<std::byte>(flags);
+                    require(diagnostics::observe_alien_state(scene).bonus_round_over==(table==2 && room<4 && (flags&1)),"Round over requires known bonus room and original end bit");
+                    scene[0x85]=static_cast<std::byte>(flags);
+                    require(diagnostics::observe_alien_state(scene).bonus_cleared==(table==2 && room<4 && (flags&1)),"Clear requires known room and results flag");
+                }
+            }
+            for(const unsigned mode:{1u,2u,255u}) {
+                scene[0x76]=static_cast<std::byte>(mode);
+                require(diagnostics::observe_alien_state(scene).demo_play,"Demo selector follows original nonzero branch");
+            }
+            scene.fill(std::byte{});
+            for(unsigned table=0;table<4;++table) for(unsigned balls=0;balls<4;++balls)
+                for(unsigned flags=0;flags<32;++flags) for(unsigned mode=0;mode<4;++mode) {
+                    scene[0x79]=static_cast<std::byte>(table);scene[0x46]=static_cast<std::byte>(balls);
+                    scene[0x78]=static_cast<std::byte>(flags);scene[0x7c]=static_cast<std::byte>(mode&1);
+                    scene[0x76]=static_cast<std::byte>(mode>>1);
+                    require(diagnostics::observe_alien_state(scene).game_over==(table<2 && balls==0 && (flags&3)==3 && mode==0),"Game over requires exhausted ordinary balls and both original end bits");
+                }
+            std::copy(signature.begin(),signature.end(),scene.begin()+0x1f7);
+            require(diagnostics::observe_alien_state(scene).title_menu,"Complete title call signature");
+            for(unsigned i=0;i<9;++i) {
+                scene[0x1f7+i]^=std::byte{1};
+                require(!diagnostics::observe_alien_state(scene).title_menu,"Partial title signature is rejected");
+                scene[0x1f7+i]^=std::byte{1};
+            }
+            digits[3].pixels.clear();rejects([&]{render::ScorePanel invalid(digits);},"Invalid digit artwork rejected");
+        }
+        {
+            assets::LowerCounterTiles tiles{};
+            for(unsigned value=0;value<7;++value) for(unsigned i=0;i<6;++i)
+                tiles[value][i]=static_cast<std::uint16_t>(0xa000+value*16+i);
+            std::array<std::uint16_t,1024> bat;bat.fill(0x1234);
+            const auto original=bat;
+            std::array<std::byte,8192> ram{};
+            for(unsigned value=1;value<=7;++value) {
+                bat=original;ram[0x7f]=static_cast<std::byte>(value);
+                require(assets::restore_lower_counter(bat,tiles,0,ram),"Lower counter restored");
+                for(unsigned address=0;address<1024;++address) {
+                    const bool inside=(address>=0x22d && address<=0x22f) || (address>=0x24d && address<=0x24f);
+                    const auto expected=inside?tiles[value-1][(address-0x22d)/32*3+(address-0x22d)%32]:original[address];
+                    require(bat[address]==expected,"Counter rectangle and stride preserve unrelated BAT");
+                }
+            }
+            for(const unsigned value:{0u,8u,255u}) {
+                bat=original;ram[0x7f]=static_cast<std::byte>(value);
+                require(!assets::restore_lower_counter(bat,tiles,0,ram) && bat==original,"Unknown counter leaves BAT unchanged");
+            }
+            ram[0x7f]=std::byte{7};bat=original;
+            require(!assets::restore_lower_counter(bat,tiles,1,ram) && bat==original,"Upper table has no lower counter writes");
+            rejects([&]{assets::restore_lower_counter(std::span(bat).first(1023),tiles,0,ram);},"Counter rejects short BAT");
+            rejects([&]{assets::restore_lower_counter(bat,tiles,0,std::span(ram).first(8191));},"Counter rejects short RAM");
+            rejects([&]{assets::restore_lower_counter(bat,tiles,2,ram);},"Counter rejects unknown table");
+            rejects([&]{assets::decode_lower_counter_tiles({});},"Counter rejects unsupported ROM");
+            require(bat==original,"Rejected counter inputs leave BAT unchanged");
+        }
+        render::TableTransitionHold transition;
+        std::array<std::byte,8192> transition_ram{};
+        render::Image complete{256,464,std::vector<std::uint32_t>(256*464,0xff112233)};
+        require(transition.present(complete,10,0,0,transition_ram).has_value(),"Complete image seeds transition");
+        for(unsigned frame=11;frame<=42;++frame) {
+            const auto held=transition.present(std::nullopt,frame,1,0,transition_ram);
+            require(held && held->pixels==complete.pixels && transition.held(),"Confirmed transition holds exact last image");
+        }
+        require(!transition.present(std::nullopt,43,1,0,transition_ram) && !transition.held(),"Hold expires after 32 frames");
+        transition.present(complete,44,0,0,transition_ram);
+        require(!transition.present(std::nullopt,45,0,0,transition_ram),"Same-table unavailable scene cannot arm hold");
+        transition.present(complete,46,0,0,transition_ram);
+        require(!transition.present(std::nullopt,48,1,0,transition_ram),"Skipped epoch clears image");
+        transition.present(complete,49,0,0,transition_ram);
+        transition.reset();
+        require(!transition.present(std::nullopt,50,1,0,transition_ram),"Explicit load/reset clears transition");
+        transition.present(complete,51,0,0,transition_ram);
+        require(!transition.present(std::nullopt,52,1,1,transition_ram),"Camera change clears transition");
+        transition.present(complete,53,0,0,transition_ram);
+        transition_ram[0x53]=std::byte{0x80};
+        require(!transition.present(std::nullopt,54,1,0,transition_ram),"Unsupported scene clears transition");
+        transition_ram[0x53]=std::byte{};
+        transition.present(complete,55,0,0,transition_ram);
+        transition.present(std::nullopt,56,1,0,transition_ram);
+        auto ready=complete; ready.pixels[0]=0xff445566;
+        const auto resumed=transition.present(ready,57,1,0,transition_ram);
+        require(resumed && resumed->pixels[0]==0xff445566 && !transition.held(),"Ready target replaces held image immediately");
+        transition.present(std::nullopt,58,0,0,transition_ram);
+        require(!transition.present(std::nullopt,59,1,0,transition_ram),"A second table change cannot extend a hold");
+        render::TableBallBackdrop clean_ball{complete,std::vector<std::uint8_t>(256*464)};
+        auto old_ball=complete; old_ball.pixels[0]=0xffffffff;
+        render::Sprite moving_ball;
+        moving_ball.x=10;moving_ball.y=20;moving_ball.width=16;moving_ball.height=16;
+        moving_ball.image={16,16,std::vector<std::uint32_t>(256)};
+        moving_ball.image.pixels[0]=0xffffffff;
+        transition.present(old_ball,60,0,0,transition_ram,&clean_ball);
+        const auto moved_ball=transition.present(std::nullopt,61,1,0,transition_ram,nullptr,&moving_ball);
+        require(moved_ball && transition.ball_updated() && moved_ball->pixels[0]==complete.pixels[0] &&
+            moved_ball->pixels[20*256+10]==0xffffffff,"Transition replaces old ball without leaving a duplicate");
+        clean_ball.sprites[20*256+10]=1;
+        transition.present(old_ball,62,0,0,transition_ram,&clean_ball);
+        const auto blocked_ball=transition.present(std::nullopt,63,1,0,transition_ram,nullptr,&moving_ball);
+        require(blocked_ball && blocked_ball->pixels==old_ball.pixels && !transition.ball_updated(),
+            "Uncertain sprite overlap retains original hold");
+        transition.reset();
+        require(!transition.present(std::nullopt,64,0,0,transition_ram,nullptr,&moving_ball),
+            "Reset discards both the original image and ball-free backdrop");
+        std::array<assets::TableIndicator,29> indicators;
+        indicators.fill({1,0,1,1,0x9000});
+        indicators[0]={0,31,2,2,0xd000};
+        indicators[28]={0,1023,1,1,0xa000};
+        std::array<std::byte,8192> indicator_ram{};
+        indicator_ram[0xd6]=std::byte{3}; indicator_ram[0xd9]=std::byte{0x10};
+        std::array<std::uint16_t,1024> indicator_bat;
+        indicator_bat.fill(0xc345);
+        assets::restore_table_indicators(indicator_bat,indicators,0,indicator_ram);
+        require(indicator_bat[31]==0xd345 && indicator_bat[32]==0xd345 &&
+            indicator_bat[63]==0xd345 && indicator_bat[64]==0xd345 && indicator_bat[1023]==0xa345,
+            "Indicator rectangles preserve tile identity, row stride and final flag byte");
+        require(indicator_bat[0]==0xc345 && indicator_bat[33]==0xc345,"Indicators isolate table halves and unset regions");
+        const auto indicator_before=indicator_bat;
+        indicators[28].width=2;
+        rejects([&]{assets::restore_table_indicators(indicator_bat,indicators,0,indicator_ram);},"Indicator rectangle outside BAT rejected");
+        require(indicator_bat==indicator_before,"Invalid indicator geometry cannot partially update the BAT");
+        std::array<std::byte,8192> bank_fixture{};
+        bank_fixture.fill(std::byte{0xee});
+        bank_fixture[0x204]=std::byte{2}; bank_fixture[0x244]=std::byte{0x80};
+        bank_fixture[0x9ff]=std::byte{0x37};
+        const auto projected=assets::inactive_table_actor_ram(bank_fixture);
+        require(projected[0x1504]==std::byte{2} && projected[0x1544]==std::byte{0x80} &&
+            projected[0x1cff]==std::byte{0x37},"Inactive bank includes first and final actor fields");
+        for(unsigned field=0;field<32;++field) for(unsigned slot=0;slot<4;++slot)
+            require(projected[0x1500+field*64+slot]==std::byte{},"Inactive bank excludes ball and reserved slots in every field");
+        require(projected[0x16]==std::byte{} && projected[0x17]==std::byte{} && projected[0x50]==std::byte{10},
+            "Inactive presentation has local camera and original SAT reservation");
+        require(bank_fixture[0x1504]==std::byte{0xee},"Projection never swaps runtime RAM");
+        rejects([&]{(void)assets::inactive_table_actor_ram(std::span(bank_fixture).first(8191));},"Truncated inactive bank rejected");
+        render::Image lower{256,256,std::vector<std::uint32_t>(256*256,0xff112233)};
+        render::Image upper{256,240,std::vector<std::uint32_t>(256*240,0xff445566)};
+        const auto lower_active=render::stitch_table_views(lower,upper,0);
+        const auto upper_active=render::stitch_table_views(lower,upper,1);
+        require(lower_active.width==256 && lower_active.height==464,"Stitch preserves the ROM's 224-pixel table offset");
+        require(lower_active.pixels[223*256]==0xff445566 && lower_active.pixels[224*256]==0xff445566 &&
+            lower_active.pixels.back()==0xff112233,"Fixed upper artwork spans overlap and clips unused BAT rows");
+        require(lower_active.pixels==upper_active.pixels,"Background join does not change with active half");
+        require(upper_active.pixels[239*256]==0xff445566 && upper_active.pixels[240*256]==0xff112233,
+            "Upper viewport owns overlap without shifting table coordinates");
+        std::vector<std::uint8_t> lower_mask(256*240),upper_mask(256*240);
+        lower_mask[0]=1; lower_mask[1]=1; upper_mask[224*256+1]=1;
+        const auto lower_sprite_join=render::stitch_table_views(lower,upper,0,lower_mask,upper_mask);
+        const auto upper_sprite_join=render::stitch_table_views(lower,upper,1,lower_mask,upper_mask);
+        require(lower_sprite_join.pixels[224*256]==lower.pixels[0] &&
+            upper_sprite_join.pixels[224*256]==lower.pixels[0],"Lower sprite survives fixed artwork join on either half");
+        require(lower_sprite_join.pixels[224*256+1]==lower.pixels[1] &&
+            upper_sprite_join.pixels[224*256+1]==upper.pixels[224*256+1],"Active sprite wins an overlap conflict");
+        rejects([&]{(void)render::stitch_table_views(lower,upper,0,lower_mask,{});},"Incomplete pair of sprite masks rejected");
+        rejects([&]{(void)render::stitch_table_views(lower,upper,2);},"Unsupported table rejected");
+        auto short_view=upper; short_view.pixels.pop_back();
+        rejects([&]{(void)render::stitch_table_views(lower,short_view,0);},"Truncated table rejected");
+        require(lower.pixels.size()==256*256 && upper.pixels.back()==0xff445566,"Stitch leaves source assets immutable");
         std::vector<std::byte> payload(77);
         std::memcpy(payload.data(),"MDFNSVST",8); put32(payload,20,77);
         std::memcpy(payload.data()+32,"CPU",3); put32(payload,64,9);
@@ -81,10 +350,32 @@ int main() {
             attributes[0]=attributes[4]=64; attributes[1]=attributes[5]=32;
             attributes[2]=attributes[6]=128; attributes[7]=0x81;
             render::Viewport view{2,1};
-            auto composed=render::compose(memory,colors,attributes,view);
+            std::array<std::uint8_t,2> visible{};
+            std::array<std::uint8_t,2> blocked{};
+            auto composed=render::compose(memory,colors,attributes,view,visible,blocked);
+            require(visible[0]==0 && visible[1]==1,"Sprite mask respects hidden early sprite and background transparency");
+            require(blocked[0]==1 && blocked[1]==1,"Hidden sprite pixels still block insertion under SAT priority");
+            memory[64*64]=0x8000;
+            (void)render::compose(memory,colors,attributes,view,visible,blocked);
+            require(blocked[0]==1 && blocked[1]==0,"Transparent sprite pixels do not block insertion");
+            memory[64*64]=0xc000;
             require(composed.pixels[0]==render::pce_color(7),"Hidden earlier sprite blocks later foreground sprite");
             require(composed.pixels[1]==render::pce_color(7<<3),"Background color zero admits rear sprite");
             attributes[3]=0x80;
+            colors[257]=colors[0];
+            (void)render::compose(memory,colors,attributes,view,visible);
+            require(visible[0]==1,"Visible sprite remains identifiable when its RGB equals the background");
+            colors[257]=7<<3;
+            const std::array<render::RasterWrite,1> hide_sprites{{{0,render::RasterTarget::control,0,0x80}}};
+            (void)render::compose_palette_raster(memory,colors,attributes,view,hide_sprites,{},visible,blocked);
+            require(visible[0]==0 && visible[1]==0,"Raster-disabled sprites clear previously visible mask pixels");
+            require(blocked[0]==0 && blocked[1]==0,"Raster-disabled sprites clear insertion blockers");
+            (void)render::compose_palette_raster(memory,colors,attributes,view,{}, {},visible);
+            require(visible[0]==1 && visible[1]==1,"Palette raster preserves sprite coverage before color expansion");
+            rejects([&]{(void)render::compose(memory,colors,attributes,view,std::span(visible).first(1));},
+                "Truncated sprite coverage rejected");
+            rejects([&]{(void)render::compose(memory,colors,attributes,view,{},std::span(blocked).first(1));},
+                "Truncated insertion mask rejected");
             require(render::compose(memory,colors,attributes,view).pixels[0]==render::pce_color(7<<3),"Foreground sprite covers opaque background");
             memory[64*64]=0x4000; attributes[2]=130; memory[65*64]=0x8000;
             require(render::compose(memory,colors,attributes,view).pixels[1]==render::pce_color(7<<6),"Transparent earlier sprite admits later sprite");
@@ -117,7 +408,9 @@ int main() {
             attributes[60]=64; attributes[61]=32; attributes[62]=128; attributes[63]=0x180;
             for(unsigned y=0;y<16;++y) {memory[64*64+y]=0xffff; memory[65*64+16+y]=0xffff;}
             render::Viewport view{32,17,0,0,0,0x40};
-            auto limited=render::compose(memory,colors,attributes,view);
+            std::vector<std::uint8_t> blockers(32*17);
+            auto limited=render::compose(memory,colors,attributes,view,{},blockers);
+            require(blockers[31]==1 && blockers[16*32]==0,"Full fetch row blocks insertion even at transparent pixels and resets next row");
             require(limited.pixels[0]==render::pce_color(7) && limited.pixels[16]==render::pce_color(0),
                 "Wide sprite at fetch sixteen retains only its left half");
             attributes[63]|=0x800;
@@ -127,12 +420,24 @@ int main() {
             attributes[64]=64; attributes[65]=48; attributes[66]=128; attributes[67]=0x80;
             require(render::compose(memory,colors,attributes,view).pixels[16]==render::pce_color(0),
                 "Later sprite cannot use exhausted row even after transparent fetches");
+            const auto hidden_wide=render::compose(memory,colors,attributes,view,{},blockers,std::uint64_t{1}<<15);
+            require(hidden_wide.pixels[0]==render::pce_color(0) && hidden_wide.pixels[16]==render::pce_color(0) && blockers[31],
+                "Hidden wide sprite still exhausts fetch budget and blocks later sprites");
             attributes[64]=80;
             require(render::compose(memory,colors,attributes,view).pixels[16*32+16]==render::pce_color(7),
                 "Fetch budget resets on each row and excludes vertically absent sprites");
             attributes[56]=63; // Only fourteen pieces intersect row fifteen now.
             require(render::compose(memory,colors,attributes,view).pixels[15*32+16]==render::pce_color(7),
                 "Wide sprite consumes both remaining fetches at exact capacity");
+            attributes.fill(0);attributes[252]=64;attributes[253]=32;attributes[254]=128;attributes[255]=0x80;
+            require(render::compose(memory,colors,attributes,view).pixels[0]==render::pce_color(7),"Last SAT slot is visible without suppression");
+            constexpr auto last_slot=std::uint64_t{1}<<63;
+            std::vector<std::uint8_t> visible(32*17,1);
+            const auto hidden=render::compose(memory,colors,attributes,view,visible,blockers,last_slot);
+            require(hidden.pixels[0]==render::pce_color(0) && !visible[0] && !blockers[0],"Last SAT slot can be hidden without claiming pixels");
+            const std::array<render::RasterWrite,2> bands{{{0,render::RasterTarget::control,0,0x40},{1,render::RasterTarget::control,0,0x40}}};
+            require(render::compose_raster(memory,colors,attributes,view,bands,{}, {},last_slot).pixels==hidden.pixels,"Hidden slots survive raster band changes");
+            require(render::compose_palette_raster(memory,colors,attributes,view,bands,{}, {}, {},last_slot).pixels==hidden.pixels,"Indexed palette raster preserves hidden slots");
         }
         {
             using Target=render::RasterTarget;

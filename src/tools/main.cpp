@@ -6,6 +6,7 @@
 #include "video_capture.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include "alien_crush/diagnostics/reference_snapshot.hpp"
+#include "alien_crush/render/table_playfield.hpp"
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -47,9 +48,10 @@ void bitmap(const std::filesystem::path& path,const Frame& frame) {
 std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint64_t frames,
     const std::filesystem::path& output, bool check_restore,
     const recording::Recording* playback=nullptr, bool restore_initial=false,
-    std::uint64_t video_every=0,bool raw=true,bool compare_video=false,bool compare_display=false,bool require_display=false) {
+    std::uint64_t video_every=0,bool raw=true,bool compare_video=false,bool compare_display=false,bool require_display=false,bool stitched=false) {
     auto runtime=make_reference_runtime(); runtime->load(rom_path);
-    if(compare_display) runtime->observe_display(true);
+    const bool table_raster=stitched && runtime->supports_display_observation();
+    if(compare_display || table_raster) runtime->observe_display(true);
     if(playback) runtime->restore(playback->initial);
     else if(restore_initial) runtime->restore(runtime->save());
     std::vector<std::string> hashes;
@@ -58,6 +60,10 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
     std::vector<std::string> memory_signatures;
     std::optional<state::SaveStateContainer> checkpoint;
     std::optional<diagnostics::ReferenceSnapshot> previous_video;
+    std::unique_ptr<render::TablePlayfield> table;
+    render::TableTransitionHold transition;
+    std::ofstream table_csv;
+    if(stitched) table=std::make_unique<render::TablePlayfield>(core::read_file(rom_path));
     recording::Recording recording{runtime->save(),{}};
     std::ofstream census;
     std::ofstream ram_stream;
@@ -91,6 +97,11 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
         }
         observations.exceptions(std::ios::failbit|std::ios::badbit);
         observations.open(output/"game-observations.csv");
+        if(stitched) {
+            table_csv.exceptions(std::ios::failbit|std::ios::badbit);
+            table_csv.open(output/"stitched.csv");
+            table_csv<<"frame,table,available,pixels_sha256,held,ball_updated\n";
+        }
         observations<<"frame,score,table_code,ball_counter,score_pending,high_score_1,high_score_2,high_score_3,high_score_4,high_score_5,pulse_flags,pulse_green,pulse_red,pulse_blue\n";
         if(raw) {
             ram_stream.open(output/"work-ram.bin",std::ios::binary);
@@ -101,7 +112,9 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
     for(std::uint64_t n=0;n<frames;++n) {
         auto input=playback?playback->inputs.at(static_cast<std::size_t>(n)):recording::canonical_input(n);
         recording.inputs.push_back(input);
-        const auto frame=runtime->advance(input);
+        const auto command=playback?playback->plunger_at(static_cast<std::size_t>(n)):std::uint8_t{0};
+        if(playback && !playback->plunger.empty()) recording.plunger.push_back(command);
+        const auto frame=recording::advance(*runtime,input,static_cast<std::uint8_t>(command));
         if(frame.pixels.empty() || frame.stereo.empty()) throw std::runtime_error("Missing reference frame/audio");
         const bool export_frame=!output.empty() && video_every && ((n+1)%video_every==0 || n+1==frames);
         std::optional<render::Image> reference_image;
@@ -208,6 +221,25 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
             }
             if(!previous_video) composition<<",,,,,";
             composition<<'\n';
+            if(stitched) {
+                const auto ram=runtime->work_ram();
+                const auto half=std::to_integer<unsigned>(ram[0x79]);
+                const auto camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
+                const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
+                std::optional<render::TableBallBackdrop> backdrop;
+                auto image=previous_video?table->compose(snapshot,*previous_video,half,camera,ram,
+                    table_raster?&raster:nullptr,&backdrop):std::nullopt;
+                const auto ball=image?std::nullopt:table->transition_ball(half,ram);
+                image=transition.present(std::move(image),snapshot.frame,half,camera,ram,
+                    backdrop?&*backdrop:nullptr,ball?&*ball:nullptr);
+                table_csv<<frame.number<<','<<half<<','<<image.has_value()<<',';
+                if(image) {
+                    table_csv<<rom::compute_digests(std::as_bytes(std::span(image->pixels))).sha256;
+                    if(export_frame) bitmap(output/("stitched-"+std::to_string(frame.number)+".bmp"),
+                        {frame.number,image->width,image->height,image->pixels,{}});
+                }
+                table_csv<<','<<transition.held()<<','<<transition.ball_updated()<<'\n';
+            }
             previous_video=snapshot;
         }
         // Capture only the immediately preceding frame for each requested sample.
@@ -251,7 +283,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
         runtime->restore(*checkpoint);
         if(!output.empty()) core::write_file_atomic(output/"restored.payload",runtime->save().core_state);
         for(std::uint64_t n=frames/2;n<frames;++n) {
-            auto frame=runtime->advance(recording.inputs.at(static_cast<std::size_t>(n)));
+            auto frame=recording::advance(*runtime,recording.inputs.at(static_cast<std::size_t>(n)),recording.plunger_at(static_cast<std::size_t>(n)));
             if(compare_display && display_signatures.at(static_cast<std::size_t>(n))!=display_signature(runtime->display_rows()))
                 throw std::runtime_error("Restored display observation diverged at frame "+std::to_string(n+1));
             if(compare_display && palette_signatures.at(static_cast<std::size_t>(n))!=palette_signature(runtime->palette_writes()))
@@ -272,7 +304,7 @@ int main(int argc,char** argv) {
         std::filesystem::path raster_video,raster_writes;
         std::uint64_t frames=1800,video_every=0;
         bool validate=false,verify=false,cold=false,raw=true,discovery=false,compare_video=false,compare_display=false;
-        bool require_display=false;
+        bool require_display=false,stitched=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){ if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]); };
@@ -285,6 +317,7 @@ int main(int argc,char** argv) {
             else if(arg=="--compare-video") compare_video=true;
             else if(arg=="--compare-display") {compare_display=true; compare_video=true;}
             else if(arg=="--require-display-match") {require_display=true; compare_display=true; compare_video=true;}
+            else if(arg=="--stitched") {stitched=true;compare_video=true;}
             else if(arg=="--render-raster") raster_video=core::path_from_utf8(value());
             else if(arg=="--raster-writes") raster_writes=core::path_from_utf8(value());
             else if(arg=="--extract-assets") asset_path=core::path_from_utf8(value());
@@ -314,6 +347,7 @@ int main(int argc,char** argv) {
                 std::cout<<"--render-raster <video directory> --raster-writes <CSV> --capture <new directory> compares a supplied row schedule offline.\n";
                 std::cout<<"--compare-display adds observed reference display-row control to --compare-video (requires observer build).\n";
                 std::cout<<"--require-display-match also fails unless every frame after startup frames 1/2 is complete and exact (canonical route only).\n";
+                std::cout<<"--stitched adds experimental full-table hashes and BMPs at --video-every intervals; requires --capture.\n";
                 return 0;
             }
             else throw std::runtime_error("Unknown option "+arg);
@@ -341,7 +375,7 @@ int main(int argc,char** argv) {
             if(frames<2) throw std::runtime_error("Replay requires at least two frames");
         }
         const auto* source=playback?&*playback:nullptr;
-        const auto first=capture(rom_path,frames,output,verify,source,false,video_every,raw,compare_video,compare_display,require_display);
+        const auto first=capture(rom_path,frames,output,verify,source,false,video_every,raw,compare_video,compare_display,require_display,stitched);
         if(verify || cold) {
             const auto second=capture(rom_path,frames,{},false,source);
             for(std::size_t i=0;i<first.size();++i) if(first[i]!=second[i]) throw std::runtime_error("Cold-boot replay diverged at frame "+std::to_string(i+1));

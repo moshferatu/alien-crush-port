@@ -27,8 +27,14 @@ struct Viewport {
 // Frozen-register diagnostic composition with the sixteen-piece scanline limit.
 // Register/palette/VRAM changes during a frame are not modeled.
 // Scroll is the background origin at output (0,0); sprites use screen coordinates.
+// Optional width*height mask is overwritten with visible sprite coverage after
+// SAT order, fetch limits and background priority, independent of RGB equality.
+// Optional blocked mask also includes sprite pixels hidden by the background and
+// fully occupied fetch rows. It conservatively guards insertion of another sprite.
+// Hidden SAT slots (one bit per slot) suppress pixels but retain scanline fetch cost.
 Image compose(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
-    std::span<const std::uint16_t> sat,const Viewport& viewport);
+    std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<std::uint8_t> visible_sprites={},
+    std::span<std::uint8_t> blocked_sprites={},std::uint64_t hidden_sprites=0);
 enum class RasterTarget { vram, palette, sat, control, scroll_x, scroll_y, memory_width, burst_mode };
 struct RasterWrite {
     std::uint16_t row{};
@@ -40,11 +46,13 @@ struct RasterWrite {
 // The caller supplies effective timing: bus latency, hardware register latches and
 // within-scanline changes are not inferred here. Scroll remains relative to row zero.
 Image compose_raster(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
-    std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<const RasterWrite> writes);
+    std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<const RasterWrite> writes,
+    std::span<std::uint8_t> visible_sprites={},std::span<std::uint8_t> blocked_sprites={},std::uint64_t hidden_sprites=0);
 struct PalettePixelWrite { std::uint32_t pixel{}; std::uint16_t address{},value{}; };
 // Palette writes apply before the specified linear output pixel. Row writes may
 // change other state but cannot also target the palette. All inputs stay immutable.
 Image compose_palette_raster(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
     std::span<const std::uint16_t> sat,const Viewport& viewport,std::span<const RasterWrite> rows,
-    std::span<const PalettePixelWrite> colors);
+    std::span<const PalettePixelWrite> colors,std::span<std::uint8_t> visible_sprites={},
+    std::span<std::uint8_t> blocked_sprites={},std::uint64_t hidden_sprites=0);
 }

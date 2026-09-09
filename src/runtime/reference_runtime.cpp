@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "alien_crush/runtime/game_runtime.hpp"
+#include "alien_crush/runtime/reference_launcher.hpp"
 #include "alien_crush/core/rom_image.hpp"
 #include <libretro.h>
 #include <array>
@@ -205,6 +206,27 @@ public:
         const auto* memory=static_cast<const std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
         if(!memory || size<8192) throw std::runtime_error("Reference work RAM unavailable");
         return {memory,8192};
+    }
+    bool apply_plunger_draw(std::uint8_t percent) override {
+        check_loaded();
+        const auto size=retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
+        auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
+        if(!memory || size<8192) return false;
+        return apply_reference_launcher_draw({memory,8192},percent);
+    }
+    bool cancel_plunger_draw() override {
+        check_loaded();
+        const auto size=retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
+        auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
+        if(!memory || size<8192) return false;
+        return cancel_reference_launcher_draw({memory,8192});
+    }
+    bool supports_display_observation() const override {
+#ifdef AC_REFERENCE_VIDEO_OBSERVER
+        return true;
+#else
+        return false;
+#endif
     }
     void observe_display(bool enabled) override {
         check_loaded(); observed_count=0; palette_count=0; observation_failed=false;

@@ -20,7 +20,8 @@ add_library(ac_core STATIC src/core/rom_image.cpp src/core/save_state.cpp
     src/core/atomic_file.cpp src/core/files.cpp src/core/recording.cpp
     src/render/sharp_pixel_scaler.cpp src/input/plunger.cpp
     src/diagnostics/reference_snapshot.cpp src/diagnostics/display_trace.cpp src/render/pce_graphics.cpp
-    src/assets/table_assets.cpp src/assets/actor_assets.cpp src/diagnostics/alien_state.cpp)
+    src/assets/table_assets.cpp src/assets/actor_assets.cpp src/diagnostics/alien_state.cpp
+    src/render/table_playfield.cpp src/gameplay/launcher_contact.cpp src/runtime/reference_launcher.cpp src/render/score_panel.cpp src/render/title_logo.cpp)
 target_include_directories(ac_core PUBLIC include)
 target_link_libraries(ac_core PRIVATE bcrypt)
 ac_enable_strict_warnings(ac_core)
@@ -47,7 +48,7 @@ if(AC_BUILD_APP)
     endif()
     include(Dependencies)
     ac_provide_sdl3()
-    add_executable(alien-crush src/host/main.cpp src/host/presentation.cpp src/host/cabinet.cpp)
+    add_executable(alien-crush src/host/main.cpp src/host/presentation.cpp src/host/cabinet.cpp src/host/backglass.cpp src/host/cabinet_input.cpp src/host/cabinet_plunger.cpp)
     target_link_libraries(alien-crush PRIVATE ac_reference SDL3::SDL3)
     ac_enable_strict_warnings(alien-crush)
     install(TARGETS alien-crush RUNTIME DESTINATION .)
@@ -59,12 +60,35 @@ if(AC_BUILD_TESTS)
     target_link_libraries(ac_core_tests PRIVATE ac_core)
     ac_enable_strict_warnings(ac_core_tests)
     add_test(NAME core COMMAND ac_core_tests)
+    add_executable(ac_launcher_contact_tests tests/launcher_contact_tests.cpp)
+    target_link_libraries(ac_launcher_contact_tests PRIVATE ac_core)
+    ac_enable_strict_warnings(ac_launcher_contact_tests)
+    add_test(NAME launcher_contact COMMAND ac_launcher_contact_tests)
+    set_tests_properties(launcher_contact PROPERTIES LABELS "core;rom_free;input")
     set_tests_properties(core PROPERTIES LABELS "core;rom_free")
     add_executable(ac_graphics_tests tests/graphics_tests.cpp)
     target_link_libraries(ac_graphics_tests PRIVATE ac_core)
     ac_enable_strict_warnings(ac_graphics_tests)
     add_test(NAME graphics COMMAND ac_graphics_tests)
     set_tests_properties(graphics PROPERTIES LABELS "core;rom_free;graphics")
+    if(AC_BUILD_APP)
+        add_executable(ac_backglass_tests tests/backglass_tests.cpp src/host/backglass.cpp)
+        target_include_directories(ac_backglass_tests PRIVATE src/host)
+        target_link_libraries(ac_backglass_tests PRIVATE ac_core)
+        ac_enable_strict_warnings(ac_backglass_tests)
+        add_test(NAME backglass COMMAND ac_backglass_tests "${CMAKE_BINARY_DIR}/backglass-test.bmp")
+        set_tests_properties(backglass PROPERTIES LABELS "rom_free;host" TIMEOUT 10)
+        add_executable(ac_cabinet_input_tests tests/cabinet_input_tests.cpp src/host/cabinet_input.cpp src/host/cabinet_plunger.cpp)
+        target_include_directories(ac_cabinet_input_tests PRIVATE src/host)
+        target_link_libraries(ac_cabinet_input_tests PRIVATE ac_core SDL3::SDL3)
+        ac_enable_strict_warnings(ac_cabinet_input_tests)
+        add_test(NAME cabinet_input COMMAND ac_cabinet_input_tests)
+        set_tests_properties(cabinet_input PROPERTIES LABELS "rom_free;host" TIMEOUT 30
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+        add_test(NAME input_probe_smoke COMMAND alien-crush --input-probe --frames 1)
+        set_tests_properties(input_probe_smoke PROPERTIES LABELS "rom_free;host" TIMEOUT 10
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+    endif()
     if(AC_ENABLE_ROM_TESTS)
         if(NOT AC_BUILD_REFERENCE OR NOT EXISTS "${AC_ROM_PATH}")
             message(FATAL_ERROR "ROM tests require AC_BUILD_REFERENCE and an existing AC_ROM_PATH.")
@@ -77,8 +101,121 @@ if(AC_BUILD_TESTS)
             set_tests_properties(reference_video PROPERTIES LABELS "rom_required;graphics" TIMEOUT 180)
         endif()
         add_test(NAME asset_discovery COMMAND alien-crush-tools --verify-discovery --rom "${AC_ROM_PATH}")
+        add_executable(ac_title_logo_tests tests/title_logo_tests.cpp)
+        add_executable(ac_attract_replay_tests tests/attract_replay_tests.cpp)
+        add_executable(ac_bonus_replay_tests tests/bonus_replay_tests.cpp)
+        add_executable(ac_ordinary_bonus_replay_tests tests/ordinary_bonus_replay_tests.cpp)
+        add_executable(ac_game_over_replay_tests tests/game_over_replay_tests.cpp)
+        add_executable(ac_match_replay_tests tests/match_replay_tests.cpp)
+        add_executable(ac_high_score_replay_tests tests/high_score_replay_tests.cpp)
+        add_executable(ac_name_entry_replay_tests tests/name_entry_replay_tests.cpp)
+        target_link_libraries(ac_name_entry_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_name_entry_replay_tests)
+        add_test(NAME name_entry_replay COMMAND ac_name_entry_replay_tests "${AC_ROM_PATH}"
+            "${CMAKE_BINARY_DIR}/bonus-smoke.clear.acrec" "${CMAKE_BINARY_DIR}/name-entry-smoke")
+        set_tests_properties(name_entry_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 60
+            FIXTURES_REQUIRED bonus_recording FIXTURES_SETUP name_entry_recording)
+        target_link_libraries(ac_high_score_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_high_score_replay_tests)
+        add_test(NAME high_score_replay COMMAND ac_high_score_replay_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/high-score-smoke")
+        set_tests_properties(high_score_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 30 FIXTURES_SETUP high_score_recording)
+        target_link_libraries(ac_match_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_match_replay_tests)
+        add_test(NAME match_replay COMMAND ac_match_replay_tests "${AC_ROM_PATH}"
+            "${CMAKE_BINARY_DIR}/ordinary-bonus-smoke.return.acrec" "${CMAKE_BINARY_DIR}/match-smoke")
+        set_tests_properties(match_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 60
+            FIXTURES_REQUIRED ordinary_bonus_recording FIXTURES_SETUP match_recording)
+        target_link_libraries(ac_game_over_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_game_over_replay_tests)
+        add_test(NAME game_over_replay COMMAND ac_game_over_replay_tests "${AC_ROM_PATH}"
+            "${CMAKE_BINARY_DIR}/ordinary-bonus-smoke.return.acrec" "${CMAKE_BINARY_DIR}/game-over-smoke")
+        set_tests_properties(game_over_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 60
+            FIXTURES_REQUIRED ordinary_bonus_recording FIXTURES_SETUP game_over_recording)
+        target_link_libraries(ac_ordinary_bonus_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_ordinary_bonus_replay_tests)
+        add_test(NAME ordinary_bonus_replay COMMAND ac_ordinary_bonus_replay_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/ordinary-bonus-smoke")
+        set_tests_properties(ordinary_bonus_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 90 FIXTURES_SETUP ordinary_bonus_recording)
+        target_link_libraries(ac_bonus_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_bonus_replay_tests)
+        add_test(NAME bonus_replay COMMAND ac_bonus_replay_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/bonus-smoke")
+        set_tests_properties(bonus_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 60 FIXTURES_SETUP bonus_recording)
+        target_link_libraries(ac_attract_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_attract_replay_tests)
+        add_test(NAME attract_replay COMMAND ac_attract_replay_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/attract-score.ppm")
+        set_tests_properties(attract_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 60)
+        target_link_libraries(ac_title_logo_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_title_logo_tests)
+        add_test(NAME title_logo COMMAND ac_title_logo_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/title-logo.ppm")
+        set_tests_properties(title_logo PROPERTIES LABELS "rom_required;graphics" TIMEOUT 30)
         set_tests_properties(asset_discovery PROPERTIES LABELS "rom_required;graphics" TIMEOUT 180)
+        add_executable(ac_table_replay_tests tests/table_replay_tests.cpp)
+        add_executable(ac_launcher_replay_tests tests/launcher_replay_tests.cpp)
+        target_link_libraries(ac_launcher_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_launcher_replay_tests)
+        add_test(NAME launcher_replay COMMAND ac_launcher_replay_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/launcher-smoke.acrec")
+        set_tests_properties(launcher_replay PROPERTIES LABELS "rom_required;input" TIMEOUT 60 FIXTURES_SETUP launcher_recording)
+        add_test(NAME launcher_recording COMMAND alien-crush-tools --rom "${AC_ROM_PATH}"
+            --replay "${CMAKE_BINARY_DIR}/launcher-smoke.acrec" --verify-replay)
+        set_tests_properties(launcher_recording PROPERTIES LABELS "rom_required;input" TIMEOUT 30 FIXTURES_REQUIRED launcher_recording)
+        target_link_libraries(ac_table_replay_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_table_replay_tests)
+        add_test(NAME table_replay COMMAND ac_table_replay_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/table-smoke.acrec")
+        set_tests_properties(table_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 60 FIXTURES_SETUP table_smoke_recording)
         if(AC_BUILD_APP)
+            add_test(NAME bonus_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/bonus-smoke.room4.acrec" --frames 32 --data-dir "${CMAKE_BINARY_DIR}/bonus-host-smoke")
+            set_tests_properties(bonus_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
+                FIXTURES_REQUIRED bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME ordinary_bonus_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/ordinary-bonus-smoke.return.acrec" --frames 300 --data-dir "${CMAKE_BINARY_DIR}/ordinary-bonus-host-smoke")
+            set_tests_properties(ordinary_bonus_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
+                FIXTURES_REQUIRED ordinary_bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME game_over_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/game-over-smoke.acrec" --frames 1000 --data-dir "${CMAKE_BINARY_DIR}/game-over-host-smoke")
+            set_tests_properties(game_over_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 45
+                FIXTURES_REQUIRED game_over_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME match_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/match-smoke.acrec" --frames 900 --data-dir "${CMAKE_BINARY_DIR}/match-host-smoke")
+            set_tests_properties(match_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 45
+                FIXTURES_REQUIRED match_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME high_score_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/high-score-smoke.acrec" --frames 600 --data-dir "${CMAKE_BINARY_DIR}/high-score-host-smoke")
+            set_tests_properties(high_score_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
+                FIXTURES_REQUIRED high_score_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME name_entry_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/name-entry-smoke.acrec" --frames 1100 --data-dir "${CMAKE_BINARY_DIR}/name-entry-host-smoke")
+            set_tests_properties(name_entry_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 45
+                FIXTURES_REQUIRED name_entry_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME bonus_end_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/bonus-smoke.loss.acrec" --frames 300 --data-dir "${CMAKE_BINARY_DIR}/bonus-end-host-smoke")
+            set_tests_properties(bonus_end_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
+                FIXTURES_REQUIRED bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME bonus_clear_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/bonus-smoke.clear.acrec" --frames 700 --data-dir "${CMAKE_BINARY_DIR}/bonus-clear-host-smoke")
+            set_tests_properties(bonus_clear_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 45
+                FIXTURES_REQUIRED bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_executable(ac_cabinet_window_tests tests/cabinet_window_tests.cpp src/host/cabinet.cpp src/host/presentation.cpp src/host/backglass.cpp)
+            target_include_directories(ac_cabinet_window_tests PRIVATE src/host)
+            target_link_libraries(ac_cabinet_window_tests PRIVATE ac_core SDL3::SDL3)
+            ac_enable_strict_warnings(ac_cabinet_window_tests)
+            add_test(NAME cabinet_windows COMMAND ac_cabinet_window_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/cabinet-window-test")
+            set_tests_properties(cabinet_windows PROPERTIES LABELS "rom_required;host" TIMEOUT 30
+                ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_executable(ac_cabinet_plunger_tests tests/cabinet_plunger_tests.cpp src/host/cabinet_plunger.cpp)
+            target_include_directories(ac_cabinet_plunger_tests PRIVATE src/host)
+            target_link_libraries(ac_cabinet_plunger_tests PRIVATE ac_reference SDL3::SDL3)
+            ac_enable_strict_warnings(ac_cabinet_plunger_tests)
+            add_test(NAME cabinet_plunger COMMAND ac_cabinet_plunger_tests "${AC_ROM_PATH}")
+            set_tests_properties(cabinet_plunger PROPERTIES LABELS "rom_required;host;input" TIMEOUT 30
+                ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME launcher_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/launcher-smoke.acrec" --frames 120 --data-dir "${CMAKE_BINARY_DIR}/launcher-host-smoke")
+            set_tests_properties(launcher_host_smoke PROPERTIES LABELS "rom_required;host;input" TIMEOUT 30
+                FIXTURES_REQUIRED launcher_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME stitched_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                --replay "${CMAKE_BINARY_DIR}/table-smoke.acrec" --frames 32 --data-dir "${CMAKE_BINARY_DIR}/stitched-smoke")
+            set_tests_properties(stitched_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
+                FIXTURES_REQUIRED table_smoke_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
             add_test(NAME desktop_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --frames 30)
             set_tests_properties(desktop_smoke PROPERTIES LABELS "rom_required;host"
                 ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy" TIMEOUT 30)
