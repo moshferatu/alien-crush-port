@@ -11,8 +11,8 @@
 
 namespace alien_crush::host {
 namespace {
-constexpr std::array masks{Pad::left,Pad::button_i,Pad::button_ii,Pad::run,
-    Pad::select,Pad::up,Pad::down,Pad::right};
+constexpr std::array masks{Pad::left,Pad::right,Pad::button_ii,Pad::run,
+    Pad::select,Pad::up,Pad::down,Pad::right,Pad::button_i};
 bool name_matches(const char* name,const std::string& needle) {
     return name && SDL_strcasestr(name,needle.c_str());
 }
@@ -23,12 +23,12 @@ CabinetButtons parse_cabinet_buttons(std::string_view text) {
     std::istringstream stream{std::string(text)};
     CabinetButtons result;
     std::string header;
-    if(!(stream>>header) || header!="ACINPUTS1" || !(stream>>std::quoted(result.device)) ||
+    if(!(stream>>header) || (header!="ACINPUTS1" && header!="ACINPUTS2") || !(stream>>std::quoted(result.device)) ||
         result.device.empty() || result.device.size()>1024 ||
         result.device.find_first_of("\r\n\0",0,3)!=std::string::npos)
         throw std::runtime_error("Invalid cabinet input header/device; name a specific controller");
-    for(auto& button:result.buttons)
-        if(!(stream>>button) || button < -1 || button>255)
+    for(unsigned i=0;i<(header=="ACINPUTS2"?9u:8u);++i)
+        if(!(stream>>result.buttons[i]) || result.buttons[i] < -1 || result.buttons[i]>255)
             throw std::runtime_error("Cabinet button indices must be -1 (disabled) or 0..255");
     stream>>std::ws;
     if(!stream.eof()) throw std::runtime_error("Unexpected trailing cabinet input configuration");

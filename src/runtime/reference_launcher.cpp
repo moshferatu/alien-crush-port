@@ -36,6 +36,19 @@ std::optional<ReferenceLauncherSeat> launcher_seat(std::span<const std::byte> ra
 std::optional<ReferenceLauncherSeat> reference_launcher_seat(std::span<const std::byte> ram) {
     return launcher_seat(ram,false);
 }
+bool reference_launcher_active(std::span<const std::byte> ram) {
+    if(ram.size()!=8192) return false;
+    auto b=[&](unsigned at){return std::to_integer<unsigned>(ram[at]);};
+    // RAM 67 is set to 1 by the shooter collision at 01:4FDC. It remains
+    // 1 through the shot's departure, whereas the exact seat/descriptor gate
+    // can fail for a single frame at full draw or during return motion.
+    if(b(0x79)!=0 || b(0x67)!=1 || b(0x76)!=0 || !(b(0x68)&1) ||
+        (b(0x78)&0x13) || (b(0xf6)&2) || b(0x53)!=0 || b(0x54)!=0 ||
+        b(0x1500)!=1 || b(0x1540)!=0x80) return false;
+    for(unsigned slot=4;slot<64;++slot)
+        if(b(0x1500+slot)==6 && b(0x1540+slot)==0x88) return true;
+    return false;
+}
 bool cancel_reference_launcher_draw(std::span<std::byte> ram) {
     const auto seat=launcher_seat(ram,true);
     if(!seat) return false;

@@ -10,8 +10,9 @@
 namespace alien_crush::host {
 struct CabinetButtons {
     std::string device;
-    // left flipper, right flipper/launcher, nudge, run, select, up, down, right
-    std::array<int,8> buttons{-1,-1,-1,-1,-1,-1,-1,-1};
+    // left flipper, right flipper, nudge, start/launch, select, up, down,
+    // right/menu, dedicated launch/confirm (ninth entry in ACINPUTS2).
+    std::array<int,9> buttons{-1,-1,-1,-1,-1,-1,-1,-1,-1};
 };
 CabinetButtons parse_cabinet_buttons(std::string_view text);
 CabinetButtons load_cabinet_buttons(const std::filesystem::path& path);

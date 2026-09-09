@@ -10,6 +10,9 @@ struct ReferenceLauncherSeat {
 };
 // Conservative supported-ROM gate, not a general scene classifier.
 std::optional<ReferenceLauncherSeat> reference_launcher_seat(std::span<const std::byte> ram);
+// Read-only input context covering the entire shooter session, including
+// transient draw/return poses and departure. Not a gate for writing plunger RAM.
+bool reference_launcher_active(std::span<const std::byte> ram);
 // Explicit cabinet adapter: modifies draw/appearance and carries a seated ball.
 // It does not write ball velocity or implement a release. Caller supplies I
 // while drawing, then clears I/II on release so the cartridge fires normally.

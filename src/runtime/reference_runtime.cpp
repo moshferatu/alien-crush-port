@@ -18,6 +18,7 @@ extern "C" void ac_set_palette_observer(void (*)(int,int,unsigned,unsigned,unsig
 extern "C" bool ac_copy_cpu_snapshot(unsigned short*,unsigned char*);
 extern "C" bool ac_copy_video_snapshot(unsigned short*,unsigned short*,unsigned short*,unsigned short*);
 extern "C" void ac_set_continuous_handoff(bool);
+extern "C" void ac_set_cabinet_controls(bool);
 #endif
 
 namespace alien_crush {
@@ -26,6 +27,7 @@ struct CoreOption { std::string_view key; const char* value; };
 #include "reference_options.inc"
 class Reference final : public ReferenceRuntime {
     HandoffMode handoff;
+    ControlMode controls;
     inline static std::atomic<Reference*> active{};
     std::thread::id owner = std::this_thread::get_id();
     bool initialized{}, loaded{}, failed{};
@@ -159,9 +161,10 @@ class Reference final : public ReferenceRuntime {
         return (mask&bit)?1:0;
     }
 public:
-    explicit Reference(HandoffMode mode) : handoff(mode) {
+    explicit Reference(HandoffMode mode,ControlMode input_mode) : handoff(mode),controls(input_mode) {
 #ifndef AC_REFERENCE_VIDEO_OBSERVER
         if(mode==HandoffMode::continuous) throw std::runtime_error("Continuous handoff requires the video-enabled backend");
+        if(controls==ControlMode::cabinet) throw std::runtime_error("Cabinet controls require the video-enabled backend");
 #endif
         pixels.reserve(2048U*264U); audio.reserve(131072);
         Reference* empty=nullptr;
@@ -188,6 +191,7 @@ public:
         loaded=true;
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
         ac_set_continuous_handoff(handoff==HandoffMode::continuous);
+        ac_set_cabinet_controls(controls==ControlMode::cabinet);
 #endif
         retro_set_controller_port_device(0,RETRO_DEVICE_JOYPAD);
         retro_set_controller_port_device(1,RETRO_DEVICE_JOYPAD);
@@ -205,9 +209,13 @@ public:
     int sample_rate() const override { return static_cast<int>(av.timing.sample_rate+0.5); }
     std::string_view revision() const override {
 #ifdef AC_REFERENCE_STATE_EXTENSION
+        if(controls==ControlMode::cabinet) return handoff==HandoffMode::continuous?
+            "beetle-" AC_BEETLE_REVISION "-s1-h1-controls1":"beetle-" AC_BEETLE_REVISION "-s1-controls1";
         if(handoff==HandoffMode::continuous) return "beetle-" AC_BEETLE_REVISION "-state1-handoff1";
         return "beetle-" AC_BEETLE_REVISION "-state1";
 #else
+        if(controls==ControlMode::cabinet) return handoff==HandoffMode::continuous?
+            "beetle-" AC_BEETLE_REVISION "-h1-controls1":"beetle-" AC_BEETLE_REVISION "-controls1";
         if(handoff==HandoffMode::continuous) return "beetle-" AC_BEETLE_REVISION "-handoff1";
         return "beetle-" AC_BEETLE_REVISION;
 #endif
@@ -304,5 +312,5 @@ public:
     }
 };
 }
-std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode) { return std::make_unique<Reference>(mode); }
+std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls) { return std::make_unique<Reference>(mode,controls); }
 }

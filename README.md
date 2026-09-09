@@ -68,23 +68,36 @@ copy any desired bindings or artwork to the cabinet manually once.
 .\out\build\windows-vs2022\Release\alien-crush.exe --rom '.\Alien Crush.pce'
 ```
 
-The baseline uses the original controller behavior:
+Live play uses the Devil's Crush cabinet control layout:
 
 | Input | Action |
 | --- | --- |
-| Enter / gamepad Start | Start and pause |
+| Enter / gamepad Start | Launch while seated; start/confirm/pause elsewhere |
 | Left Shift / Left / left shoulder | Left flipper |
-| Right Shift / Z / right shoulder / south button | Right flipper and original launcher |
+| Right Shift / Right / right shoulder | Right flipper |
+| Gamepad south button (A / Cross) | Launch / confirm |
 | X / east button | Nudge |
 | Backspace / gamepad Back | Select speed/music |
 | F5 / F9 | Save / restore quick state |
 | F11 | Borderless fullscreen |
 | Escape | Exit |
 
-Desktop quick states live beside the executable in `portable-data/alien-crush.reference.state`.
-Live cabinet mode uses `alien-crush.cabinet.state` and a distinct runtime identity.
+Hold Enter (or the south gamepad button) to draw the launcher, then release to
+fire; a configured physical plunger also works. Enter remains a launch control
+at full charge and cannot pause until the ball has left
+the shooter; a launch press must be released before a fresh press can pause.
+Both flippers remain controllable
+while the ball is seated, leaving the launcher or absent during table play.
+Pressing both flippers works; launching never operates a flipper. Flipper keys
+send directions in menus/name entry, so they cannot accidentally confirm a letter.
+Pause and the cartridge's tilt gates remain active. Z is no longer a flipper key.
+
+Desktop quick states live beside the executable in `portable-data/alien-crush.desktop-controls.state`.
+Live cabinet mode uses `alien-crush.cabinet-controls.state` and a distinct runtime identity.
 Recordings select their recorded runtime automatically: existing reference recordings
-retain original loading timing; new cabinet recordings use continuous handoffs.
+retain original loading timing and controls; new cabinet recordings use continuous
+handoffs and separate controls. The previous `.reference.state`/`.cabinet.state`
+files are preserved, but cannot be loaded into the changed-controls runtime.
 Quick states cannot be exchanged between these execution modes.
 Use `--data-dir` to select another location. Missing ROM paths default beside the executable.
 
@@ -192,8 +205,12 @@ ACINPUTS1
 0 1 2 3 4 -1 -1 -1
 ```
 
-The eight numbers map, in order, to left flipper, right flipper/launcher, nudge,
-start/pause, select, up, down and right. **The numbers above are examples, not
+The eight numbers map, in order, to left flipper, right flipper, nudge,
+start/launch/confirm/pause, select, up, down and right/menu. The second button
+now operates only the right flipper. The fourth launches while the ball is seated.
+For an additional dedicated launch/confirm button, use `ACINPUTS2` with a ninth
+index (for example `0 1 2 3 4 -1 -1 -1 5`). Existing eight-entry `ACINPUTS1`
+files remain readable. **The numbers above are examples, not
 verified PinOne defaults.** Use `-1` to disable a mapping; valid indices are 0–255.
 The name is a nonempty case-insensitive substring; the first matching device with
 all configured buttons is selected. Choose a distinctive name when several boards

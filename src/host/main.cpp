@@ -3,6 +3,8 @@
 #include "cabinet.hpp"
 #include "cabinet_input.hpp"
 #include "cabinet_plunger.hpp"
+#include "game_input.hpp"
+#include "alien_crush/runtime/reference_launcher.hpp"
 #include "alien_crush/render/table_playfield.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/core/recording.hpp"
@@ -24,18 +26,10 @@ void open_pad(PadDevice& device) {
     SDL_free(ids);
 }
 PadInput read_input(SDL_Gamepad* pad) {
-    const bool* keys=SDL_GetKeyboardState(nullptr);
-    auto button=[&](SDL_GamepadButton b){return pad && SDL_GetGamepadButton(pad,b);};
-    PadInput input;
-    if(keys[SDL_SCANCODE_LSHIFT]||keys[SDL_SCANCODE_LEFT]||button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)||button(SDL_GAMEPAD_BUTTON_DPAD_LEFT)) input.player_one|=Pad::left;
-    if(keys[SDL_SCANCODE_RSHIFT]||keys[SDL_SCANCODE_Z]||button(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)||button(SDL_GAMEPAD_BUTTON_SOUTH)) input.player_one|=Pad::button_i;
-    if(keys[SDL_SCANCODE_X]||button(SDL_GAMEPAD_BUTTON_EAST)) input.player_one|=Pad::button_ii;
-    if(keys[SDL_SCANCODE_RETURN]||button(SDL_GAMEPAD_BUTTON_START)) input.player_one|=Pad::run;
-    if(keys[SDL_SCANCODE_BACKSPACE]||button(SDL_GAMEPAD_BUTTON_BACK)) input.player_one|=Pad::select;
-    if(keys[SDL_SCANCODE_UP]||button(SDL_GAMEPAD_BUTTON_DPAD_UP)) input.player_one|=Pad::up;
-    if(keys[SDL_SCANCODE_DOWN]||button(SDL_GAMEPAD_BUTTON_DPAD_DOWN)) input.player_one|=Pad::down;
-    if(keys[SDL_SCANCODE_RIGHT]||button(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) input.player_one|=Pad::right;
-    return input;
+    int count{};const bool* keys=SDL_GetKeyboardState(&count);
+    std::array<bool,SDL_GAMEPAD_BUTTON_COUNT> buttons{};
+    for(int i=0;pad && i<SDL_GAMEPAD_BUTTON_COUNT;++i) buttons[static_cast<std::size_t>(i)]=SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(i));
+    return host::device_game_input({keys,static_cast<std::size_t>(count)},buttons);
 }
 }
 int main(int argc,char** argv) {
@@ -54,7 +48,7 @@ int main(int argc,char** argv) {
             else if(arg=="--timing-log") timing_path=core::path_from_utf8(value());
             else if(arg=="--cabinet") cabinet_mode=true;
             else if(arg=="--input-probe") probe=true;
-            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter start/pause; Left Shift left flipper; Right Shift/Z right flipper and launcher; X nudge; Backspace select. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nRaw cabinet buttons: configure cabinet-inputs.txt in the data directory (see README).\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
+            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper; Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nRaw cabinet buttons: configure cabinet-inputs.txt in the data directory (see README).\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
             else throw std::runtime_error("Unknown option "+arg);
         }
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
@@ -69,9 +63,10 @@ int main(int argc,char** argv) {
             host::load_cabinet_plunger(data_path/"cabinet-plunger.txt"):input::PlungerBinding{});
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) playback=recording::read(replay_path);
-        const auto mode=playback?(playback->initial.core_revision.ends_with("-handoff1")?HandoffMode::continuous:HandoffMode::original):
+        const auto mode=playback?((playback->initial.core_revision.find("-handoff1")!=std::string::npos || playback->initial.core_revision.find("-h1-")!=std::string::npos)?HandoffMode::continuous:HandoffMode::original):
             (cabinet_mode?HandoffMode::continuous:HandoffMode::original);
-        auto runtime=make_reference_runtime(mode); runtime->load(rom_path);
+        const auto controls=playback && !playback->initial.core_revision.ends_with("-controls1")?ControlMode::original:ControlMode::cabinet;
+        auto runtime=make_reference_runtime(mode,controls); runtime->load(rom_path);
         const bool table_raster=cabinet_mode && runtime->supports_display_observation();
         if(table_raster) runtime->observe_display(true);
         if(playback) runtime->restore(playback->initial);
@@ -94,6 +89,7 @@ int main(int argc,char** argv) {
         if(!audio.stream) throw std::runtime_error(SDL_GetError());
         if(!SDL_ResumeAudioStreamDevice(audio.stream)) throw std::runtime_error(SDL_GetError());
         PadDevice gamepad; open_pad(gamepad);
+        host::GameInputRouter input_router;
         bool running=true,focused=true,display_layout_changed=false;
         const auto frame_ns=static_cast<std::uint64_t>(1e9/runtime->frames_per_second());
         auto deadline=SDL_GetTicksNS();
@@ -119,7 +115,7 @@ int main(int argc,char** argv) {
                     if(event.key.scancode==SDL_SCANCODE_F5 || event.key.scancode==SDL_SCANCODE_F9) {
                         try {
                             if(playback || !record_path.empty()) throw std::runtime_error("Quick states are disabled during recording/replay to keep the input timeline reproducible");
-                            const auto path=data_path/(mode==HandoffMode::continuous?"alien-crush.cabinet.state":"alien-crush.reference.state");
+                            const auto path=data_path/(mode==HandoffMode::continuous?"alien-crush.cabinet-controls.state":"alien-crush.desktop-controls.state");
                             if(event.key.scancode==SDL_SCANCODE_F5) {
                                 if(cabinet_plunger.owns_draw()) throw std::runtime_error("Release the plunger before saving a quick state");
                                 core::write_file_atomic(path,state::encode(runtime->save()));
@@ -146,6 +142,7 @@ int main(int argc,char** argv) {
                 SDL_GetGamepadID(gamepad.pad)!=cabinet_plunger.id()?gamepad.pad:nullptr;
             auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(standard_pad);
             if(!playback && focused) input.player_one|=cabinet_input.read().player_one;
+            if(!playback) input=input_router.route(input,runtime->work_ram());
             const auto command=playback?playback->plunger_at(static_cast<std::size_t>(count)):cabinet_plunger.apply(*runtime,input,focused);
             const auto frame_started=SDL_GetTicksNS();
             if(table_raster) runtime->observe_display(true);

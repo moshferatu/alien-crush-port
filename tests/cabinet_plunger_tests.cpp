@@ -11,8 +11,11 @@ int main(int argc,char** argv) {
         require(argc==2,"Expected ROM path");
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"1");
         require(SDL_Init(SDL_INIT_JOYSTICK),"SDL initialization");
-        {
-            auto runtime=make_reference_runtime();runtime->load(core::path_from_utf8(argv[1]));
+        bool controls_supported=false;
+        for(const auto controls:{ControlMode::original,ControlMode::cabinet}) {
+            if(controls==ControlMode::cabinet && !controls_supported) continue;
+            auto runtime=make_reference_runtime(HandoffMode::original,controls);runtime->load(core::path_from_utf8(argv[1]));
+            controls_supported=runtime->supports_display_observation();
             for(unsigned n=0;n<480;++n) (void)runtime->advance(recording::canonical_input(n));
             const auto ready=runtime->save();
             auto attach=[] {

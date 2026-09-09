@@ -1,6 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Only the two ordinary-table handoff call trees. No persistent execution
 // phase exists outside the serialized CPU/RAM state; IRQs fail the stack guard.
+        // Original flipper routines, after initialization and before their
+        // ordinary motion/collision code. Only live, initialized flipper actors
+        // in table scenes may use these masks or bypass the shooter/ball gate.
+        if(ac_cabinet_controls && (PC==0x4b7b || PC==0x4b95 || PC==0x4ba9) &&
+            MPR[1]==0xf8 && MPR[2]==1 && X>=4 && X<64 &&
+            RdMem(0x2079)<=2 && !RdMem(0x2076) && (RdMem(0x2068)&1) &&
+            (RdMem(0x3540+X)&0x80) && (RdMem(0x3500+X)==2 || RdMem(0x3500+X)==3)) {
+            if(PC==0x4b7b) WrMem(0x3900+X,RdMem(0x3500+X)==2?0x80:0x30);
+            // Keep the original pause/tilt gates at 4BA1..4BA7. Remove the
+            // lower-table launch-state restriction and the ball-present gate.
+            if(PC==0x4b95) PC=0x4ba1;
+            if(PC==0x4ba9) PC=0x4bae;
+        }
         if(ac_handoff_boundary && MPR[1]==0xf8 && MPR[4]==3 && MPR[2]==1 && S==0xfd &&
             RdMem(0x21fe)==0xa0 && RdMem(0x21ff)==0x40 &&
             (PC==0x89cd || PC==0x89d0 || PC==0x89d3 || PC==0x89d6 ||

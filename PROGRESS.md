@@ -1,5 +1,53 @@
 # Progress
 
+Enter launch/pause ownership (2026-09-09):
+
+- Fixed Enter becoming Run/Pause at full charge. Host input had reused the
+  physical-plunger write gate, whose exact seat/descriptor constraints reject
+  transient original draw/return poses. Added a separate read-only shooter-session
+  predicate using RAM 67 and initialized ball/launcher actors. The conservative
+  plunger mutation gate remains unchanged.
+- Host input now retains launch ownership until the logical Enter/Start button
+  is released. Enter remains launch through the shooter's departure, and a fresh
+  press after departure pauses normally. Applies equally to keyboard, gamepad
+  Start and raw start/launch mappings; replay still consumes recorded pad bits.
+- Native regression holds Enter for 40/120/177/260 frames, covers strict-seat
+  mismatches, verifies no pause throughout charge/return/departure, releases to
+  fire, and confirms a fresh post-departure press pauses. Existing controls,
+  replay/host and original/new-mode physical-plunger tests pass (5/5, 8.85s).
+  Release build warning-free; logs out/build-launch-pause.log and
+  out/test-launch-pause.log. Rebuilt/published cabinet package afterward.
+
+Independent cabinet flippers and launch controls (2026-09-09):
+
+- Matched Devil's Crush's live keyboard layout: Left Shift/Left and Right
+  Shift/Right control the flippers, Enter draws/releases the seated launcher
+  and starts/confirms/pauses elsewhere, X nudges, Backspace selects. Gamepad
+  shoulders/directions flip; South launches/confirms. Removed the Z binding.
+- Opt-in controls1 runtime changes only initialized type-2/3 table flippers:
+  01:4B7B sets left mask 80 and right mask 30; 4B95 bypasses the lower-table
+  shooter restriction and 4BA9 bypasses ball-presence gating. Pause/tilt checks,
+  original flipper motion, collision and launch velocity logic remain intact.
+  Both-flipper input uses Left+Up to avoid the PCE opposite-direction rejection.
+- Live desktop/cabinet sessions enable the new controls. Original reference and
+  continuous replay identities retain original controls. New identities use
+  compact s1/h1 tags to fit the existing 64-byte revision field; host/tools choose
+  replay modes from those tags. New .desktop-controls.state/.cabinet-controls.state
+  paths preserve incompatible older quick states instead of overwriting them.
+- ACINPUTS1's second mapping is now right flipper only; fourth is context-aware
+  start/launch. ACINPUTS2 adds a ninth dedicated launch/confirm mapping. Physical
+  plunger draw/cancel/rearm still runs independently of flipper direction bits.
+- Native tests cover each flipper and both together before launch, launch-only
+  draw without flippers, flippers during launcher departure, release, pause,
+  exact RAM/video/audio replay and rejection by the original runtime. Virtual
+  devices cover independent launch/flipper buttons and plunger behavior under
+  both runtime control modes. Help and README explain controls/configuration.
+- Release build warning-free. Nine focused regression tests passed (35.20s),
+  including pristine reference replay and continuous seam/host tests. Four final
+  targeted tests passed (7.75s), including the new recording in the actual host
+  and expanded raw-button/physical-plunger tests. Logs: out/build-controls.log,
+  out/test-controls.log, out/test-controls-final.log.
+
 Cabinet publish workflow (2026-09-09):
 
 - Added tools/Publish-Cabinet.ps1 based on the Devil's Crush publisher. Builds
