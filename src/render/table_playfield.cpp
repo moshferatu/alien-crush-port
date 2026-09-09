@@ -194,6 +194,8 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
     if(reseed) {
         std::copy(ram.begin(),ram.end(),animation_source_.begin());
         animation_actors_=assets::inactive_table_actor_ram(ram);
+        animation_actors_[0x1217]=ram[0x1217];animation_actors_[0x1218]=ram[0x1218];
+        actors_.seed_brain_orbs(animation_actors_,1-half);
         animation_half_=1-half;
     } else if(current.frame==animation_frame_+1 &&
         !(std::to_integer<unsigned>(ram[0x53])&0x80) && !(std::to_integer<unsigned>(ram[0x54])&0x80)) {

@@ -6,6 +6,18 @@
 #include <stdexcept>
 #include <string>
 namespace alien_crush::assets {
+namespace {
+// 00:F9A2..F9D5, operating only on the presentation bank's RNG copy.
+unsigned visual_random(std::span<std::byte> ram) {
+    const unsigned lo=std::to_integer<unsigned>(ram[0x1217]);
+    const unsigned state=lo|(std::to_integer<unsigned>(ram[0x1218])<<8);
+    const unsigned mixed=(state+(((state+0x503f)&65535)*2))&65535;
+    const unsigned result=(lo+(mixed>>8))&255;
+    ram[0x1217]=static_cast<std::byte>(mixed&255);
+    ram[0x1218]=static_cast<std::byte>(result);
+    return result;
+}
+}
 std::vector<BackgroundWrite> restored_actor_backgrounds(const ActorAssets& assets,std::span<const std::byte> ram) {
     if(ram.size()!=8192) throw std::runtime_error("Background restoration requires 8192-byte work RAM");
     auto b=[&](std::size_t p){return std::to_integer<std::uint8_t>(ram[p]);};
@@ -97,6 +109,37 @@ ActorAssets::ActorAssets(std::span<const std::byte> image) {
     if(!rom::matches_supported_rom(image.size(),rom::compute_digests(image))) throw std::runtime_error("Unsupported ROM for actor extraction");
     std::copy_n(image.begin()+0x2c000,banks_.size(),banks_.begin());
     std::copy_n(image.begin()+0x8000,sequences_.size(),sequences_.begin());
+    std::copy_n(image.begin()+0x56b6,brain_orb_positions_.size(),brain_orb_positions_.begin());
+}
+void ActorAssets::seed_brain_orbs(std::span<std::byte> ram,unsigned half) const {
+    if(ram.size()!=8192 || half>1) throw std::runtime_error("Invalid initial brain-orb projection");
+    if(half!=1) return;
+    auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+    bool pending=false;
+    std::vector<unsigned> free;
+    for(unsigned x=4;x<64;++x) {
+        if(b(0x1500+x)==19) return; // Preserve an existing group, including partial groups.
+        if(!b(0x1500+x)) free.push_back(x);
+        // 02:7626..765F: the initial controller waits one tick before spawning.
+        // Later empty groups have a 300-tick respawn timer; don't revive them.
+        if(b(0x1500+x)==66 && b(0x1540+x)==0x80 && b(0x1840+x)==1 &&
+            b(0x1880+x)==1 && !b(0x18c0+x)) pending=true;
+    }
+    if(!pending || free.size()<5) return;
+    // 02:7673..76B5 allocates five type-19 actors at the ROM coordinates.
+      // Initialize their visual fields as 76CA..76F4 does, including randomized
+      // initial waits. Never alter the real controller or gameplay RNG.
+    for(unsigned i=0;i<5;++i) {
+        const auto x=free[i];
+        for(unsigned field=0;field<32;++field) ram[0x1500+field*64+x]=std::byte{};
+        ram[0x1500+x]=std::byte{19};ram[0x1540+x]=std::byte{0x80};
+        ram[0x1a00+x]=std::byte{0x16};ram[0x1a40+x]=std::byte{2};
+        ram[0x1b80+x]=std::byte{0x20};ram[0x1800+x]=std::byte{44};
+        ram[0x1880+x]=static_cast<std::byte>(visual_random(ram));
+        constexpr unsigned coordinates[]{0x15c0,0x1600,0x1680,0x16c0};
+        for(unsigned field=0;field<4;++field)
+            ram[coordinates[field]+x]=brain_orb_positions_[i*4+field];
+    }
 }
 void ActorAssets::mirror_flippers(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half) const {
     if(projected.size()!=8192 || live.size()!=8192 || half>1) throw std::runtime_error("Invalid flipper projection");
@@ -124,6 +167,59 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
     auto put=[&](unsigned p,unsigned v){ram[p]=static_cast<std::byte>(v&255);};
     for(unsigned x=4;x<64;++x) {
         const auto type=b(0x1500+x),count=b(0x1a40+x);
+        // Brain-side orbs (type 19, 02:76CA..77E3) wobble horizontally
+        // and can be saved mid-hop. Neither motion uses the FD35 oscillator.
+        // Continue saved movement without hits/global triggers or gameplay RNG;
+        // use the original random burst/rest distributions in the private bank.
+        if(type==19 && (b(0x1540+x)&0x80)) {
+            const auto action=b(0x1840+x);
+            if(action>2) continue;
+            if(action==0) {
+                put(0x1800+x,44);put(0x1880+x,b(0x1880+x)-1);
+                if(!b(0x1880+x)) {
+                    put(0x1700+x,0x80);put(0x1740+x,0);
+                    put(0x1900+x,0x80);put(0x1940+x,0);
+                    put(0x1b00+x,0xc0);put(0x1b40+x,0xff);
+                    put(0x1840+x,1);put(0x1880+x,1+(visual_random(ram)*4>>8));
+                }
+                continue;
+            }
+            const auto motion=b(0x1a00+x);
+            for(unsigned axis=0;axis<2;++axis) {
+                const unsigned p=axis?0x1640:0x1580,v=axis?0x1780:0x1700;
+                unsigned velocity=b(v+x)|(b(v+64+x)<<8);
+                if(motion&(axis?1:2)) {
+                    const int delta=velocity<0x8000?static_cast<int>(velocity):static_cast<int>(velocity)-65536;
+                    const unsigned position=b(p+x)|(b(p+64+x)<<8)|(b(p+128+x)<<16);
+                    const unsigned next=(position+static_cast<unsigned>(delta))&0xffffff;
+                    put(p+x,next);put(p+64+x,next>>8);put(p+128+x,next>>16);
+                }
+                if(motion&(axis?8:16)) {
+                    const unsigned a=axis?0x1b40:0x1b00,cap=axis?0x1980:0x1900;
+                    const auto acceleration=b(a+x);
+                    velocity=(velocity+acceleration+(acceleration&0x80?0xff00:0))&65535;
+                    put(v+x,velocity);put(v+64+x,velocity>>8);
+                    const auto magnitude=velocity&0x8000?65536-velocity:velocity;
+                    if((motion&(axis?0x40:4)) && magnitude==(b(cap+x)|(b(cap+64+x)<<8)))
+                        put(a+x,256-acceleration);
+                }
+            }
+            if(action==1) {
+                if(b(0x1700+x)==b(0x1900+x) && b(0x1740+x)==b(0x1940+x)) {
+                    put(0x1880+x,b(0x1880+x)-1);
+                    if(!b(0x1880+x)) {put(0x1880+x,visual_random(ram)>>1);put(0x1840+x,0);}
+                }
+            } else {
+                const auto velocity=b(0x1780+x)|(b(0x17c0+x)<<8);
+                if(velocity) put(0x1800+x,velocity&0x8000?43:44);
+                else if(b(0x1b40+x)&0x80) {
+                    put(0x1800+x,42);put(0x1a40+x,2);put(0x1b80+x,0x20);
+                    put(0x1bc0+x,0);put(0x1c00+x,0);put(0x1c40+x,0);
+                    put(0x1840+x,0);put(0x1a00+x,motion&0xb6);
+                }
+            }
+            continue;
+        }
         // Orange side aliens: 01:5F82..02:60B1. Their visible animation is
         // a quarter-pixel diagonal emerge/wait/retreat cycle, not FD35.
         // Use fixed cosmetic waits inside the ROM's ranges instead of consuming

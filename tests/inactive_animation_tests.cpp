@@ -64,6 +64,23 @@ int main(int argc,char** argv) {
             }
             require(moved>100,"Respawned orb did not bob");
         }
+        std::array<std::byte,8192> brain_orb{};
+        brain_orb[0x1504]=std::byte{19};brain_orb[0x1544]=std::byte{0x80};brain_orb[0x1a04]=std::byte{0x16};
+        brain_orb[0x1884]=std::byte{1};brain_orb[0x15c4]=std::byte{50};brain_orb[0x1684]=std::byte{100};
+        unsigned brain_moves=0;
+        for(unsigned i=0;i<600;++i) {
+            const auto old=brain_orb;actors.advance_animation(brain_orb);
+            if(old[0x1584]!=brain_orb[0x1584]) ++brain_moves;
+            const auto x=std::to_integer<unsigned>(brain_orb[0x15c4]);
+            require(x>=48 && x<=52 && brain_orb[0x1604]==std::byte{} && brain_orb[0x1684]==std::byte{100},
+                "Brain orb wobble drifted away from its anchor");
+        }
+        require(brain_moves>30 && brain_moves<300,"Brain orb must alternate wobble bursts with substantial rests");
+        brain_orb[0x1844]=std::byte{2};brain_orb[0x1a04]=std::byte{0x5f};
+        brain_orb[0x1b44]=std::byte{0xe0};brain_orb[0x19c4]=std::byte{1};
+        for(unsigned i=0;i<32;++i) actors.advance_animation(brain_orb);
+        require(brain_orb[0x1844]==std::byte{} && brain_orb[0x1684]==std::byte{100} &&
+            brain_orb[0x1a04]==std::byte{0x16},"Saved brain orb hop did not land and resume horizontal motion");
         std::array<std::byte,8192> orange{};
         orange[0x1504]=std::byte{15};orange[0x1544]=std::byte{0xc0};orange[0x1844]=std::byte{1};
         orange[0x1884]=std::byte{1};orange[0x15c4]=std::byte{210};orange[0x1684]=std::byte{100};
@@ -95,12 +112,45 @@ int main(int argc,char** argv) {
         std::array<std::byte,8192> last_ram{};
         std::array<unsigned,2> animated{};
         render::TableTransitionHold hold;
-        unsigned ball_pixels=0,orb_frames=0;
+        unsigned ball_pixels=0,orb_frames=0,brain_frames=0;
         for(unsigned n=0;n<1800;++n) {
             const auto frame=runtime->advance(recording::canonical_input(n));
             fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
             const auto video=runtime->video_snapshot();const auto ram=runtime->work_ram();
             const auto before=runtime->save();
+            if(n==399) {
+                auto dormant=assets::inactive_table_actor_ram(ram);
+                const auto original=dormant;
+                require(ram[0x79]==std::byte{},"Initial orb check requires lower half");
+                require(std::count(dormant.begin()+0x1504,dormant.begin()+0x1540,std::byte{19})==0,"Initial fixture already has brain orbs");
+                actors.seed_brain_orbs(dormant,0);require(dormant==original,"Lower half seeded upper orbs");
+                actors.seed_brain_orbs(dormant,1);
+                unsigned count=0;
+                for(unsigned a=4;a<64;++a) if(dormant[0x1500+a]==std::byte{19}) {
+                    constexpr unsigned coordinates[]{0x15c0,0x1600,0x1680,0x16c0};
+                    for(unsigned f=0;f<4;++f) require(dormant[coordinates[f]+a]==rom[0x56b6+count*4+f],"Initial brain orb is not at its ROM position");
+                    require(dormant[0x1540+a]==std::byte{0x80},"Initial brain orb is invisible");
+                    ++count;
+                }
+                require(count==5,"Initial cabinet view lacks the five brain orbs");
+                const auto seeded=dormant;actors.seed_brain_orbs(dormant,1);
+                require(dormant==seeded,"Initial brain orbs were duplicated");
+                unsigned mixed_frames=0,rest_frames=0;
+                for(unsigned tick=0;tick<1200;++tick) {
+                    actors.advance_animation(dormant);
+                    unsigned moving=0;
+                    for(unsigned a=4;a<64;++a) if(dormant[0x1500+a]==std::byte{19} && dormant[0x1840+a]!=std::byte{}) ++moving;
+                    if(moving>0 && moving<5) ++mixed_frames;
+                    if(!moving) ++rest_frames;
+                }
+                require(mixed_frames>300 && rest_frames>20,"Brain orb group shakes continuously instead of taking separate rests");
+                auto waiting=original;
+                for(unsigned a=4;a<64;++a) if(waiting[0x1500+a]==std::byte{66}) {
+                    waiting[0x1880+a]=std::byte{44};waiting[0x18c0+a]=std::byte{1};
+                }
+                const auto respawning=waiting;actors.seed_brain_orbs(waiting,1);
+                require(waiting==respawning,"Later cleared orb group was recreated early");
+            }
             const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
             const auto image=table->cabinet_frame(video,previous?&*previous:nullptr,ram,&raster,hold);
             const auto repeated=table->cabinet_frame(video,previous?&*previous:nullptr,ram,&raster,hold);
@@ -121,6 +171,13 @@ int main(int argc,char** argv) {
                 auto predicted=last_ram;actors.advance_animation(predicted);
                 for(unsigned a=4;a<64;++a) {
                     const auto t=last_ram[0x1500+a];
+                    if(t==std::byte{19} && ram[0x1500+a]==t && last_ram[0x1840+a]!=std::byte{} &&
+                        (last_ram[0x1ac0+a]&std::byte{0x80})==std::byte{} &&
+                        (last_ram[0x1580+a]!=ram[0x1580+a] || last_ram[0x1640+a]!=ram[0x1640+a])) {
+                        for(unsigned field:{0x1580u,0x15c0u,0x1600u,0x1640u,0x1680u,0x16c0u,0x1700u,0x1740u,0x1780u,0x17c0u})
+                            require(predicted[field+a]==ram[field+a],"Brain orb movement differs from original actor update");
+                        ++brain_frames;
+                    }
                     if((t!=std::byte{70} && t!=std::byte{71}) || ram[0x1500+a]!=t ||
                         last_ram[0x1840+a]!=std::byte{1} || (last_ram[0x1ac0+a]&std::byte{0x80})!=std::byte{} ||
                         ram[0x1840+a]==std::byte{}) continue;
@@ -176,7 +233,7 @@ int main(int argc,char** argv) {
                 const auto reset=paused_table->cabinet_frame(video,nullptr,ram,&raster,paused_hold);
                 require(cold && reset && cold->pixels==reset->pixels,"Cold view retained stale animation history");
             }
-            if(image && (n==399 || n==419 || n==999 || n==1019)) {
+            if(image && (n==399 || n==419 || n==999 || n==1019 || (n>=1399 && n<=1406))) {
                 preview(*image,std::to_string(n+1));
             }
             const auto half=std::to_integer<unsigned>(ram[0x79]);
@@ -188,7 +245,7 @@ int main(int argc,char** argv) {
             last=image;std::copy(ram.begin(),ram.end(),last_ram.begin());previous=video;
         }
         require(animated[0]>50 && animated[1]>50,"Both dormant halves must animate while their game-state bank stays frozen");
-        require(ball_pixels>10000 && orb_frames>100,"Insufficient ball layering or original orb-motion coverage");
+        require(ball_pixels>10000 && orb_frames>100 && brain_frames>100,"Insufficient ball layering or original orb-motion coverage");
         runtime->restore(initial);runtime->observe_display(false);
         for(unsigned n=0;n<1800;++n) {
             const auto frame=runtime->advance(recording::canonical_input(n));
@@ -196,7 +253,7 @@ int main(int argc,char** argv) {
         }
         std::cout<<"PASS: inactive lower/upper changed on "<<animated[0]<<'/'<<animated[1]
             <<" frozen-bank frames; "<<ball_pixels<<" unobscured ball pixels; "<<orb_frames
-            <<" original orb-motion comparisons; 1800 exact RAM/video/audio frames; repeated rendering is idempotent\n";
+            <<" original orb-motion comparisons; "<<brain_frames<<" brain orb comparisons; 1800 exact RAM/video/audio frames; repeated rendering is idempotent\n";
         return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

@@ -1,5 +1,44 @@
 # Progress
 
+Brain-orb burst/rest timing (2026-09-09):
+
+- Replaced the overly short fixed four-frame rests and four-cycle bursts with
+  the original 02:7756/777B selections: one to four wobble cycles, followed by
+  a random byte shifted right once. Zero timers retain the ROM's decrement-wrap
+  behavior. Initial orb delays also use the original full-byte random selection.
+- Ported 00:F9A2..F9D5 against a private copy of RAM 1217/1218, seeded when the
+  inactive presentation bank resets. No cosmetic RNG state reaches the runtime.
+- Regression checks now require substantial individual rest periods and test
+  1,200 group frames for separate moving/resting orbs and entirely resting frames.
+  Animation, continuous handoff and cabinet host checks passed (22.20 s), with
+  all 1,800 RAM/video/audio replay fingerprints unchanged. Release build is clean.
+
+Initial brain-orb visibility (2026-09-09):
+
+- The initial dormant upper bank contains a type-66 spawner waiting its first
+  tick, but no type-19 orbs. Cabinet reseeding now recognizes that pending state
+  and creates five private visual actors at ROM 02:76B6..76C9 positions, using
+  the recovered type-19 visual initialization and staggered cosmetic waits.
+- Existing groups are preserved. Lower halves, later 300-tick respawn waits and
+  banks without five free slots are unchanged. Real actor RAM is never written.
+- Added first-visit fixture checks for all five positions, visible flags,
+  idempotence and later respawn preservation. Animation and both continuous
+  handoff/host checks pass; exact 1,800-frame RAM/video/audio replay is retained.
+  Visually inspected startup frames 400/420 in out/initial-brain-orbs.png,
+  before the first upper-half visit. Release build is warning-free.
+
+Brain-side orb animation (2026-09-09):
+
+- Added type-19 private animation from 02:76CA..77E3: saved idle timers,
+  horizontal movement/acceleration reversal, wobble repetition and saved vertical
+  hops. Subsequent cosmetic waits use four wobble cycles and four idle frames;
+  gameplay RNG, global triggers, spawning, collisions and scoring are untouched.
+- Synthetic checks exercise 600 frames without positional drift and a saved hop
+  returning to horizontal motion. Compared 199 original brain-orb movement
+  updates; all 1,800 RAM/video/audio replay fingerprints remain exact.
+- Animation, continuous handoff and cabinet host checks passed (26.70 s),
+  including both seam crossings and the existing ball-layering assertions.
+
 Orb/orange alien animation and cabinet ball layering (2026-09-09):
 
 - Added private visual updates for the bouncing orbs (types 70/71): saved

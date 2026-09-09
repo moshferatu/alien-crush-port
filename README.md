@@ -204,6 +204,12 @@ The inactive half keeps shared palette cycles live, mirrors the actual flipper
 poses through each half's ROM frame tables, and continues recognized in-progress
 sprite animation sequences in a private visual bank. The small bouncing orbs
 continue bobbing and respawn after their saved timer; saved orb explosions finish.
+The orbs beside the upper-left brain also continue their sideways wobble and
+finish saved hops, using the original randomized burst lengths and rest times.
+A private copy of the ROM random-number routine keeps their timing independent
+without advancing gameplay randomness.
+Their initial five-orb group is seeded from ROM positions in the private cabinet
+view before the first upper-half visit, when the saved spawner is still pending.
 Orange side aliens continue emerging and retreating, using fixed cosmetic waits
 without consuming gameplay randomness. These inactive movements only change the
 cabinet image; real actor positions, collisions and scoring follow the original

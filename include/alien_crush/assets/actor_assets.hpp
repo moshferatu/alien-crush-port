@@ -29,10 +29,13 @@ public:
     // orb bob/respawn/explosion and orange alien emerge/retreat routines.
     // Input uses the active actor layout but must be a private presentation copy.
     void advance_animation(std::span<std::byte> ram) const;
+    // Populate the pending first brain-orb group in a private inactive bank.
+    void seed_brain_orbs(std::span<std::byte> ram,unsigned half) const;
     void mirror_flippers(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half) const;
 private:
     std::array<std::byte,16384> banks_{};
     std::array<std::byte,8192> sequences_{};
+    std::array<std::byte,20> brain_orb_positions_{};
 };
 struct ActorSprite {
     std::uint8_t actor{},descriptor{},slot{};
