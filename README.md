@@ -202,18 +202,22 @@ come from your ROM; the active half has live sprites and background changes,
 with standard score digits removed. The original pixel aspect ratio is preserved.
 The inactive half keeps shared palette cycles live, mirrors the actual flipper
 poses through each half's ROM frame tables, and continues recognized in-progress
-sprite animation sequences in a private visual bank. Actor positions, collisions
-and scoring still follow the original game; idle collision-triggered objects stay
-at rest. Animation pauses with the game and reseeds after a table change, scene
-change or quick load. The ball appears only on the active half. Persistent indicator colors and each half's
+sprite animation sequences in a private visual bank. The small bouncing orbs
+continue bobbing and respawn after their saved timer; saved orb explosions finish.
+Orange side aliens continue emerging and retreating, using fixed cosmetic waits
+without consuming gameplay randomness. These inactive movements only change the
+cabinet image; real actor positions, collisions and scoring follow the original
+game. Other idle collision-triggered objects stay at rest. Animation pauses with
+the game and reseeds after a table change, scene change or quick load. The cabinet
+draws the current ball above table artwork, sprites and point labels so it remains
+visible through overlaps. Persistent indicator colors and each half's
 table overlay are restored from game state, as is the lower table's seven-variant
 counter graphic and the two large background actors that redraw when a table
 is restored. Other inactive background changes
 and transient indicator blinking remain unfinished. During a confirmed table
 change, the last complete table artwork stays visible until the new half is
 ready, for at most 32 emulated frames. The ball uses its actual stored coordinates
-on both ready and held tables when its sprite is unambiguous; uncertain sprite overlaps mask individual pixels
-instead of freezing the old ball. Loading, fade-in, nudges and score awards retain
+on both ready and held tables, above decorative overlaps. Loading, fade-in, nudges and score awards retain
 the full-table projection. Title menus, high-score menus and bonus rooms use the
 original display. Upper-half artwork stays fixed across the 24-row join, while visible
 sprites from both halves remain present. Ball movement is not interpolated.

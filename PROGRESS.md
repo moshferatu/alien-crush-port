@@ -1,5 +1,29 @@
 # Progress
 
+Orb/orange alien animation and cabinet ball layering (2026-09-09):
+
+- Added private visual updates for the bouncing orbs (types 70/71): saved
+  respawn timers, signed 8.8 velocity, acceleration reversal and rest frames from
+  02:7892/7988 and 00:FB03/FBB6. The inactive lower orb respawn omits the
+  active-ball Y gate, since the ball is in the other half. No hits are synthesized.
+- Saved type-60 orb explosions now advance in action zero and retire after their
+  original oscillator cycle instead of remaining frozen on screen.
+- Orange side aliens (type 15) continue their saved timer and quarter-pixel
+  emerge/wait/retreat movement from 01:5F82..02:60B1. Subsequent cosmetic waits
+  are fixed at 180/16 frames; no gameplay RNG, scoring or collision routines run.
+- Cabinet clean-ball backdrops no longer treat every decorative sprite or full
+  hardware fetch row as an occluder. The current ball draws on top of artwork,
+  actors and point labels, including the opposite half and transition holds.
+  The exact diagnostic renderer and its conservative insertion masks are unchanged.
+- Added respawn/bobbing bounds, orange movement, explosion retirement, original
+  orb-motion comparisons and full opaque-ball pixel checks to inactive_animation.
+  Forced overlap captures cover the central eyes, green aliens and bonus text.
+- Verification: all eight focused Release checks passed (108.61 s), including
+  original replay, bonus awards, game over and continuous cabinet handoffs.
+  The animation test checks 3,300 original orb updates and over 124,000 opaque
+  ball pixels, with all 1,800 RAM/video/audio fingerprints unchanged. Visually
+  inspected out/orbs-and-ball.png. Release build and git diff --check are clean.
+
 Inactive cabinet animation (2026-09-09):
 
 - Cabinet rendering now continues recognized in-progress ROM actor animation

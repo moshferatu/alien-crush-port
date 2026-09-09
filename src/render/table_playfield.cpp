@@ -241,7 +241,15 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
     if(loaded && previous && previous->frame+1==current.frame) latched.sat=previous->sat;
     // The cabinet fixes the camera to the whole table. Frozen composition is
     // used only while the exact raster contract is unavailable (e.g. fade-in).
-    return compose_impl(active,latched,half,0,ram,nullptr,false,nullptr,true);
+    const auto fallback=compose_impl(active,latched,half,0,ram,nullptr,false,nullptr,true);
+    if(loaded && ball && fallback) {
+        TableBallBackdrop clean;
+        if(auto image=compose_impl(active,latched,half,0,ram,nullptr,true,&clean.sprites,true)) {
+            clean.image=std::move(*image);
+            return transition.present(fallback,current.frame,half,0,ram,&clean,&*ball);
+        }
+    }
+    return fallback;
 }
 bool TablePlayfield::matches(const diagnostics::ReferenceSnapshot& video,unsigned table) const {
     const auto& asset=tables_[table];
@@ -298,7 +306,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
                 ++found; hidden|=std::uint64_t{1}<<i;
             }
         }
-        if(found!=1) return std::nullopt;
+        if(found!=1 && !cabinet) return std::nullopt;
     }
     // Recognize the recovered standard HUD by position, attributes and digit
     // pattern range. Suppress pixels without freeing their hardware fetch slots.
@@ -362,6 +370,10 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         const auto& upper=table==0?inactive_blocks:active_blocks;
         std::copy(lower.begin(),lower.end(),coverage->begin()+256*table_half_offset);
         for(unsigned p=0;p<upper.size();++p) (*coverage)[p]|=upper[p];
+        // Cabinet ball readability takes precedence over decorative sprites,
+        // point labels and the PCE's per-row sprite fetch limit. Keep the exact
+        // diagnostic mask unchanged for reference comparisons.
+        if(cabinet) std::fill(coverage->begin(),coverage->end(),std::uint8_t{0});
     }
     return table==0?stitch_table_views(live,inactive,0,live_sprites,inactive_sprites):
         stitch_table_views(inactive,live,1,inactive_sprites,live_sprites);

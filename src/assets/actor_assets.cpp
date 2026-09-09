@@ -124,9 +124,76 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
     auto put=[&](unsigned p,unsigned v){ram[p]=static_cast<std::byte>(v&255);};
     for(unsigned x=4;x<64;++x) {
         const auto type=b(0x1500+x),count=b(0x1a40+x);
+        // Orange side aliens: 01:5F82..02:60B1. Their visible animation is
+        // a quarter-pixel diagonal emerge/wait/retreat cycle, not FD35.
+        // Use fixed cosmetic waits inside the ROM's ranges instead of consuming
+        // gameplay RNG. Preserve the saved first wait and never process hits.
+        if(type==15 && (b(0x1540+x)&0x80)) {
+            const auto action=b(0x1840+x);
+            if(action>4) continue;
+            if(action==2 || action==4) {
+                for(unsigned axis=0;axis<2;++axis) {
+                    const unsigned p=axis?0x1640:0x1580,v=axis?0x1780:0x1700;
+                    const unsigned velocity=b(v+x)|(b(v+64+x)<<8);
+                    const int delta=velocity<0x8000?static_cast<int>(velocity):static_cast<int>(velocity)-65536;
+                    const unsigned position=b(p+x)|(b(p+64+x)<<8)|(b(p+128+x)<<16);
+                    const unsigned next=(position+static_cast<unsigned>(delta))&0xffffff;
+                    put(p+x,next);put(p+64+x,next>>8);put(p+128+x,next>>16);
+                }
+            }
+            put(0x1880+x,b(0x1880+x)-1);
+            if(b(0x1880+x)) continue;
+            if(action<=1) {
+                put(0x1840+x,2);put(0x1700+x,0xc0);put(0x1740+x,0xff);
+                put(0x1580+x,0xc0);put(0x1780+x,0x40);put(0x17c0+x,0);
+                put(0x1640+x,0);put(0x1880+x,action==0?48:32);
+            } else if(action==2) {
+                put(0x1840+x,3);put(0x1880+x,180);
+            } else if(action==3) {
+                put(0x1840+x,4);put(0x1700+x,0x40);put(0x1740+x,0);
+                put(0x1580+x,0);put(0x1780+x,0xc0);put(0x17c0+x,0xff);
+                put(0x1640+x,0xc0);put(0x1880+x,32);
+            } else {put(0x1840+x,1);put(0x1880+x,16);}
+            continue;
+        }
+        // The little bouncing orbs (02:7892/7988) do not use FD35.
+        // Continue their respawn timer and vertical bob in the private bank,
+        // without replaying collision, score, explosion-spawn or sound calls.
+        if((type==70 || type==71) && (b(0x1540+x)&0x80)) {
+            const auto action=b(0x1840+x);
+            if(action==0) {
+                const auto timer=b(0x1880+x);
+                if(timer) put(0x1880+x,timer-1);
+                if(timer<=1) {
+                    put(0x1840+x,1);put(0x1540+x,b(0x1540+x)&0x9f);
+                    put(0x1ac0+x,0);
+                }
+            } else if(action==2) {
+                put(0x1880+x,b(0x1880+x)-1);
+                if(!b(0x1880+x)) put(0x1840+x,1);
+            } else if(action==1) {
+                // FB03 followed by FBB6: signed 8.8 velocity, 16.8 Y,
+                // signed byte acceleration, reversal at the saved speed cap.
+                unsigned velocity=b(0x1780+x)|(b(0x17c0+x)<<8);
+                const int signed_velocity=velocity<0x8000?static_cast<int>(velocity):static_cast<int>(velocity)-65536;
+                const unsigned y=b(0x1640+x)|(b(0x1680+x)<<8)|(b(0x16c0+x)<<16);
+                const unsigned next=(y+static_cast<unsigned>(signed_velocity))&0xffffff;
+                put(0x1640+x,next);put(0x1680+x,next>>8);put(0x16c0+x,next>>16);
+                const auto acceleration=b(0x1b40+x);
+                velocity=(velocity+acceleration+(acceleration&0x80?0xff00:0))&65535;
+                put(0x1780+x,velocity);put(0x17c0+x,velocity>>8);
+                const unsigned magnitude=velocity&0x8000?65536-velocity:velocity;
+                if(magnitude==(b(0x1980+x)|(b(0x19c0+x)<<8))) put(0x1b40+x,256-acceleration);
+                if(velocity) put(0x1800+x,velocity&0x8000?43:44);
+                else if(b(0x1b40+x)&0x80) {
+                    put(0x1800+x,42);put(0x1840+x,2);put(0x1880+x,8);
+                }
+            }
+            continue;
+        }
         // Continue an animation already in progress. Collision-triggered actors
         // at rest stay at rest; the ball and launcher never enter this path.
-        if(type<7 || type>90 || !b(0x1840+x) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
+        if(type<7 || type>90 || (!b(0x1840+x) && type!=60) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
         unsigned step=b(0x1b80+x)|(b(0x1bc0+x)<<8);
         unsigned phase=b(0x1c00+x)|(b(0x1c40+x)<<8);
         if(!step || (phase>>8)>count || ((phase>>8)==count && !(step&0x8000))) continue;
@@ -159,6 +226,9 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
         put(0x1b80+x,step);put(0x1bc0+x,step>>8);
         put(0x1c00+x,phase);put(0x1c40+x,phase>>8);
         ram[output]=sequence[phase>>8];
+        // Orb explosions run in action zero and expire after one oscillator
+        // cycle (02:7880..788F); do not freeze or loop a saved explosion forever.
+        if(type==60 && !phase) {put(0x1500+x,0);put(0x1540+x,0);}
     }
 }
 std::vector<ActorPiece> ActorAssets::pieces(std::uint8_t id,unsigned first_slot) const {

@@ -25,7 +25,8 @@ public:
     std::vector<BackgroundWrite> background(std::uint8_t descriptor,std::uint8_t high_override=0) const;
     // Dynamic stream selected by 16:A0DF; callers establish the pending bit/epoch.
     ActorPatternTransfer pattern_transfer(std::uint8_t type,std::uint8_t selection,std::uint16_t pattern_base) const;
-    // Visual-only continuation of the ROM's FD35/FD8F animation oscillator.
+    // Visual-only continuation of the ROM's FD35/FD8F animation oscillator,
+    // orb bob/respawn/explosion and orange alien emerge/retreat routines.
     // Input uses the active actor layout but must be a private presentation copy.
     void advance_animation(std::span<std::byte> ram) const;
     void mirror_flippers(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half) const;
