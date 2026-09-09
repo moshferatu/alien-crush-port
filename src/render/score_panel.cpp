@@ -79,7 +79,10 @@ Image ScorePanel::compose(const diagnostics::AlienState& state) const {
     number(state.score_points,128,18,2);
     label(result,"HIGH",77,61);number(state.high_scores[0],88,73,1);
     label(result,state.bonus_room?"BONUS":"BALL",state.bonus_room?202:205,61);
-    number(state.bonus_room?state.bonus_room:state.ball_counter,216,73,1);
+    // Three-ball game: 3/2/1 remaining becomes BALL 1/2/3. Keep BALL 3
+    // during the final drain/results, and bound extra-ball reserves at BALL 1.
+    const auto ball=4-std::clamp(static_cast<unsigned>(state.ball_counter),1u,3u);
+    number(state.bonus_room?state.bonus_room:ball,216,73,1);
     return result;
 }
 }

@@ -56,7 +56,7 @@ std::array<Placement,3> read(const std::filesystem::path& path) {
 Cabinet::Cabinet(Presentation& playfield,const std::filesystem::path& data,std::span<const std::byte> rom)
     : windows_{&playfield,&backglass_,&score_},path_(data/"cabinet-windows.txt"),score_panel_(render::ScorePanel::from_rom(rom)),
       backglass_image_(load_backglass(data/"backglass.bmp")) {
-    if(!backglass_image_) {backglass_image_=render::title_logo(rom);backglass_from_rom_=true;}
+    if(!backglass_image_) backglass_animation_.emplace(rom);
     const auto displays=monitors();
     const bool saved=std::filesystem::exists(path_);
     const auto placements=saved?read(path_):std::array<Placement,3>{};
@@ -154,9 +154,9 @@ bool Cabinet::recover_displays() {
     return true;
 }
 void Cabinet::show(std::span<const std::byte> ram) {
-    if(backglass_image_) {
-        const auto& art=*backglass_image_;
-        backglass_.show({0,art.width,art.height,art.pixels,{}},art.width*(backglass_from_rom_?5:1),art.height*(backglass_from_rom_?4:1));
+    if(backglass_image_ || backglass_animation_) {
+        const auto& art=backglass_image_?*backglass_image_:backglass_animation_->frame(backglass_tick_++);
+        backglass_.show({0,art.width,art.height,art.pixels,{}},art.width*(backglass_animation_?5:1),art.height*(backglass_animation_?4:1));
     } else backglass_.panel("ALIEN CRUSH");
     const auto state=diagnostics::observe_alien_state(ram);
     const auto image=score_panel_.compose(state);

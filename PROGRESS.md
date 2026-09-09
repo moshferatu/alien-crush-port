@@ -1,5 +1,27 @@
 # Progress
 
+Cabinet ball numbering and animated backglass (2026-09-09):
+
+- DMD now maps the ordinary three-ball reserve 3/2/1 to BALL 1/2/3,
+  retaining BALL 3 after the final drain. Bonus-room numbering and original
+  gameplay RAM remain unchanged. Values above three reserves clamp to BALL 1;
+  this is a reserve conversion, not a persistent lifetime ball-launch counter.
+- Replaced the static default backglass with the complete ROM palette reveal:
+  blue mechanical artwork becomes readable ALIEN CRUSH lettering and glows
+  orange. Recovered 1C:4193 component interpolation and the observed alternating
+  palette 11/8 updates, including intermediate reveal colors. The cabinet holds
+  the settled logo pose and reverses the reveal to loop instead of entering demo.
+- Frames are prepared at startup and selected by the cabinet presentation clock;
+  no additional runtime, per-frame asset decoding, audio or gameplay mutations.
+  Custom backglass.bmp artwork still takes precedence; aspect and rotation remain.
+- Visually checked out/backglass-animation.png. Pixel comparisons match all 820
+  checked original animated-title frames; checks also cover exact loop wrap,
+  glow changes, count-up DMD digits and final-drain display.
+- Release build warning-free; graphics, title_logo, continuous_handoff,
+  continuous_host and cabinet_windows passed (5/5, 11.69s).
+  Logs: out/build-backglass.log and out/test-backglass.log. Physical cabinet
+  acceptance remains a user check.
+
 Brain-orb burst/rest timing (2026-09-09):
 
 - Replaced the overly short fixed four-frame rests and four-cycle bursts with

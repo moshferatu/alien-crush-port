@@ -17,6 +17,12 @@ int main(int argc,char** argv) {
         const auto path=core::path_from_utf8(argv[1]);
         const auto rom=core::read_file(path);
         const auto logo=render::title_logo(rom);
+        const render::TitleLogoAnimation animation(rom);
+        require(animation.frame(0).pixels==logo.pixels,"Animation starts with original blue artwork");
+        require(animation.frame(0).pixels==animation.frame(animation.duration()).pixels,"Animation wraps exactly");
+        require(animation.frame(animation.duration()-1).pixels==logo.pixels,"Loop returns to blue without a cut");
+        require(animation.frame(600).pixels!=logo.pixels,"Reveal reaches the readable logo");
+        require(animation.frame(600).pixels!=animation.frame(616).pixels,"Readable logo glow continues animating");
         require(logo.width==192 && logo.height==144 && logo.pixels.size()==192*144,"Logo bounds");
         auto invalid=rom;invalid[0]^=std::byte{1};
         bool rejected=false;
@@ -27,6 +33,7 @@ int main(int argc,char** argv) {
         for(unsigned i=0;i<512;++i) palette[i]=static_cast<std::uint16_t>(std::to_integer<unsigned>(rom[0x38bd0+i*2])|
             (std::to_integer<unsigned>(rom[0x38bd1+i*2])<<8));
         auto runtime=make_reference_runtime();runtime->load(path);
+        const auto boot=runtime->save();
         const auto panel=render::ScorePanel::from_rom(rom);
         std::optional<state::SaveStateContainer> menu_save;
         render::Image menu_preview;
@@ -68,6 +75,33 @@ int main(int argc,char** argv) {
         preview<<"P6\n192 144\n255\n";
         for(const auto color:logo.pixels) for(const auto shift:{16,8,0}) preview.put(static_cast<char>(color>>shift));
         require(static_cast<bool>(preview),"Write local preview");
+        runtime->restore(boot);
+        unsigned animated_matches=0;
+        for(unsigned n=0;n<1200;++n) {
+            (void)runtime->advance({});
+            if(n<380) continue;
+            const auto video=runtime->video_snapshot();
+            auto colors=video.palette;colors[0]=0;
+            const auto art=render::compose(video.vram,colors,video.sat,{256,240,0,0,0,0x40});
+            // Natural entrance settles two pixels below the Run-skipped pose
+            // used for cabinet art. Compare the entire logo, not selected colors.
+            for(std::uint64_t tick=0;tick<animation.duration();tick+=2) {
+                const auto& candidate=animation.frame(tick);
+                bool equal=true;
+                for(int y=0;y<144 && equal;++y) equal=std::equal(candidate.pixels.begin()+y*192,
+                    candidate.pixels.begin()+(y+1)*192,art.pixels.begin()+(y+16)*256+32);
+                if(equal) {++animated_matches;break;}
+            }
+        }
+        std::cout<<"Original animated logo frames matched="<<animated_matches<<'\n';
+        require(animated_matches==820,"Animation reproduces every observed original reveal/glow image");
+        for(const unsigned tick:{0u,184u,344u,600u,616u}) {
+            const auto& art=animation.frame(tick);
+            auto file=core::path_from_utf8(argv[2]);file+=".animation-"+std::to_string(tick)+".ppm";
+            std::ofstream output(file,std::ios::binary);output<<"P6\n192 144\n255\n";
+            for(const auto color:art.pixels) for(const auto shift:{16,8,0}) output.put(static_cast<char>(color>>shift));
+            require(static_cast<bool>(output),"Write animation preview");
+        }
         return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

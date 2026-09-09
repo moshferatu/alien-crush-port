@@ -39,8 +39,12 @@ int main() {
                 require(image.pixels[20*256+22+i*20]==color,"Maximum score retains every digit at fixed scale");
                 require(image.pixels[74*256+35+i*10]==color,"Maximum high score fits reserved field");
             }
-            require(image.pixels[74*256+198]==0xff100002 && image.pixels[74*256+208]==0xff100005 &&
-                image.pixels[74*256+218]==0xff100005,"Ball byte fits without clipping");
+            require(image.pixels[74*256+208]==0xff100001,"Extra reserves cannot produce a negative ball number");
+            for(unsigned remaining=0;remaining<=3;++remaining) {
+                state.ball_counter=static_cast<std::uint8_t>(remaining);
+                const auto ball=panel.compose(state);
+                require(ball.pixels[74*256+208]==0xff100000+(remaining?4-remaining:3),"DMD counts balls up and retains ball three after final drain");
+            }
             for(unsigned x=0;x<256;++x) require(image.pixels[x]==0xff000000 && image.pixels[95*256+x]==0xff000000,"Score outer black border");
             state={};const auto zero=panel.compose(state);
             require(zero.pixels[20*256+112]==0xff100000,"Zero score is visible");

@@ -82,7 +82,8 @@ the previously saved window settings. Display changes clear queued audio and
 rearm cabinet controls, cancelling an owned analog draw before gameplay resumes.
 The score window uses the original game digits for score, high score and ball
 counter in a fixed layout with sharp scaling and black borders. Digit size stays
-stable as values grow. During the title and selection menus it shows the high
+stable as values grow. The three-ball DMD counts up: BALL 1, BALL 2, BALL 3,
+retaining BALL 3 through the final drain. During the title and selection menus it shows the high
 score and a "PRESS RUN" prompt, hiding the inactive score and ball counter.
 Attract-mode demos show the same high score and prompt with a "DEMO" label;
 simulated scores and ball counts stay hidden. Run returns to the original menus.
@@ -121,9 +122,11 @@ your `--data-dir`) to display it on the backglass. Use an uncompressed 24-bit or
 Artwork loads at startup, fits without stretching or cropping, and honors saved
 backglass rotation. Black borders fill unused space. Restart to change artwork.
 Without a local image, the backglass displays the original Alien Crush title logo,
-decoded directly from your ROM. It uses the title's initial blue palette on black,
-with corrected cartridge pixel aspect, and honors saved rotation. This is a static
-logo without title-menu text or color animation. Invalid local artwork reports an
+decoded directly from your ROM. It continuously cycles from the blue artwork to
+the readable ALIEN CRUSH lettering and its orange glow, then reverses the reveal
+to loop smoothly. The logo stays centered on black with corrected cartridge pixel
+aspect and saved rotation. Animation images are prepared at startup; playback
+does not run another game core or affect gameplay/audio. Invalid local artwork reports an
 error and is preserved for correction. Artwork stays local and is not stored in
 recordings. Other bonus-room clears, broader ordinary-play routes and
 physical cabinet acceptance still need broader testing.

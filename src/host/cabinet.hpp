@@ -3,6 +3,7 @@
 #include "presentation.hpp"
 #include "backglass.hpp"
 #include "alien_crush/render/score_panel.hpp"
+#include "alien_crush/render/title_logo.hpp"
 #include <array>
 namespace alien_crush::host {
 // Uses the Devil's Crush host pattern: named displays, bounded window geometry,
@@ -14,7 +15,8 @@ class Cabinet {
     std::filesystem::path path_;
     render::ScorePanel score_panel_;
     std::optional<render::Image> backglass_image_;
-    bool backglass_from_rom_{};
+    std::optional<render::TitleLogoAnimation> backglass_animation_;
+    std::uint64_t backglass_tick_{};
 public:
     Cabinet(Presentation& playfield,const std::filesystem::path& data,std::span<const std::byte> rom);
     void show(std::span<const std::byte> ram);
