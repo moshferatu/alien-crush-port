@@ -1,5 +1,10 @@
 # State and asset discovery
 
+Continuous runtime handoffs (2026-09-09): see [CONTINUOUS_HANDOFF.md](CONTINUOUS_HANDOFF.md).
+The live cabinet host now uses synchronous ROM-derived transfer replacements and
+queues every frame's audio. The frame-compression notes below describe the earlier,
+superseded workaround; they are retained as investigation history.
+
 The paused high-score viewer is recognized by RAM 7A=1, demo selector 76=0,
 and the complete nine-byte stack signature at 01F7..01FF:
 `FD EB 03 02 01 B0 41 8E 40`. Original 01:408C calls 4187; Run enters the
@@ -253,11 +258,15 @@ show Y 59/283, an exact +224 translation. The reverse path updates Y before
 waiting for the frame boundary, so comparing only frames with changed table codes
 does not expose its subtraction reliably.
 
-This establishes upper origin 0 and lower origin 224. Preserving the two visible
-240-row regions yields 256×464 pixels. The original 256×240 image is displayed
-at 4:3 (pixel aspect 5:4); the stitched display therefore uses 320:464, or 20:29.
+This establishes the ball handoff, but does not establish the artwork offset.
+Visual comparison and 576 matching ROM side-wall pixels (lower rows 0..23,
+columns 0..7 and 232..247) put lower artwork at upper row 216, not 224.
+Preserving the two visible 240-row regions yields 256×456 pixels. The original
+256×240 image is displayed at 4:3 (pixel aspect 5:4); the stitched display uses
+320:456, or 40:57. Ball sprites use the same artwork projection as their half;
+the original 224-coordinate handoff is not patched or interpolated.
 The ROM BAT's final 16 rows are not added below the visible lower viewport.
-The 16 overlapping visible rows have different artwork. Upper-half artwork now
+The 24 overlapping visible rows have some different interior artwork. Upper-half artwork
 owns them consistently; visible sprites from either half are retained as described
 below, with no inferred blend or modified ROM art.
 
@@ -376,8 +385,8 @@ recording now spans the first switch. The ball's handoff is not yet seamless.
 The standard type-1 ball uses descriptor 0 or 155..157: a single 16x16 foreground
 sprite, offsets (-6,-6), pattern `$20/$22/$24/$26`, flags `$0080`. The table's
 pattern base is `$0200`. `transition_ball` decodes that ROM form with stored
-actor-0 X/Y, subtracts the hardware origin (32,64), and adds 224 for the lower
-half. At frame 608 this gives (234,213); at 845 it gives (112,218). It does not
+actor-0 X/Y, subtracts the hardware origin (32,64), and adds 216 for the lower
+half. At frame 608 this gives (234,213); at 845 it gives (112,210). It does not
 advance physics or interpolate. Attribute override modes outside this form retain
 the original hold.
 
@@ -388,13 +397,13 @@ a ball-form entry at hardware coordinates `$FFFA/$FFFA`. Zero or multiple visibl
 matches disable replacement. The clean composition avoids erasing an image
 rectangle, which would destroy table artwork or leave a duplicate ball.
 
-During a hold, the new ball replaces the old one only when none of its opaque
-pixels intersects another sprite's claimed pixels or a row with all sixteen fetch
-slots occupied. The compositor exports these blockers before background priority,
+During a hold, the old ball is removed and the new ball's opaque pixels are drawn
+except where another sprite has claimed a pixel or all sixteen fetch slots are
+occupied. These uncertain intersections retain the backdrop pixel, rather than
+freezing the entire ball. The compositor exports blockers before background priority,
 so hidden sprite pixels remain blocking but transparent portions do not. Frozen
 and raster paths generate the mask in the same pass as the cached background;
-palette RGB equality does not determine coverage. Ambiguous cases retain the
-original complete held image. The ball uses
+palette RGB equality does not determine coverage. The ball uses
 the corresponding half's ROM sprite palette while background graphics load.
 This is cabinet presentation, not a claim to reproduce the cartridge's blanked
 loading display.
@@ -402,16 +411,16 @@ loading display.
 The 1,800-frame replay now requires 150 ball replacements (75 lower / 75 upper),
 covering every held frame. The earlier rectangle guard produced 18 unnecessary
 fallbacks. Synthetic tests verify hidden-pixel blocking, transparent-pixel freedom,
-exhausted fetch rows, raster disabling, old-ball removal and exact overlap fallback.
+exhausted fetch rows, raster disabling, old-ball removal and partial overlap masking.
 The CSV distinguishes `held` background and `ball_updated`; local frame 850 is
 exported in `out/captures/pixel-ball-860`, and the earlier frame 622 view remains in
-`out/captures/live-ball-622`. Actual opaque overlaps still use a conservative hold;
+`out/captures/live-ball-622`. Actual opaque overlaps use conservative per-pixel occlusion;
 this does not claim complete handoff coverage for every possible gameplay route.
 
 ### Fixed artwork at the join
 
-The upper half supplies background artwork for global rows 224..239. The lower
-half supplies rows 240..463. Within the overlap, visible lower sprites replace
+The upper half supplies background artwork for global rows 216..239. The lower
+half supplies rows 240..455. Within the overlap, visible lower sprites replace
 upper artwork unless an upper sprite has already claimed the pixel and the upper
 half is active. This preserves both halves' sprites and gives the active half
 priority in an actual sprite conflict. It is an explicit cabinet presentation
@@ -425,6 +434,47 @@ background color remains visible when placed over the other half's artwork.
 Tests cover fixed artwork across active-half changes, sprite conflicts and mask
 behavior with hidden sprites, equal colors and raster-disabled sprites.
 Local views: `out/captures/fixed-join-1080/stitched-720.bmp` and `stitched-1080.bmp`.
+
+### Cabinet upload pacing
+
+The original RLE-only speedup still left actor uploads and frame waits visible,
+and restarted the host deadline after every omitted frame. The superseded continuous
+`TableTransitionClock` instead recognizes literal return addresses within
+03:89B3..89EF and 03:8A0A..8A47, their enclosing 01:409E call, and known wait/copy
+PC ranges and banks. It requires a usable stitched table, ordinary non-demo state,
+consecutive samples and unchanged full fixed-point ball coordinates. Scheduler
+PCs cannot be compressed even if the ball is stationary. The final ordinary
+01:4086 wait is admitted once, immediately after a confirmed transition. A
+32-frame bound, explicit reset on load/view change and Run/Select guard prevent
+unbounded compression or accelerating menus and pauses.
+
+World-coordinate comparison uses the cartridge's 224-pixel handoff, including
+the lower path's subtraction before changing table code. Artwork still uses
+216 pixels. The canonical replay removes 132 stationary frames across ten
+crossings: twelve load/copy frames per crossing and twelve final waits overall.
+Frames with fractional or integer ball movement retain their presentation slots.
+Every original core frame and input record is retained, and the accelerated
+frame-599..1800 replay reaches a byte-identical complete final emulator state.
+
+The host spends the preceding frame's spare time on the known upcoming upload,
+never resets the deadline during omitted frames, and disables raster observations
+for frames that will not be displayed. It uses read-only direct video getters
+instead of serializing the whole emulator on every frame. The generated CPU/VCE
+getters perform no bus reads, synchronization or writes. All 1800 direct snapshots
+match the serialized-state decoder field for field. Observer-free builds use the
+existing serialized fallback. The pinned dependency checkout is unchanged.
+
+The current-position ball is drawn on both ready and held backdrops. Previously,
+switching back to delayed SAT after loading repeated frames 623/624 and could move
+the ball backward after a current-position held frame. Tests now require movement
+across that boundary. The raw raster compositor remains available for exact
+reference comparisons; stitched host and capture intentionally update the ball.
+
+Only omitted frames' presentation and audio are removed, so music advances across
+that segment. Inputs/events are polled on every iteration. Original view and
+offline diagnostics keep every frame and complete audio. The table test reports
+complete batch execution time including the next visible frame, and checks all
+ten crossings. Physical cabinet timing/audio still require hardware acceptance.
 
 ### Live stitched raster timing
 

@@ -70,7 +70,7 @@ int main(int argc,char** argv) {
                     ++stitched_frames;
                     const unsigned offset=state.table_code==0?render::table_half_offset:0;
                     for(unsigned y=0;y<240;++y) for(unsigned x=0;x<256;++x) {
-                        if((state.table_code==0 && y<16) || (state.table_code==1 && y>=224)) continue;
+                        if((state.table_code==0 && y<240-render::table_half_offset) || (state.table_code==1 && y>=render::table_half_offset)) continue;
                         if((y>=16 && y<32 && x>=16 && x<112) || (y>=32 && y<48 && x>=232 && x<248)) continue;
                         if(output->pixels[(y+offset)*256+x]!=pixels[y*256+x]) {
                             auto debug=core::path_from_utf8(argv[3]);debug+=".mismatch.ppm";

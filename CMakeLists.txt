@@ -149,6 +149,23 @@ if(AC_BUILD_TESTS)
         set_tests_properties(title_logo PROPERTIES LABELS "rom_required;graphics" TIMEOUT 30)
         set_tests_properties(asset_discovery PROPERTIES LABELS "rom_required;graphics" TIMEOUT 180)
         add_executable(ac_table_replay_tests tests/table_replay_tests.cpp)
+        if(AC_REFERENCE_VIDEO_OBSERVER)
+            add_executable(ac_continuous_handoff_tests tests/continuous_handoff_tests.cpp)
+            target_link_libraries(ac_continuous_handoff_tests PRIVATE ac_reference)
+            ac_enable_strict_warnings(ac_continuous_handoff_tests)
+            add_test(NAME continuous_handoff COMMAND ac_continuous_handoff_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/continuous.acrec")
+            set_tests_properties(continuous_handoff PROPERTIES TIMEOUT 60 FIXTURES_SETUP continuous_recording)
+            add_test(NAME continuous_recording COMMAND alien-crush-tools --rom "${AC_ROM_PATH}" --replay "${CMAKE_BINARY_DIR}/continuous.acrec" --verify-replay)
+            set_tests_properties(continuous_recording PROPERTIES TIMEOUT 60 FIXTURES_REQUIRED continuous_recording)
+            if(AC_BUILD_APP)
+                add_test(NAME continuous_host COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                    --replay "${CMAKE_BINARY_DIR}/continuous.acrec.crossing" --frames 120
+                    --data-dir "${CMAKE_BINARY_DIR}/continuous-host"
+                    --timing-log "${CMAKE_BINARY_DIR}/continuous-host.csv")
+                set_tests_properties(continuous_host PROPERTIES TIMEOUT 30 FIXTURES_REQUIRED continuous_recording
+                    ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            endif()
+        endif()
         add_executable(ac_launcher_replay_tests tests/launcher_replay_tests.cpp)
         target_link_libraries(ac_launcher_replay_tests PRIVATE ac_reference)
         ac_enable_strict_warnings(ac_launcher_replay_tests)

@@ -31,6 +31,7 @@ int main(int argc,char** argv) {
         std::optional<diagnostics::ReferenceSnapshot> previous;
         render::TableTransitionHold hold;
         recording::Recording entry,returning;
+        std::vector<std::string> return_fingerprints;
         state::SaveStateContainer checkpoint;
         std::vector<std::byte> final_ram;
         std::vector<std::uint32_t> final_pixels;
@@ -44,6 +45,7 @@ int main(int argc,char** argv) {
         bool was_bonus=false;
         for(unsigned n=0;n<2800;++n) {
             const auto frame=runtime->advance(input_at(n));
+            if(n>=2150 && n<2243) return_fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
             const std::vector<std::uint32_t> pixels(frame.pixels.begin(),frame.pixels.end());
             const std::vector<std::int16_t> audio(frame.stereo.begin(),frame.stereo.end());
             const auto ram=runtime->work_ram();
@@ -79,7 +81,7 @@ int main(int argc,char** argv) {
                 if(timed) {
                     const unsigned offset=observed.table_code==0?render::table_half_offset:0;
                     for(unsigned y=0;y<240;++y) for(unsigned x=0;x<256;++x) {
-                        if((observed.table_code==0 && y<16) || (observed.table_code==1 && y>=224)) continue;
+                        if((observed.table_code==0 && y<240-render::table_half_offset) || (observed.table_code==1 && y>=render::table_half_offset)) continue;
                         if((y>=16 && y<32 && x>=16 && x<112) || (y>=32 && y<48 && x>=232 && x<248)) continue;
                         if(output->pixels[(y+offset)*256+x]!=pixels[y*256+x])
                             throw std::runtime_error("Returned stitched active pixels differ at frame "+std::to_string(n+1));
@@ -128,7 +130,32 @@ int main(int argc,char** argv) {
         }
         auto prefix=core::path_from_utf8(argv[2]);auto output=prefix;output+=".entry.acrec";recording::write(output,entry);
         output=prefix;output+=".return.acrec";recording::write(output,returning);
-        output=prefix;output+=".ppm";std::ofstream image(output,std::ios::binary);image<<"P6\n256 464\n255\n";
+        if(timed) {
+            // Compare both execution modes from the same cold-restored filter
+            // state, rather than cold restore against uninterrupted warm audio.
+            runtime.reset();runtime=make_reference_runtime();runtime->load(path);runtime->restore(returning.initial);
+            for(unsigned i=0;i<return_fingerprints.size();++i) {
+                const auto frame=runtime->advance(returning.inputs[i]);
+                return_fingerprints[i]=recording::fingerprint(frame,runtime->work_ram());
+            }
+            runtime.reset();runtime=make_reference_runtime(HandoffMode::continuous);runtime->load(core::path_from_utf8(argv[1]));
+            auto native_return=returning;
+            // Explicit test import before the bonus ends; ordinary user restores
+            // remain strict about runtime identity.
+            native_return.initial.core_revision=runtime->revision();runtime->restore(native_return.initial);
+            for(unsigned i=0;i<native_return.inputs.size();++i) {
+                const auto frame=runtime->advance(native_return.inputs[i]);
+                if(i<return_fingerprints.size()) {
+                    const auto actual=recording::fingerprint(frame,runtime->work_ram());
+                    if(actual!=return_fingerprints[i]) {
+                        std::cerr<<"Bonus return expected "<<return_fingerprints[i]<<"\nactual "<<actual<<'\n';
+                        throw std::runtime_error("Continuous mode preserves exact bonus return/fade RAM, video and audio");
+                    }
+                }
+            }
+            output=prefix;output+=".native-return.acrec";recording::write(output,native_return);
+        }
+        output=prefix;output+=".ppm";std::ofstream image(output,std::ios::binary);image<<"P6\n256 456\n255\n";
         for(const auto color:first_return->pixels) for(const auto shift:{16,8,0}) image.put(static_cast<char>(color>>shift));
         require(static_cast<bool>(image),"Write returned playfield preview");
         std::cout<<bonus_frames<<" bonus frames; returned ready lower/upper "<<ready[0]<<'/'<<ready[1]<<"; exact restore passed\n";

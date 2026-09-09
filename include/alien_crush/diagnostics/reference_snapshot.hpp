@@ -20,6 +20,7 @@ struct ReferenceSnapshot {
     std::array<std::uint16_t,512> palette{};
     std::array<std::uint16_t,256> sat{};
     std::uint16_t control{}, memory_width{}, scroll_x{}, scroll_y{};
+    bool operator==(const ReferenceSnapshot&) const = default;
     int bat_width() const noexcept { const int widths[]{32,64,128,128}; return widths[(memory_width>>4)&3]; }
     int bat_height() const noexcept { return (memory_width&0x40)?64:32; }
 };

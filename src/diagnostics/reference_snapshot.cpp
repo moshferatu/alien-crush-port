@@ -46,6 +46,8 @@ std::vector<StateField> parse_reference_fields(std::span<const std::byte> payloa
 ReferenceSnapshot decode_reference_snapshot(const state::SaveStateContainer& saved) {
     if(saved.rom_sha256!=rom::kSupportedSha256 ||
        (saved.core_revision!="beetle-ae99235c2139c176c1a8d0fde2957bf701d3cab0-state1" &&
+        saved.core_revision!="beetle-ae99235c2139c176c1a8d0fde2957bf701d3cab0-state1-handoff1" &&
+        saved.core_revision!="beetle-ae99235c2139c176c1a8d0fde2957bf701d3cab0-handoff1" &&
         saved.core_revision!="beetle-ae99235c2139c176c1a8d0fde2957bf701d3cab0"))
         throw std::runtime_error("Unsupported diagnostic snapshot schema or ROM");
     const auto fields=parse_reference_fields(saved.core_state);

@@ -12,6 +12,7 @@
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
+#include <memory>
 using namespace alien_crush;
 namespace {
 void require(bool test,const char* message) {if(!test) throw std::runtime_error(message);}
@@ -192,8 +193,58 @@ int main() {
             require(bat==original,"Rejected counter inputs leave BAT unchanged");
         }
         render::TableTransitionHold transition;
+        {
+            render::TableTransitionClock clock;
+            auto video=std::make_unique<diagnostics::ReferenceSnapshot>();
+            std::array<std::byte,8192> ram{};ram[0x1500]=std::byte{1};ram[0x1540]=std::byte{0x80};
+            ram[0x1680]=std::byte{10};ram[0x1fc]=std::byte{0xb5};ram[0x1fd]=std::byte{0x89};
+            ram[0x1fe]=std::byte{0xa0};ram[0x1ff]=std::byte{0x40};video->pc=0xe2fc;video->frame=10;
+            require(!clock.omit(*video,ram,true),"First clock sample cannot omit a frame");
+            ram[0x79]=std::byte{1};ram[0x1680]=std::byte{234};video->frame=11;
+            require(clock.omit(*video,ram,true),"Original 224-coordinate translation is stationary in world space");
+            ram[0x1640]=std::byte{1};video->frame=12;
+            require(!clock.omit(*video,ram,true),"Fractional ball movement retains its frame");
+            video->pc=0x84d2;video->frame=13;
+            require(!clock.omit(*video,ram,true),"Stationary physics routine is never compressed");
+            video->pc=0xe2fc;ram[0x1fc]=std::byte{0xeb};video->frame=14;
+            require(clock.omit(*video,ram,true),"Stationary transition wait is compressed");
+            ram[0x1fc]=std::byte{0xee};ram[0x1fe]=std::byte{0x88};video->frame=15;
+            require(clock.omit(*video,ram,true),"Single final frame wait follows confirmed transition");
+            video->frame=16;require(!clock.omit(*video,ram,true),"Stale final wait cannot keep compressing frames");
+            ram[0x1fe]=std::byte{0xa0};video->frame=18;
+            require(!clock.omit(*video,ram,true),"Discontinuous frame numbers invalidate clock history");
+            video->frame=19;require(!clock.omit(*video,ram,false),"Missing stitched table cannot compress frames");
+            clock.reset();video->frame=20;
+            require(!clock.omit(*video,ram,true),"View changes and state loads reset the clock");
+            for(unsigned frame=21;frame<52;++frame) {video->frame=frame;require(clock.omit(*video,ram,true),"Bounded stationary transition is compressed");}
+            video->frame=52;require(!clock.omit(*video,ram,true),"Stationary transition cannot compress indefinitely");
+        }
         std::array<std::byte,8192> transition_ram{};
-        render::Image complete{256,464,std::vector<std::uint32_t>(256*464,0xff112233)};
+        {
+            auto video=std::make_unique<diagnostics::ReferenceSnapshot>();video->pc=0xe40a;
+            std::array<std::byte,8192> ram{};ram[0x1500]=std::byte{1};ram[0x1540]=std::byte{0x80};
+            constexpr unsigned chain[]{0x35,0xeb,0x18,4,3,2,1,0x0c,0xe7,0xcf,0x89,0xa0,0x40};
+            for(unsigned i=0;i<std::size(chain);++i) ram[0x1f3+i]=static_cast<std::byte>(chain[i]);
+            ram[0x79]=std::byte{1};
+            require(render::table_transition_upload(*video,ram),"Verified upper RLE upload recognized");
+            for(unsigned i=0;i<std::size(chain);++i) {
+                ram[0x1f3+i]^=std::byte{1};
+                require(!render::table_transition_upload(*video,ram),"Partial upload call chain rejected");
+                ram[0x1f3+i]^=std::byte{1};
+            }
+            for(const auto address:{0x76,0x7c,0x16,0x17}) {
+                ram[address]=std::byte{1};require(!render::table_transition_upload(*video,ram),"Demo/practice/camera upload cannot change pacing");ram[address]=std::byte{};
+            }
+            for(const auto address:{0x53,0x54}) {
+                ram[address]=std::byte{0x80};require(!render::table_transition_upload(*video,ram),"Unsupported scene cannot change pacing");ram[address]=std::byte{};
+            }
+            video->pc=0xe2fc;require(!render::table_transition_upload(*video,ram),"Stale upload stack at frame wait rejected");
+            video->pc=0xe40a;video->mpr[7]=1;require(!render::table_transition_upload(*video,ram),"Wrong code bank rejected");video->mpr[7]=0;
+            ram[0x79]=std::byte{};ram[0x1fc]=std::byte{0x2a};ram[0x1fd]=std::byte{0x8a};
+            require(render::table_transition_upload(*video,ram),"Verified lower RLE upload recognized");
+            rejects([&]{render::table_transition_upload(*video,std::span(ram).first(8191));},"Short upload RAM rejected");
+        }
+        render::Image complete{256,456,std::vector<std::uint32_t>(256*456,0xff112233)};
         require(transition.present(complete,10,0,0,transition_ram).has_value(),"Complete image seeds transition");
         for(unsigned frame=11;frame<=42;++frame) {
             const auto held=transition.present(std::nullopt,frame,1,0,transition_ram);
@@ -220,7 +271,7 @@ int main() {
         require(resumed && resumed->pixels[0]==0xff445566 && !transition.held(),"Ready target replaces held image immediately");
         transition.present(std::nullopt,58,0,0,transition_ram);
         require(!transition.present(std::nullopt,59,1,0,transition_ram),"A second table change cannot extend a hold");
-        render::TableBallBackdrop clean_ball{complete,std::vector<std::uint8_t>(256*464)};
+        render::TableBallBackdrop clean_ball{complete,std::vector<std::uint8_t>(256*456)};
         auto old_ball=complete; old_ball.pixels[0]=0xffffffff;
         render::Sprite moving_ball;
         moving_ball.x=10;moving_ball.y=20;moving_ball.width=16;moving_ball.height=16;
@@ -231,10 +282,18 @@ int main() {
         require(moved_ball && transition.ball_updated() && moved_ball->pixels[0]==complete.pixels[0] &&
             moved_ball->pixels[20*256+10]==0xffffffff,"Transition replaces old ball without leaving a duplicate");
         clean_ball.sprites[20*256+10]=1;
+        moving_ball.image.pixels[1]=0xffffffff;
         transition.present(old_ball,62,0,0,transition_ram,&clean_ball);
         const auto blocked_ball=transition.present(std::nullopt,63,1,0,transition_ram,nullptr,&moving_ball);
-        require(blocked_ball && blocked_ball->pixels==old_ball.pixels && !transition.ball_updated(),
-            "Uncertain sprite overlap retains original hold");
+        require(blocked_ball && transition.ball_updated() && blocked_ball->pixels[0]==complete.pixels[0] &&
+            blocked_ball->pixels[20*256+10]==complete.pixels[20*256+10] &&
+            blocked_ball->pixels[20*256+11]==0xffffffff,
+            "Uncertain overlap masks one pixel without freezing or duplicating the old ball");
+        moving_ball.x=30;
+        const auto live_ball=transition.present(old_ball,64,1,0,transition_ram,&clean_ball,&moving_ball);
+        require(live_ball && transition.ball_updated() && live_ball->pixels[0]==complete.pixels[0] &&
+            live_ball->pixels[20*256+30]==0xffffffff,
+            "Ready table uses current ball coordinates instead of reverting to old SAT position");
         transition.reset();
         require(!transition.present(std::nullopt,64,0,0,transition_ram,nullptr,&moving_ball),
             "Reset discards both the original image and ball-free backdrop");
@@ -272,20 +331,20 @@ int main() {
         render::Image upper{256,240,std::vector<std::uint32_t>(256*240,0xff445566)};
         const auto lower_active=render::stitch_table_views(lower,upper,0);
         const auto upper_active=render::stitch_table_views(lower,upper,1);
-        require(lower_active.width==256 && lower_active.height==464,"Stitch preserves the ROM's 224-pixel table offset");
-        require(lower_active.pixels[223*256]==0xff445566 && lower_active.pixels[224*256]==0xff445566 &&
+        require(lower_active.width==256 && lower_active.height==456,"Stitch preserves the ROM's 216-pixel table offset");
+        require(lower_active.pixels[215*256]==0xff445566 && lower_active.pixels[216*256]==0xff445566 &&
             lower_active.pixels.back()==0xff112233,"Fixed upper artwork spans overlap and clips unused BAT rows");
         require(lower_active.pixels==upper_active.pixels,"Background join does not change with active half");
         require(upper_active.pixels[239*256]==0xff445566 && upper_active.pixels[240*256]==0xff112233,
-            "Upper viewport owns overlap without shifting table coordinates");
+            "Upper viewport owns overlap at the artwork offset");
         std::vector<std::uint8_t> lower_mask(256*240),upper_mask(256*240);
-        lower_mask[0]=1; lower_mask[1]=1; upper_mask[224*256+1]=1;
+        lower_mask[0]=1; lower_mask[1]=1; upper_mask[216*256+1]=1;
         const auto lower_sprite_join=render::stitch_table_views(lower,upper,0,lower_mask,upper_mask);
         const auto upper_sprite_join=render::stitch_table_views(lower,upper,1,lower_mask,upper_mask);
-        require(lower_sprite_join.pixels[224*256]==lower.pixels[0] &&
-            upper_sprite_join.pixels[224*256]==lower.pixels[0],"Lower sprite survives fixed artwork join on either half");
-        require(lower_sprite_join.pixels[224*256+1]==lower.pixels[1] &&
-            upper_sprite_join.pixels[224*256+1]==upper.pixels[224*256+1],"Active sprite wins an overlap conflict");
+        require(lower_sprite_join.pixels[216*256]==lower.pixels[0] &&
+            upper_sprite_join.pixels[216*256]==lower.pixels[0],"Lower sprite survives fixed artwork join on either half");
+        require(lower_sprite_join.pixels[216*256+1]==lower.pixels[1] &&
+            upper_sprite_join.pixels[216*256+1]==upper.pixels[216*256+1],"Active sprite wins an overlap conflict");
         rejects([&]{(void)render::stitch_table_views(lower,upper,0,lower_mask,{});},"Incomplete pair of sprite masks rejected");
         rejects([&]{(void)render::stitch_table_views(lower,upper,2);},"Unsupported table rejected");
         auto short_view=upper; short_view.pixels.pop_back();

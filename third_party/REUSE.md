@@ -80,3 +80,18 @@ and the ROM-font approach in `src/cabinet/dmd_font.cpp`, inspected at
 `0f81cb3be58a92601fe8e03fd6026c2ba72babbc`. Alien Crush uses its independently
 decoded HUD sprite digits and palette, with host-authored labels. No Devil's Crush
 font data, ROM addresses, bonus state or idle-scene logic is copied.
+
+`cmake/ReferenceSnapshot.cmake` adds read-only CPU/VCE getters to generated
+copies of the pinned Beetle sources. Constructor-installed callbacks read the
+CPU registers, VCE palette and existing VDC PeekVRAM/PeekSAT/GetRegister methods;
+they perform no emulated bus accesses, synchronization or game-state writes.
+These getters replace per-frame serialization in the cabinet renderer and are
+checked against the serialized snapshot on all 1800 canonical frames. The source
+checkout, serialization schema and emulation routines remain unchanged.
+
+`cmake/ContinuousHandoff.cmake` separately adds optional Alien Crush execution
+replacements to generated Beetle CPU/VDC/VCE sources. These are original local
+implementations of Alien Crush ROM transfer routines, verified against the CPU;
+they are not copied from Devil's Crush's addresses or gameplay replacements.
+The Devil's Crush frame/audio loop and execution-hook separation informed the
+architecture. The original reference mode and upstream checkout remain unchanged.

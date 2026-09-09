@@ -1,5 +1,117 @@
 # Progress
 
+Native cabinet handoffs (2026-09-09):
+
+- Implemented guarded synchronous graphics/RAM transfers and actor-bank exchange,
+  plus removal of the two handoff display waits. Original collision setup, actor
+  restoration and scheduler order remain intact. Nudge camera shake is supported.
+- Removed host frame compression and seam audio discard. Every regular frame
+  supplies one audio batch. Cabinet states/recordings carry a distinct `-handoff1`
+  revision, and cabinet quick states use a separate filename. Old recordings retain
+  reference timing; V changes only presentation.
+- Differential verification matches 46,560 original CPU packet/actor operations,
+  including registers/flags, scratch RAM, video output and MAWR. All ten recorded
+  pre-handoff entries preserve both complete actor banks, collision pointers and
+  flags at four semantic boundaries, with no loading routine spanning a frame.
+- Captured and visually inspected the first native crossing: frames 606..611 show
+  current-ball movement without a repeated loading image, and the artwork join
+  remains aligned. Native checkpoint replay matches RAM, pixels and audio exactly.
+- Details and remaining physical-cabinet/audio acceptance are documented in
+  [CONTINUOUS_HANDOFF.md](docs/CONTINUOUS_HANDOFF.md).
+- Validation: full 36-check Release suite passed (281.89 s); after adding host
+  timing and bonus-return checks, all 4 affected tests passed (23.81 s), covering
+  all 37 configured Release tests across these runs. Core-only Debug: 3/3 pass.
+  Final builds are warning-free; `git diff --check` is clean.
+- The 120-frame dummy-SDL crossing records every audio batch, maximum crossing
+  interval 16.7222 ms, maximum crossing work 11.3914 ms, and maximum queued audio
+  8,000 bytes (45.4 ms). These are local software measurements, not monitor/audio
+  hardware latency. `continuous.acrec.wav` contains the uninterrupted two-second
+  crossing capture; longest exactly silent run is one stereo sample frame.
+- Native bonus-return replay passes 300 repeated / 150 restored frames including
+  audio, and its three-window host run passes. Original/native cold-restored
+  bonus return and fade match through frame 2243. A comparison against uninterrupted
+  warm execution exposed an existing first-frame cold-restore audio difference;
+  both runtime modes reproduce it. It is separate from seam execution and remains
+  a save-state investigation item.
+
+Seam audio investigation (2026-09-09, superseded by implementation above):
+
+- The current host fast-forward drops emulated audio time at each crossing;
+  the user reports audible interruptions. It is an incomplete workaround.
+- Inspected Devil's Crush's cabinet loop and scrolling-world renderer. Its
+  normal frame/audio clock has no equivalent seam-specific audio discard.
+- Recorded the replacement architecture, recovered entry points and acceptance
+  requirements in [CONTINUOUS_HANDOFF.md](docs/CONTINUOUS_HANDOFF.md). The next
+  implementation must remove the loading waits at the game-runtime level,
+  preserving the gameplay state transitions and a continuous music/effects clock.
+  No new runtime fix is implemented by this investigation.
+
+Continuous cabinet crossings (2026-09-09):
+
+- Replaced the upload-only speedup with a continuous presentation clock. It
+  removes all 132 stationary handoff frames across ten canonical crossings,
+  including actor loading and final frame waits. Full fixed-point ball movement
+  and scheduler execution retain normal presentation slots. Calls, code banks,
+  scene state, consecutive samples and a 32-frame bound guard the decision.
+- The host starts known loading work in the preceding frame's spare time and
+  does not reset its deadline while processing omitted frames. Raster capture
+  is disabled for undisplayed loading frames. The final replay measured every
+  complete loading batch, including its next visible frame, within one 16.7 ms
+  frame budget (maximum 16.29 ms locally). This is execution timing, not a
+  physical-monitor refresh or input-latency measurement.
+- Added read-only direct CPU/video snapshots on generated Beetle source copies,
+  avoiding whole-machine serialization per cabinet frame. All 1800 snapshots
+  exactly match the existing saved-state decoder. Accelerating frames 599..1800
+  produces a byte-identical complete final emulator state; no original game
+  frame, input record, ROM instruction or physics update is skipped or patched.
+- Fixed the second visual hitch after loading: the ball no longer switches
+  from current RAM coordinates back to delayed SAT coordinates. Stitched host
+  and diagnostic capture use the current ball on ready and held backgrounds.
+  Captures confirm frames 623/624 now differ; they were identical before. The
+  raw original-raster path remains available for exact reference comparisons.
+- Original-view pacing remains unchanged. Omitted loading audio is still
+  discarded, so music advances across it. Physical cabinet acceptance remains
+  pending. New evidence: `out/captures/seam-motion-review` (before),
+  `out/captures/seam-motion-fixed` (after), and the table replay's batch timings.
+- Validation: all 34 final Release checks pass (255.60 seconds), including the
+  reference baseline and three-window fixtures, plus all 3 core-only Debug
+  checks. Builds are warning-free and `git diff --check` is clean. The frame
+  623/624 motion comparison in `out/seam-motion-fixed.png` was visually inspected.
+
+Cabinet seam alignment and pacing (2026-09-08):
+
+- Compared captured lower/upper views and corrected the artwork offset from
+  224 to 216 pixels. The stitched canvas is now 256x456 with 40:57 display
+  aspect. A regression checks 576 matching ROM side-wall pixels across the
+  24-row overlap and distinguishes the old offset. New frame-600/720 original,
+  inactive and stitched previews are generated by the table replay test;
+  `out/seam-fixed.png` was visually inspected.
+- Traced the apparent slowdown to the original table upload. The ball remains
+  stationary through eleven verified RLE frames at each of ten canonical
+  crossings. Stitched mode executes and records these frames, but omits their
+  presentation, audio and pacing delay. Original-view timing remains unchanged.
+  The upload portion takes about 48 ms locally versus about 184 ms paced;
+  ball scheduler frames retain their normal timing. Music advances across the
+  omitted audio segment. This is host pacing, with no ROM/RAM patches.
+- Guarded compression by the original code bank/PC, complete upload call chain,
+  ordinary table state and an existing bounded transition hold. Run/Select
+  retains normal pacing. Added rejection tests for broken signatures and
+  unsupported scenes, plus replay checks for stationary uploads and resumed
+  physics in both directions.
+- Corrected overlap handling during a hold: uncertain sprite pixels mask the
+  new ball locally instead of freezing the entire old ball. All 150 canonical
+  held frames still replace the ball (75 in each direction), with no old-ball
+  duplicate. Active raster and save/restore comparisons remain exact outside
+  the intentional HUD removal and seam.
+- Validation: all 34 Release tests pass (249.12 seconds), including complete
+  reference parity and the three-window host fixtures; all 3 core-only Debug
+  tests pass. Builds have no warnings and `git diff --check` is clean. Physical
+  three-monitor timing/audio acceptance remains pending.
+- Alternating SDL-dummy host runs of the same 32-frame crossing recording
+  confirm the pacing effect: the two warmed original-view runs took 1719/1766 ms
+  including startup, versus 1625/1629 ms stitched. Raw measurements are in
+  `out/seam-host-timing.json`; they are not physical display benchmarks.
+
 Qualifying score and name entry (2026-09-08):
 
 - Found a controller-only continuation of the room-3 clear route that qualifies

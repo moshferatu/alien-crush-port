@@ -3,6 +3,52 @@
 #include <algorithm>
 #include <stdexcept>
 namespace alien_crush::render {
+bool TableTransitionClock::omit(const diagnostics::ReferenceSnapshot& video,std::span<const std::byte> ram,bool table_available) {
+    if(ram.size()!=8192) throw std::runtime_error("Table clock requires 8192-byte work RAM");
+    const auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+    const auto caller=b(0x1fc)|(b(0x1fd)<<8);
+    // Saved returns from the literal calls in 03:89B3..89EF / 8A0A..8A47.
+    // These cover frame waits, asset/actor loading and scheduler setup. Require
+    // the enclosing 01:409E call too; stale stack data alone cannot arm this.
+    constexpr unsigned upper[]{0x89b5,0x89b8,0x89cf,0x89d2,0x89d5,0x89eb,0x89ee};
+    constexpr unsigned lower[]{0x8a1d,0x8a20,0x8a2a,0x8a2d,0x8a30,0x8a43,0x8a46};
+    const bool to_upper=std::find(std::begin(upper),std::end(upper),caller)!=std::end(upper);
+    const bool to_lower=std::find(std::begin(lower),std::end(lower),caller)!=std::end(lower);
+    const bool scene=table_available && b(0x79)<=1 && !b(0x76) && !b(0x7c) && !b(0x16) && !b(0x17) &&
+        !(b(0x53)&0x80) && !(b(0x54)&0x80) && b(0x1500)==1 && (b(0x1540)&0xa0)==0x80;
+    // The lower handoff subtracts E0 before changing table code. Compare full
+    // fixed-point coordinates in the original world's 224-pixel coordinate
+    // system, independently of the artwork's 216-pixel projection.
+    const unsigned half=to_lower && b(0x1fe)==0xa0 && b(0x1ff)==0x40?0:b(0x79);
+    const unsigned x=b(0x1580)|(b(0x15c0)<<8)|(b(0x1600)<<16);
+    const unsigned y=(b(0x1640)|(b(0x1680)<<8)|(b(0x16c0)<<16))+(half==0?224*256:0);
+    const bool stationary=valid_ && video.frame==frame_+1 && x==x_ && y==y_;
+    const bool wait=video.mpr[7]==0 && video.pc>=0xe2f8 && video.pc<=0xe2fd;
+    const bool copying=(video.mpr[7]==0 && video.pc>=0xe3f7 && video.pc<=0xe4a0) ||
+        (video.mpr[2]==1 && video.pc>=0x46fd && video.pc<0x4740);
+    const bool transition=(to_upper || to_lower) && b(0x1fe)==0xa0 && b(0x1ff)==0x40;
+    transition_frames_=transition?(video.frame==frame_+1?std::min(33u,transition_frames_+1):1):0;
+    const bool final_wait=transition_ && wait && (caller==0x89ee || caller==0x8a46) &&
+        b(0x1fe)==0x88 && b(0x1ff)==0x40;
+    const bool result=scene && ((transition && transition_frames_<=32 && (wait || copying)) || final_wait) && stationary;
+    upload_follows_=scene && transition && transition_frames_<=32 && wait && (caller==0x89b5 || caller==0x8a1d);
+    frame_=video.frame;x_=x;y_=y;valid_=scene;transition_=scene && transition && transition_frames_<=32;
+    return result;
+}
+bool table_transition_upload(const diagnostics::ReferenceSnapshot& video,std::span<const std::byte> ram) {
+    if(ram.size()!=8192) throw std::runtime_error("Table upload requires 8192-byte work RAM");
+    const auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+    // E3F7..E438 is the original word-RLE upload loop. Require its bank and
+    // complete enclosing call chain, not merely an old return address in RAM.
+    if(video.mpr[7]!=0 || video.pc<0xe3f7 || video.pc>=0xe439 || b(0x79)>1 ||
+        b(0x76) || b(0x7c) || b(0x16) || b(0x17) || (b(0x53)&0x80) || (b(0x54)&0x80) ||
+        b(0x1500)!=1 || (b(0x1540)&0xa0)!=0x80) return false;
+    constexpr unsigned chain[]{0x35,0xeb,0x18,4,3,2,1,0x0c,0xe7};
+    for(unsigned i=0;i<std::size(chain);++i) if(b(0x1f3+i)!=chain[i]) return false;
+    // 03:89CD / 03:8A28 -> E705 -> EB27 -> table loader -> E3xx.
+    return b(0x1fc)==(b(0x79)?0xcfu:0x2au) && b(0x1fd)==(b(0x79)?0x89u:0x8au) &&
+        b(0x1fe)==0xa0 && b(0x1ff)==0x40;
+}
 void TableTransitionHold::reset() {
     image_.reset(); backdrop_.reset(); frame_=0; table_=2; remaining_=0; held_=false;ball_updated_=false;
 }
@@ -22,7 +68,25 @@ std::optional<Image> TableTransitionHold::present(std::optional<Image> live,std:
     held_=false;
     const bool changed=table_<=1 && table<=1 && table!=table_;
     frame_=frame; table_=table;
-    if(live) {image_=live;backdrop_=backdrop?std::optional<TableBallBackdrop>(*backdrop):std::nullopt;remaining_=0;return live;}
+    const auto draw_ball=[&]() {
+        auto result=backdrop_->image;
+        // Preserve uncertain sprite occlusion pixel by pixel, without keeping
+        // the old ball or reverting to its delayed SAT position after loading.
+        for(int y=0;y<ball->height;++y) for(int x=0;x<ball->width;++x) {
+            const int dx=ball->x+x,dy=ball->y+y;
+            const auto color=ball->image.pixels[y*ball->width+x];
+            if(!(color>>24) || dx<0 || dx>=result.width || dy<0 || dy>=result.height) continue;
+            const auto p=static_cast<std::size_t>(dy)*result.width+dx;
+            if(!backdrop_->sprites[p]) result.pixels[p]=color;
+        }
+        ball_updated_=true;
+        return result;
+    };
+    if(live) {
+        backdrop_=backdrop?std::optional<TableBallBackdrop>(*backdrop):std::nullopt;remaining_=0;
+        image_=backdrop_ && ball?draw_ball():std::move(*live);
+        return image_;
+    }
     // A table-code change immediately after a complete image arms the hold.
     // Same-table unsupported scenes cannot start or indefinitely extend it.
     if(changed && image_ && !was_held) remaining_=32;
@@ -30,19 +94,7 @@ std::optional<Image> TableTransitionHold::present(std::optional<Image> live,std:
     if(remaining_ && image_) {
         --remaining_;held_=true;
         if(backdrop_ && ball) {
-            auto result=backdrop_->image;
-            // Keep the original complete hold if another sprite could affect
-            // ordering at the new position. Never infer priority from RGB.
-            for(int y=0;y<ball->height;++y) for(int x=0;x<ball->width;++x) {
-                const int dx=ball->x+x,dy=ball->y+y;
-                const auto color=ball->image.pixels[y*ball->width+x];
-                if(!(color>>24) || dx<0 || dx>=result.width || dy<0 || dy>=result.height) continue;
-                const auto p=static_cast<std::size_t>(dy)*result.width+dx;
-                if(backdrop_->sprites[p]) return image_;
-                result.pixels[p]=color;
-            }
-            ball_updated_=true;
-            return result;
+            return draw_ball();
         }
         return image_;
     }

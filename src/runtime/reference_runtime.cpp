@@ -15,6 +15,9 @@
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
 extern "C" void ac_set_display_observer(void (*)(unsigned,unsigned,unsigned,const unsigned short*));
 extern "C" void ac_set_palette_observer(void (*)(int,int,unsigned,unsigned,unsigned,unsigned),void (*)(int,int));
+extern "C" bool ac_copy_cpu_snapshot(unsigned short*,unsigned char*);
+extern "C" bool ac_copy_video_snapshot(unsigned short*,unsigned short*,unsigned short*,unsigned short*);
+extern "C" void ac_set_continuous_handoff(bool);
 #endif
 
 namespace alien_crush {
@@ -22,6 +25,7 @@ namespace {
 struct CoreOption { std::string_view key; const char* value; };
 #include "reference_options.inc"
 class Reference final : public ReferenceRuntime {
+    HandoffMode handoff;
     inline static std::atomic<Reference*> active{};
     std::thread::id owner = std::this_thread::get_id();
     bool initialized{}, loaded{}, failed{};
@@ -155,7 +159,10 @@ class Reference final : public ReferenceRuntime {
         return (mask&bit)?1:0;
     }
 public:
-    Reference() {
+    explicit Reference(HandoffMode mode) : handoff(mode) {
+#ifndef AC_REFERENCE_VIDEO_OBSERVER
+        if(mode==HandoffMode::continuous) throw std::runtime_error("Continuous handoff requires the video-enabled backend");
+#endif
         pixels.reserve(2048U*264U); audio.reserve(131072);
         Reference* empty=nullptr;
         if(!active.compare_exchange_strong(empty,this)) throw std::logic_error("Beetle is single-instance; use isolated processes for concurrent comparisons");
@@ -179,6 +186,9 @@ public:
         const retro_game_info game{rom_path.c_str(),nullptr,0,nullptr};
         if(!retro_load_game(&game)) { close(); throw std::runtime_error("Beetle rejected Alien Crush ROM"); }
         loaded=true;
+#ifdef AC_REFERENCE_VIDEO_OBSERVER
+        ac_set_continuous_handoff(handoff==HandoffMode::continuous);
+#endif
         retro_set_controller_port_device(0,RETRO_DEVICE_JOYPAD);
         retro_set_controller_port_device(1,RETRO_DEVICE_JOYPAD);
         retro_get_system_av_info(&av);
@@ -195,8 +205,10 @@ public:
     int sample_rate() const override { return static_cast<int>(av.timing.sample_rate+0.5); }
     std::string_view revision() const override {
 #ifdef AC_REFERENCE_STATE_EXTENSION
+        if(handoff==HandoffMode::continuous) return "beetle-" AC_BEETLE_REVISION "-state1-handoff1";
         return "beetle-" AC_BEETLE_REVISION "-state1";
 #else
+        if(handoff==HandoffMode::continuous) return "beetle-" AC_BEETLE_REVISION "-handoff1";
         return "beetle-" AC_BEETLE_REVISION;
 #endif
     }
@@ -252,6 +264,20 @@ public:
         if(observation_failed) throw std::runtime_error("Reference video observation overflow");
         return {observed_memory.data(),observed_count?memory_count:0};
     }
+    diagnostics::ReferenceSnapshot video_snapshot() const override {
+        check_loaded();
+#ifdef AC_REFERENCE_VIDEO_OBSERVER
+        diagnostics::ReferenceSnapshot result;result.frame=frame_number;
+        std::array<unsigned short,4> registers{};
+        if(!ac_copy_cpu_snapshot(&result.pc,result.mpr.data()) ||
+            !ac_copy_video_snapshot(result.vram.data(),result.palette.data(),result.sat.data(),registers.data()))
+            throw std::runtime_error("Reference snapshot unavailable");
+        result.control=registers[0];result.memory_width=registers[1];result.scroll_x=registers[2];result.scroll_y=registers[3];
+        return result;
+#else
+        return diagnostics::decode_reference_snapshot(save());
+#endif
+    }
     state::SaveStateContainer save() const override {
         check_loaded();
         state::SaveStateContainer result;
@@ -278,5 +304,5 @@ public:
     }
 };
 }
-std::unique_ptr<ReferenceRuntime> make_reference_runtime() { return std::make_unique<Reference>(); }
+std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode) { return std::make_unique<Reference>(mode); }
 }

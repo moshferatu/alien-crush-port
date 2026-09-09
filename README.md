@@ -41,7 +41,11 @@ The baseline uses the original controller behavior:
 | F11 | Borderless fullscreen |
 | Escape | Exit |
 
-Quick states live beside the executable in `portable-data/alien-crush.reference.state`.
+Desktop quick states live beside the executable in `portable-data/alien-crush.reference.state`.
+Live cabinet mode uses `alien-crush.cabinet.state` and a distinct runtime identity.
+Recordings select their recorded runtime automatically: existing reference recordings
+retain original loading timing; new cabinet recordings use continuous handoffs.
+Quick states cannot be exchanged between these execution modes. V changes only the view.
 Use `--data-dir` to select another location. Missing ROM paths default beside the executable.
 
 Record with `--record session.acrec`, replay with `--replay session.acrec`.
@@ -192,7 +196,7 @@ ownership. Replay reproduces accepted commands without needing the device.
 This has virtual SDL coverage; physical PinOne calibration and cabinet acceptance
 are still pending.
 
-Add `--stitched` (which also enables cabinet mode) for the experimental 256×464
+Add `--stitched` (which also enables cabinet mode) for the experimental 256×456
 full-table view. V switches between it and the original view. Both backgrounds
 come from your ROM; the active half has live sprites and background changes,
 with standard score digits removed. The original pixel aspect ratio is preserved.
@@ -204,16 +208,25 @@ counter graphic and the two large background actors that redraw when a table
 is restored. Other inactive background changes
 and transient indicator blinking remain unfinished. During a confirmed table
 change, the last complete table artwork stays visible until the new half is
-ready, for at most 32 frames. The ball uses its actual stored coordinates where
-its sprite is unambiguous and clear of other opaque sprite pixels and full fetch
-rows; otherwise the complete
-held image is retained. Title and other unsupported scenes use the original
-display. Upper-half artwork stays fixed across the 16-row join, while visible
+ready, for at most 32 emulated frames. The ball uses its actual stored coordinates
+on both ready and held tables when its sprite is unambiguous; uncertain sprite overlaps mask individual pixels
+instead of freezing the old ball. Title and other unsupported scenes use the original
+display. Upper-half artwork stays fixed across the 24-row join, while visible
 sprites from both halves remain present. Ball movement is not interpolated.
+The artwork offset is 216 pixels, eight less than the original ball handoff.
+Live cabinet mode replaces main-table graphics decompression and actor-bank copying
+with synchronous transfers and bypasses the handoff's two display waits. Collision
+pointers, actor restoration and gameplay setup still run in their original order.
+Every game frame supplies its full audio batch; no seam frames or music samples
+are discarded. This applies to both cabinet views. Desktop mode and old reference
+recordings retain the cartridge's loading timeline. The default video-enabled
+backend is required for continuous handoffs.
+For timing diagnostics, `--timing-log <file.csv>` records frame start/end times,
+audio sample counts and queued audio bytes.
 With the default reference observer enabled, the active half uses observed row
 timing for display/VRAM and pixel timing for palette changes. Pixels outside the
-removed HUD and deliberately changed overlap
-match the reference on all 1,292 supported canonical replay frames. Builds with
+removed HUD, current-position ball and deliberately changed overlap
+match the reference on all 1,262 supported canonical replay frames. Builds with
 the observer compiled out retain the frozen-state renderer.
 
 ```powershell
@@ -223,8 +236,8 @@ the observer compiled out retain the frozen-state renderer.
 For reproducible screenshots and per-frame availability/hashes, add `--stitched`
 to a tools capture with `--video-every 120`. Stitched BMPs are written only for
 supported or held frames; `stitched.csv` records every fallback and marks held
-images in its `held` column. `ball_updated` marks held backgrounds with the ball
-redrawn from its stored state.
+images in its `held` column. `ball_updated` marks both ready and held images whose
+ball was redrawn from its current stored state.
 
 ## Diagnostics
 

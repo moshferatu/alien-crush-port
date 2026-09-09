@@ -7,9 +7,26 @@
 #include "alien_crush/render/pce_graphics.hpp"
 #include <optional>
 namespace alien_crush::render {
-// 03:89B9 and 03:8A0A translate the ball between local table coordinates by E0.
-inline constexpr int table_half_offset=224;
+// Matching ROM side-wall tiles place the lower artwork at upper row 216.
+// The game's ball handoff uses 224 instead; it is not an artwork measurement.
+inline constexpr int table_half_offset=216;
 inline constexpr int table_playfield_height=table_half_offset+240;
+inline constexpr unsigned table_aspect_width=40,table_aspect_height=57;
+// Read-only recognition of the original main-table RLE upload call. A host may
+// omit its presentation delay during an already-confirmed transition hold.
+bool table_transition_upload(const diagnostics::ReferenceSnapshot&,std::span<const std::byte> ram);
+// Collapse stationary handoff frames on a continuous presentation clock. The
+// original core still executes every frame; this never changes game state.
+class TableTransitionClock {
+    std::uint64_t frame_{};
+    unsigned x_{},y_{};
+    unsigned transition_frames_{};
+    bool valid_{},transition_{},upload_follows_{};
+public:
+    void reset() {valid_=transition_=upload_follows_=false;transition_frames_=0;}
+    bool upload_follows() const {return upload_follows_;}
+    bool omit(const diagnostics::ReferenceSnapshot&,std::span<const std::byte> ram,bool table_available);
+};
 // Upper artwork owns the overlap. Visible sprites from either half survive;
 // the active half wins sprite conflicts. Masks describe the visible 256x240 area.
 Image stitch_table_views(const Image& lower,const Image& upper,unsigned active_table,
@@ -19,8 +36,9 @@ struct TableRaster {
     std::span<const diagnostics::PaletteWrite> palette;
     std::span<const RasterWrite> vram;
 };
-// Presentation-only bridge across a confirmed main-table change. Never advances
-// gameplay or invents intermediate ball positions. Reset on load or view change.
+// Presentation-only bridge across a confirmed main-table change. An optional
+// ball replaces the delayed SAT ball in both ready and held images, using only
+// actual game coordinates. Reset on load or view change.
 struct TableBallBackdrop { Image image; std::vector<std::uint8_t> sprites; };
 class TableTransitionHold {
     std::optional<Image> image_;

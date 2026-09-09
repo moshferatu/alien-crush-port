@@ -10,6 +10,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <optional>
+#include <fstream>
 
 using namespace alien_crush;
 namespace {
@@ -39,7 +40,7 @@ PadInput read_input(SDL_Gamepad* pad) {
 }
 int main(int argc,char** argv) {
     try {
-        std::filesystem::path rom_path,record_path,replay_path,data_path;
+        std::filesystem::path rom_path,record_path,replay_path,data_path,timing_path;
         std::uint64_t limit=0;
         bool cabinet_mode=false,stitched_mode=false,probe=false;
         for(int i=1;i<argc;++i) {
@@ -50,6 +51,7 @@ int main(int argc,char** argv) {
             else if(arg=="--record") record_path=core::path_from_utf8(value());
             else if(arg=="--replay") replay_path=core::path_from_utf8(value());
             else if(arg=="--data-dir") data_path=core::path_from_utf8(value());
+            else if(arg=="--timing-log") timing_path=core::path_from_utf8(value());
             else if(arg=="--cabinet") cabinet_mode=true;
             else if(arg=="--input-probe") probe=true;
             else if(arg=="--stitched") {cabinet_mode=true;stitched_mode=true;}
@@ -66,12 +68,20 @@ int main(int argc,char** argv) {
             host::load_cabinet_buttons(data_path/"cabinet-inputs.txt"):host::CabinetButtons{});
         host::CabinetPlunger cabinet_plunger(cabinet_mode && replay_path.empty()?
             host::load_cabinet_plunger(data_path/"cabinet-plunger.txt"):input::PlungerBinding{});
-        auto runtime=make_reference_runtime(); runtime->load(rom_path);
+        std::optional<recording::Recording> playback;
+        if(!replay_path.empty()) playback=recording::read(replay_path);
+        const auto mode=playback?(playback->initial.core_revision.ends_with("-handoff1")?HandoffMode::continuous:HandoffMode::original):
+            (cabinet_mode?HandoffMode::continuous:HandoffMode::original);
+        auto runtime=make_reference_runtime(mode); runtime->load(rom_path);
         const bool table_raster=cabinet_mode && runtime->supports_display_observation();
         if(table_raster) runtime->observe_display(true);
-        std::optional<recording::Recording> playback;
-        if(!replay_path.empty()) { playback=recording::read(replay_path); runtime->restore(playback->initial); }
+        if(playback) runtime->restore(playback->initial);
         recording::Recording recorded{runtime->save(),{}};
+        std::ofstream timing;
+        if(!timing_path.empty()) {
+            timing.exceptions(std::ios::failbit|std::ios::badbit);timing.open(timing_path);
+            timing<<"frame,start_ns,end_ns,audio_samples,queued_bytes\n";
+        }
         host::Presentation display(cabinet_mode?"Alien Crush - Playfield":"Alien Crush",cabinet_mode?540:960,720,cabinet_mode);
         std::unique_ptr<host::Cabinet> cabinet;
         if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,data_path,core::read_file(rom_path));
@@ -111,7 +121,7 @@ int main(int argc,char** argv) {
                     if(event.key.scancode==SDL_SCANCODE_F5 || event.key.scancode==SDL_SCANCODE_F9) {
                         try {
                             if(playback || !record_path.empty()) throw std::runtime_error("Quick states are disabled during recording/replay to keep the input timeline reproducible");
-                            const auto path=data_path/"alien-crush.reference.state";
+                            const auto path=data_path/(mode==HandoffMode::continuous?"alien-crush.cabinet.state":"alien-crush.reference.state");
                             if(event.key.scancode==SDL_SCANCODE_F5) {
                                 if(cabinet_plunger.owns_draw()) throw std::runtime_error("Release the plunger before saving a quick state");
                                 core::write_file_atomic(path,state::encode(runtime->save()));
@@ -139,36 +149,43 @@ int main(int argc,char** argv) {
             auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(standard_pad);
             if(!playback && focused) input.player_one|=cabinet_input.read().player_one;
             const auto command=playback?playback->plunger_at(static_cast<std::size_t>(count)):cabinet_plunger.apply(*runtime,input,focused);
+            const auto frame_started=SDL_GetTicksNS();
+            if(table_raster) runtime->observe_display(true);
             const auto frame=playback?recording::advance(*runtime,input,command):runtime->advance(input);
             if(!record_path.empty()) {
                 if(command && recorded.plunger.empty()) recorded.plunger.resize(recorded.inputs.size(),0);
                 recorded.inputs.push_back(input);
                 if(command || !recorded.plunger.empty()) recorded.plunger.push_back(command);
             }
-            if(!SDL_PutAudioStreamData(audio.stream,frame.stereo.data(),static_cast<int>(frame.stereo.size_bytes()))) throw std::runtime_error(SDL_GetError());
-            // A stalled output device must not accumulate minutes of queued sound.
-            if(SDL_GetAudioStreamQueued(audio.stream)>runtime->sample_rate()*4/4) SDL_ClearAudioStream(audio.stream);
+            // Snapshot inspection invalidates borrowed views. Keep this frame's
+            // audio through composition. Every frame is queued on the same clock.
+            const std::vector<std::int16_t> sound(frame.stereo.begin(),frame.stereo.end());
             if(stitched_mode) {
-                // Save invalidates borrowed runtime views. Audio is already queued;
-                // own the fallback pixels before inspecting the video snapshot.
+                // Own fallback pixels before inspecting the video snapshot.
                 const std::vector<std::uint32_t> original(frame.pixels.begin(),frame.pixels.end());
                 const auto ram=runtime->work_ram();
                 const auto half=std::to_integer<unsigned>(ram[0x79]);
                 const auto camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
-                const auto snapshot=diagnostics::decode_reference_snapshot(runtime->save());
+                const auto snapshot=runtime->video_snapshot();
                 const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
                 std::optional<render::TableBallBackdrop> backdrop;
                 auto stitched=previous_video?table->compose(snapshot,*previous_video,half,camera,runtime->work_ram(),
                     table_raster?&raster:nullptr,&backdrop):std::nullopt;
-                const auto ball=stitched?std::nullopt:table->transition_ball(half,runtime->work_ram());
+                const auto ball=table->transition_ball(half,runtime->work_ram());
                 stitched=transition.present(std::move(stitched),snapshot.frame,half,camera,runtime->work_ram(),
                     backdrop?&*backdrop:nullptr,ball?&*ball:nullptr);
-                if(stitched) display.show({frame.number,stitched->width,stitched->height,stitched->pixels,{}},20,29);
+                if(stitched) display.show({frame.number,stitched->width,stitched->height,stitched->pixels,{}},
+                    render::table_aspect_width,render::table_aspect_height);
                 else display.show({frame.number,frame.width,frame.height,original,{}});
                 previous_video=snapshot;
-            } else display.show(frame);
-            if(cabinet) cabinet->show(runtime->work_ram());
+            } else {display.show(frame);}
             ++count;
+            if(!SDL_PutAudioStreamData(audio.stream,sound.data(),static_cast<int>(sound.size()*sizeof(std::int16_t)))) throw std::runtime_error(SDL_GetError());
+            // A stalled output device must not accumulate minutes of queued sound.
+            if(SDL_GetAudioStreamQueued(audio.stream)>runtime->sample_rate()*4/4) SDL_ClearAudioStream(audio.stream);
+            if(cabinet) cabinet->show(runtime->work_ram());
+            if(timing.is_open()) timing<<frame.number<<','<<frame_started<<','<<SDL_GetTicksNS()<<','
+                <<sound.size()<<','<<SDL_GetAudioStreamQueued(audio.stream)<<'\n';
             deadline+=frame_ns;
             const auto now=SDL_GetTicksNS();
             if(deadline>now) SDL_DelayPrecise(deadline-now);

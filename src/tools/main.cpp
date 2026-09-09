@@ -49,7 +49,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
     const std::filesystem::path& output, bool check_restore,
     const recording::Recording* playback=nullptr, bool restore_initial=false,
     std::uint64_t video_every=0,bool raw=true,bool compare_video=false,bool compare_display=false,bool require_display=false,bool stitched=false) {
-    auto runtime=make_reference_runtime(); runtime->load(rom_path);
+    auto runtime=make_reference_runtime(playback && playback->initial.core_revision.ends_with("-handoff1")?HandoffMode::continuous:HandoffMode::original); runtime->load(rom_path);
     const bool table_raster=stitched && runtime->supports_display_observation();
     if(compare_display || table_raster) runtime->observe_display(true);
     if(playback) runtime->restore(playback->initial);
@@ -229,7 +229,7 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
                 std::optional<render::TableBallBackdrop> backdrop;
                 auto image=previous_video?table->compose(snapshot,*previous_video,half,camera,ram,
                     table_raster?&raster:nullptr,&backdrop):std::nullopt;
-                const auto ball=image?std::nullopt:table->transition_ball(half,ram);
+                const auto ball=table->transition_ball(half,ram);
                 image=transition.present(std::move(image),snapshot.frame,half,camera,ram,
                     backdrop?&*backdrop:nullptr,ball?&*ball:nullptr);
                 table_csv<<frame.number<<','<<half<<','<<image.has_value()<<',';

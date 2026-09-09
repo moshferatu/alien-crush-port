@@ -2,6 +2,7 @@
 #pragma once
 #include "alien_crush/core/save_state.hpp"
 #include "alien_crush/diagnostics/display_trace.hpp"
+#include "alien_crush/diagnostics/reference_snapshot.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -56,9 +57,13 @@ public:
 };
 class ReferenceRuntime : public GameRuntime, public ReferenceDiagnostics {
 public:
+    // Read-only current video/CPU state without serializing audio or the machine.
+    virtual diagnostics::ReferenceSnapshot video_snapshot() const {return diagnostics::decode_reference_snapshot(save());}
     // Explicit optional cabinet bridge; never used by canonical pad replays.
     virtual bool apply_plunger_draw(std::uint8_t percent) = 0;
     virtual bool cancel_plunger_draw() = 0;
 };
-std::unique_ptr<ReferenceRuntime> make_reference_runtime();
+enum class HandoffMode { original, continuous };
+// Mode is fixed for the lifetime of a runtime and included in its state identity.
+std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode=HandoffMode::original);
 }
