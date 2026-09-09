@@ -5,6 +5,7 @@
 #include "alien_crush/render/table_playfield.hpp"
 #include <algorithm>
 #include <fstream>
+#include "cabinet_presentation_check.hpp"
 #include <iostream>
 #include <stdexcept>
 using namespace alien_crush;
@@ -28,6 +29,7 @@ int main(int argc,char** argv) {
         auto runtime=make_reference_runtime();runtime->load(path);
         const bool timed=runtime->supports_display_observation();
         if(timed) runtime->observe_display(true);
+        CabinetPresentationCheck cabinet_check;
         std::optional<diagnostics::ReferenceSnapshot> previous;
         render::TableTransitionHold hold;
         recording::Recording entry,returning;
@@ -62,6 +64,7 @@ int main(int argc,char** argv) {
             const auto saved=runtime->save();
             const auto video=diagnostics::decode_reference_snapshot(saved);
             const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
+            cabinet_check.check(*table,video,previous?&*previous:nullptr,ram,timed?&raster:nullptr);
             const unsigned camera=b(0x16)|(b(0x17)<<8);
             const auto output=previous?table->compose(video,*previous,observed.table_code,camera,ram,timed?&raster:nullptr):std::nullopt;
             const auto presented=hold.present(output,video.frame,observed.table_code,camera,ram);
@@ -122,6 +125,7 @@ int main(int argc,char** argv) {
                 if(n+1==first_ready) {
                     const auto observed=diagnostics::observe_alien_state(ram);
                     const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
+            cabinet_check.check(*table,video,previous?&*previous:nullptr,ram,timed?&raster:nullptr);
                     const auto output=table->compose(video,*previous,observed.table_code,0,ram,timed?&raster:nullptr);
                     require(output && output->pixels==first_return->pixels,"First restored stitched frame matches across both halves");
                 }

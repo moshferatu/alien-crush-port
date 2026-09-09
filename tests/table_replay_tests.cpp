@@ -4,6 +4,7 @@
 #include "alien_crush/render/table_playfield.hpp"
 #include "alien_crush/render/score_panel.hpp"
 #include <fstream>
+#include "cabinet_presentation_check.hpp"
 #include "alien_crush/runtime/game_runtime.hpp"
 #include <iostream>
 #include <algorithm>
@@ -65,6 +66,7 @@ int main(int argc,char** argv) {
         auto runtime=make_reference_runtime(); runtime->load(path);
         const bool timed=runtime->supports_display_observation();
         if(timed) runtime->observe_display(true);
+        CabinetPresentationCheck cabinet_check;
         std::optional<diagnostics::ReferenceSnapshot> previous;
         std::optional<state::SaveStateContainer> checkpoint;
         std::optional<diagnostics::ReferenceSnapshot> checkpoint_video;
@@ -97,6 +99,7 @@ int main(int argc,char** argv) {
             const auto video=diagnostics::decode_reference_snapshot(saved);
             if(runtime->video_snapshot()!=video) throw std::runtime_error("Direct snapshot differs from serialized reference state");
             const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
+            cabinet_check.check(table,video,previous?&*previous:nullptr,ram,timed?&raster:nullptr);
             std::optional<render::TableBallBackdrop> backdrop;
             const auto output=previous?table.compose(video,*previous,half,camera,runtime->work_ram(),timed?&raster:nullptr,&backdrop):std::nullopt;
             if(argc==3 && (n==599 || n==719)) {

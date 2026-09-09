@@ -158,7 +158,7 @@ if(AC_BUILD_TESTS)
             add_test(NAME continuous_recording COMMAND alien-crush-tools --rom "${AC_ROM_PATH}" --replay "${CMAKE_BINARY_DIR}/continuous.acrec" --verify-replay)
             set_tests_properties(continuous_recording PROPERTIES TIMEOUT 60 FIXTURES_REQUIRED continuous_recording)
             if(AC_BUILD_APP)
-                add_test(NAME continuous_host COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+                add_test(NAME continuous_host COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                     --replay "${CMAKE_BINARY_DIR}/continuous.acrec.crossing" --frames 120
                     --data-dir "${CMAKE_BINARY_DIR}/continuous-host"
                     --timing-log "${CMAKE_BINARY_DIR}/continuous-host.csv")
@@ -179,35 +179,35 @@ if(AC_BUILD_TESTS)
         add_test(NAME table_replay COMMAND ac_table_replay_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/table-smoke.acrec")
         set_tests_properties(table_replay PROPERTIES LABELS "rom_required;graphics" TIMEOUT 60 FIXTURES_SETUP table_smoke_recording)
         if(AC_BUILD_APP)
-            add_test(NAME bonus_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME bonus_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/bonus-smoke.room4.acrec" --frames 32 --data-dir "${CMAKE_BINARY_DIR}/bonus-host-smoke")
             set_tests_properties(bonus_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
                 FIXTURES_REQUIRED bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME ordinary_bonus_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME ordinary_bonus_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/ordinary-bonus-smoke.return.acrec" --frames 300 --data-dir "${CMAKE_BINARY_DIR}/ordinary-bonus-host-smoke")
             set_tests_properties(ordinary_bonus_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
                 FIXTURES_REQUIRED ordinary_bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME game_over_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME game_over_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/game-over-smoke.acrec" --frames 1000 --data-dir "${CMAKE_BINARY_DIR}/game-over-host-smoke")
             set_tests_properties(game_over_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 45
                 FIXTURES_REQUIRED game_over_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME match_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME match_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/match-smoke.acrec" --frames 900 --data-dir "${CMAKE_BINARY_DIR}/match-host-smoke")
             set_tests_properties(match_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 45
                 FIXTURES_REQUIRED match_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME high_score_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME high_score_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/high-score-smoke.acrec" --frames 600 --data-dir "${CMAKE_BINARY_DIR}/high-score-host-smoke")
             set_tests_properties(high_score_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
                 FIXTURES_REQUIRED high_score_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME name_entry_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME name_entry_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/name-entry-smoke.acrec" --frames 1100 --data-dir "${CMAKE_BINARY_DIR}/name-entry-host-smoke")
             set_tests_properties(name_entry_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 45
                 FIXTURES_REQUIRED name_entry_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME bonus_end_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME bonus_end_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/bonus-smoke.loss.acrec" --frames 300 --data-dir "${CMAKE_BINARY_DIR}/bonus-end-host-smoke")
             set_tests_properties(bonus_end_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
                 FIXTURES_REQUIRED bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME bonus_clear_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME bonus_clear_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/bonus-smoke.clear.acrec" --frames 700 --data-dir "${CMAKE_BINARY_DIR}/bonus-clear-host-smoke")
             set_tests_properties(bonus_clear_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 45
                 FIXTURES_REQUIRED bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
@@ -225,11 +225,11 @@ if(AC_BUILD_TESTS)
             add_test(NAME cabinet_plunger COMMAND ac_cabinet_plunger_tests "${AC_ROM_PATH}")
             set_tests_properties(cabinet_plunger PROPERTIES LABELS "rom_required;host;input" TIMEOUT 30
                 ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME launcher_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME launcher_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/launcher-smoke.acrec" --frames 120 --data-dir "${CMAKE_BINARY_DIR}/launcher-host-smoke")
             set_tests_properties(launcher_host_smoke PROPERTIES LABELS "rom_required;host;input" TIMEOUT 30
                 FIXTURES_REQUIRED launcher_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
-            add_test(NAME stitched_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --stitched
+            add_test(NAME stitched_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/table-smoke.acrec" --frames 32 --data-dir "${CMAKE_BINARY_DIR}/stitched-smoke")
             set_tests_properties(stitched_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
                 FIXTURES_REQUIRED table_smoke_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")

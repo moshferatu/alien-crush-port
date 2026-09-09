@@ -42,7 +42,7 @@ int main(int argc,char** argv) {
     try {
         std::filesystem::path rom_path,record_path,replay_path,data_path,timing_path;
         std::uint64_t limit=0;
-        bool cabinet_mode=false,stitched_mode=false,probe=false;
+        bool cabinet_mode=false,probe=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]);};
@@ -54,8 +54,7 @@ int main(int argc,char** argv) {
             else if(arg=="--timing-log") timing_path=core::path_from_utf8(value());
             else if(arg=="--cabinet") cabinet_mode=true;
             else if(arg=="--input-probe") probe=true;
-            else if(arg=="--stitched") {cabinet_mode=true;stitched_mode=true;}
-            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet | --stitched] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter start/pause; Left Shift left flipper; Right Shift/Z right flipper and launcher; X nudge; Backspace select. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the playfield, V toggles experimental stitching. --stitched starts in that view. Layout saves on normal exit.\nRaw cabinet buttons: configure cabinet-inputs.txt in the data directory (see README).\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
+            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter start/pause; Left Shift left flipper; Right Shift/Z right flipper and launcher; X nudge; Backspace select. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nRaw cabinet buttons: configure cabinet-inputs.txt in the data directory (see README).\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
             else throw std::runtime_error("Unknown option "+arg);
         }
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
@@ -117,7 +116,6 @@ int main(int argc,char** argv) {
                         auto* window=cabinet?SDL_GetWindowFromID(event.key.windowID):display.window();
                         if(window && !SDL_SetWindowFullscreen(window,!(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN))) throw std::runtime_error(SDL_GetError());
                     }
-                    if(cabinet && event.key.scancode==SDL_SCANCODE_V) {stitched_mode=!stitched_mode;previous_video.reset();transition.reset();}
                     if(event.key.scancode==SDL_SCANCODE_F5 || event.key.scancode==SDL_SCANCODE_F9) {
                         try {
                             if(playback || !record_path.empty()) throw std::runtime_error("Quick states are disabled during recording/replay to keep the input timeline reproducible");
@@ -160,20 +158,13 @@ int main(int argc,char** argv) {
             // Snapshot inspection invalidates borrowed views. Keep this frame's
             // audio through composition. Every frame is queued on the same clock.
             const std::vector<std::int16_t> sound(frame.stereo.begin(),frame.stereo.end());
-            if(stitched_mode) {
+            if(cabinet_mode) {
                 // Own fallback pixels before inspecting the video snapshot.
                 const std::vector<std::uint32_t> original(frame.pixels.begin(),frame.pixels.end());
-                const auto ram=runtime->work_ram();
-                const auto half=std::to_integer<unsigned>(ram[0x79]);
-                const auto camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
                 const auto snapshot=runtime->video_snapshot();
                 const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
-                std::optional<render::TableBallBackdrop> backdrop;
-                auto stitched=previous_video?table->compose(snapshot,*previous_video,half,camera,runtime->work_ram(),
-                    table_raster?&raster:nullptr,&backdrop):std::nullopt;
-                const auto ball=table->transition_ball(half,runtime->work_ram());
-                stitched=transition.present(std::move(stitched),snapshot.frame,half,camera,runtime->work_ram(),
-                    backdrop?&*backdrop:nullptr,ball?&*ball:nullptr);
+                auto stitched=table->cabinet_frame(snapshot,previous_video?&*previous_video:nullptr,
+                    runtime->work_ram(),table_raster?&raster:nullptr,transition);
                 if(stitched) display.show({frame.number,stitched->width,stitched->height,stitched->pixels,{}},
                     render::table_aspect_width,render::table_aspect_height);
                 else display.show({frame.number,frame.width,frame.height,original,{}});

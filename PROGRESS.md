@@ -1,5 +1,29 @@
 # Progress
 
+Cabinet presentation fixes (2026-09-09):
+
+- `--cabinet` now always stitches the main table. Removed the host `--stitched`
+  option and V toggle; updated host smoke commands and usage documentation.
+  The diagnostic tool's separate exact-reference capture option remains available.
+- Added a cabinet presentation path that keeps a 256x456 projection throughout
+  initial loading, bonus returns, nudges and score awards. Menus and bonus rooms
+  remain single-screen scenes. Unsupported main-table raster frames no longer
+  expand a 256x240 viewport into the playfield window's black margins.
+- Both halves follow the recovered palette fade phase, including the initial
+  fade. Blank loading displays remain black at full-table dimensions. During
+  incomplete uploads the background comes from the ROM; gameplay is untouched.
+- Moving HUD score digits are hidden on the cabinet playfield, avoiding the
+  unsupported digit-fetch fallback during awards. The score panel stays live.
+  Exact diagnostic composition and reference replay contracts remain unchanged.
+- Visually inspected `out/cabinet-fades.png` (initial and bonus-return fades) and
+  `out/cabinet-awards.png` (moving-score upload and award frames). All show the
+  full table at fixed dimensions. Added per-frame cabinet regression checks to
+  canonical, ordinary-bonus, game-over and match replays, including cold views.
+- Verification: 8 focused Release checks passed (86.83 s), including native
+  handoffs and the actual cabinet host crossing replay; 3 core Debug checks passed.
+  Nine additional host scene checks passed (95.25 s), followed by cabinet startup,
+  layout/configuration and help checks (11.79 s): 18 Release checks in total.
+
 Native cabinet handoffs (2026-09-09):
 
 - Implemented guarded synchronous graphics/RAM transfers and actor-bank exchange,
@@ -8,7 +32,7 @@ Native cabinet handoffs (2026-09-09):
 - Removed host frame compression and seam audio discard. Every regular frame
   supplies one audio batch. Cabinet states/recordings carry a distinct `-handoff1`
   revision, and cabinet quick states use a separate filename. Old recordings retain
-  reference timing; V changes only presentation.
+  reference timing; the later cabinet presentation change removes the V toggle.
 - Differential verification matches 46,560 original CPU packet/actor operations,
   including registers/flags, scratch RAM, video output and MAWR. All ten recorded
   pre-handoff entries preserve both complete actor banks, collision pointers and

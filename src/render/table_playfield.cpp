@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "alien_crush/render/table_playfield.hpp"
+#include "alien_crush/diagnostics/alien_state.hpp"
 #include <algorithm>
 #include <stdexcept>
 namespace alien_crush::render {
@@ -139,7 +140,7 @@ TablePlayfield::TablePlayfield(std::span<const std::byte> rom)
     }
 }
 Image TablePlayfield::inactive_view(unsigned table,std::span<const std::byte> ram,std::span<std::uint8_t> visible,
-    std::span<std::uint8_t> blockers) const {
+    std::span<std::uint8_t> blockers,std::span<const std::uint16_t> palette) const {
     if(table>1) throw std::runtime_error("Unknown inactive table");
     auto projected=assets::inactive_table_actor_ram(ram);
     projected[0x79]=static_cast<std::byte>(table);
@@ -165,7 +166,51 @@ Image TablePlayfield::inactive_view(unsigned table,std::span<const std::byte> ra
     const unsigned next_slot=pieces.empty()?10:pieces.back().slot+1;
     for(const auto& piece:assets::assemble_table_overlay(projected,next_slot))
         std::copy(piece.words.begin(),piece.words.end(),sat.begin()+piece.slot*4);
-    return render::compose(vram,tables_[table].palette,sat,{256,240,0,0,0,0xc0},visible,blockers);
+    return render::compose(vram,palette.empty()?std::span<const std::uint16_t>(tables_[table].palette):palette,
+        sat,{256,240,0,0,0,0xc0},visible,blockers);
+}
+std::optional<Image> TablePlayfield::cabinet_frame(const diagnostics::ReferenceSnapshot& current,
+    const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram,
+    const TableRaster* raster,TableTransitionHold& transition) const {
+    const auto scene=diagnostics::observe_alien_state(ram);
+    const unsigned half=scene.table_code;
+    if(half>1 || scene.title_menu || scene.high_score_menu) {transition.reset();return std::nullopt;}
+    const unsigned camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
+    std::optional<Image> live;
+    std::optional<TableBallBackdrop> backdrop;
+    if(previous && current.frame==previous->frame+1 && camera==0 && matches(current,half) && matches(*previous,half)) {
+        live=compose_impl(current,*previous,half,camera,ram,raster,false,nullptr,true);
+        if(live) {
+            TableBallBackdrop clean;
+            if(auto image=compose_impl(current,*previous,half,camera,ram,raster,true,&clean.sprites,true)) {
+                clean.image=std::move(*image);backdrop=std::move(clean);
+            }
+        }
+    }
+    const auto ball=transition_ball(half,ram);
+    live=transition.present(std::move(live),current.frame,half,camera,ram,
+        backdrop?&*backdrop:nullptr,ball?&*ball:nullptr);
+    if(live) return live;
+
+    // Loading never changes the cabinet's projection. Respect the game's blank
+    // display, then render its fade across both ROM table halves. No emulated
+    // cycles, audio samples or gameplay updates are skipped.
+    if((current.control&0xc0)!=0xc0)
+        return Image{256,table_playfield_height,std::vector<std::uint32_t>(256*table_playfield_height,0xff000000)};
+    auto active=current;
+    const auto& asset=tables_[half];
+    const bool loaded=std::equal(asset.vram.begin()+0x800,asset.vram.begin()+0x800+asset.pattern_words,
+        current.vram.begin()+0x800);
+    if(!loaded) {
+        active.vram=asset.vram;
+        active.sat.fill(0); // Do not interpret title/bonus sprites as table actors.
+    }
+    auto latched=active;
+    latched.frame=active.frame-1;
+    if(loaded && previous && previous->frame+1==current.frame) latched.sat=previous->sat;
+    // The cabinet fixes the camera to the whole table. Frozen composition is
+    // used only while the exact raster contract is unavailable (e.g. fade-in).
+    return compose_impl(active,latched,half,0,ram,nullptr,false,nullptr,true);
 }
 bool TablePlayfield::matches(const diagnostics::ReferenceSnapshot& video,unsigned table) const {
     const auto& asset=tables_[table];
@@ -208,9 +253,9 @@ std::optional<Sprite> TablePlayfield::transition_ball(unsigned table,std::span<c
 }
 std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSnapshot& current,
     const diagnostics::ReferenceSnapshot& previous,unsigned table,unsigned camera,std::span<const std::byte> ram,
-    const TableRaster* raster,bool hide_ball,std::vector<std::uint8_t>* coverage) const {
-    if(table>1 || camera!=0 || current.frame!=previous.frame+1 ||
-        !matches(current,table) || !matches(previous,table)) return std::nullopt;
+    const TableRaster* raster,bool hide_ball,std::vector<std::uint8_t>* coverage,bool cabinet) const {
+    if(table>1 || current.frame!=previous.frame+1 || (!cabinet && (camera!=0 ||
+        !matches(current,table) || !matches(previous,table)))) return std::nullopt;
     const auto& sat=previous.sat;
     std::uint64_t hidden=0;
     if(hide_ball) {
@@ -231,7 +276,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         const bool digit=(s[2]>=40 && s[2]<=58 && s[2]%2==0);
         const bool score=s[0]==80 && s[1]>=48 && s[1]<=128 && (s[1]-48)%10==0;
         const bool ball=s[0]==96 && s[1]==264;
-        if(s[3]==0x8f && digit && (score || ball)) hidden|=std::uint64_t{1}<<i;
+        if(s[3]==0x8f && digit && (cabinet || score || ball)) hidden|=std::uint64_t{1}<<i;
     }
     Image live;
     std::vector<std::uint8_t> live_sprites(256*240),inactive_sprites(256*240);
@@ -264,7 +309,13 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         live=render::compose_palette_raster(current.vram,previous.palette,sat,{256,240,0,0,0,0xc0},writes,palette,live_sprites,active_blocks,hidden);
     } else live=render::compose(current.vram,current.palette,sat,{256,240,0,0,0,0xc0},live_sprites,active_blocks,hidden);
     std::vector<std::uint8_t> inactive_blocks(coverage?256*240:0);
-    const auto inactive=inactive_view(1-table,ram,inactive_sprites,inactive_blocks);
+    std::span<const std::uint16_t> inactive_palette;
+    if(cabinet) {
+        const auto fade=std::find(partial_fades_[table].begin(),partial_fades_[table].end(),current.palette);
+        if(fade!=partial_fades_[table].end())
+            inactive_palette=partial_fades_[1-table][static_cast<std::size_t>(fade-partial_fades_[table].begin())];
+    }
+    const auto inactive=inactive_view(1-table,ram,inactive_sprites,inactive_blocks,inactive_palette);
     if(coverage) {
         coverage->assign(256*table_playfield_height,0);
         const auto& lower=table==0?active_blocks:inactive_blocks;

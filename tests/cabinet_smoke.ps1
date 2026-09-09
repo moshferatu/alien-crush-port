@@ -3,6 +3,8 @@ param([Parameter(Mandatory=$true)][string]$Executable,
       [Parameter(Mandatory=$true)][string]$Rom,
       [Parameter(Mandatory=$true)][string]$OutputRoot)
 $ErrorActionPreference='Stop'
+$usage=& $Executable --help
+if($LASTEXITCODE -ne 0 -or ($usage -match '--stitched|V toggles')) { throw 'Host help still advertises optional stitching' }
 $env:SDL_VIDEODRIVER='dummy'
 $env:SDL_AUDIODRIVER='dummy'
 $directory=Join-Path $OutputRoot ([guid]::NewGuid().ToString('N'))
@@ -58,7 +60,7 @@ $invalidPlunger="ACPLUNGER1`n`"Test board`"`n2 0 0 8 25`n"
 if($LASTEXITCODE -eq 0) { throw 'Invalid plunger settings were accepted' }
 if([IO.File]::ReadAllText($plungerConfig) -ne $invalidPlunger) { throw 'Invalid plunger settings were overwritten' }
 [IO.File]::WriteAllText($inputConfig,$invalidInput)
-& $Executable --rom $Rom --stitched --frames 3 --data-dir $directory --replay $recording
+& $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory --replay $recording
 if($LASTEXITCODE -ne 0) { throw 'Replay must ignore hardware configuration' }
 # Optional local artwork is read in both live and replay cabinet sessions.
 $artPath=Join-Path $directory 'backglass.bmp'
@@ -70,7 +72,7 @@ $art[56]=255; $art[58]=255
 $placements=[IO.File]::ReadAllLines($config)
 $placements[2]=$placements[2] -replace ' 0$', ' 90'
 [IO.File]::WriteAllLines($config,$placements)
-& $Executable --rom $Rom --stitched --frames 3 --data-dir $directory --replay $recording
+& $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory --replay $recording
 if($LASTEXITCODE -ne 0) { throw 'Cabinet artwork replay smoke failed' }
 if(-not ([IO.File]::ReadAllLines($config)[2]).EndsWith(' 90')) { throw 'Backglass rotation was not preserved' }
 [IO.File]::WriteAllText($inputConfig,$validInput)

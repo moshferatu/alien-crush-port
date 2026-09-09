@@ -45,7 +45,7 @@ Desktop quick states live beside the executable in `portable-data/alien-crush.re
 Live cabinet mode uses `alien-crush.cabinet.state` and a distinct runtime identity.
 Recordings select their recorded runtime automatically: existing reference recordings
 retain original loading timing; new cabinet recordings use continuous handoffs.
-Quick states cannot be exchanged between these execution modes. V changes only the view.
+Quick states cannot be exchanged between these execution modes.
 Use `--data-dir` to select another location. Missing ROM paths default beside the executable.
 
 Record with `--record session.acrec`, replay with `--replay session.acrec`.
@@ -56,7 +56,7 @@ operation stops playback. Both the SDL host and diagnostic tool support this for
 Live cabinet recordings include accepted plunger commands when analog input is configured.
 Quick-state operations are disabled during recording and replay to retain a linear timeline.
 
-For the initial three-window cabinet host, add `--cabinet`. Move and resize the
+For the three-window cabinet host with a stitched playfield, add `--cabinet`. Move and resize the
 playfield, backglass and score windows onto your monitors, or use these keys:
 
 | Cabinet key | Action |
@@ -88,7 +88,7 @@ Attract-mode demos show the same high score and prompt with a "DEMO" label;
 simulated scores and ball counts stay hidden. Run returns to the original menus.
 In a bonus room, the score remains the game's cumulative total and the lower-right
 field shows BONUS 1–4 instead of the main-table ball counter. Bonus rooms use the
-original single-screen playfield, including when `--stitched` is enabled.
+original single-screen playfield in cabinet mode.
 When the original bonus loop ends, the panel displays ROUND OVER while retaining
 the cumulative score and room number. It follows the game's timing and clears
 as the original scene advances.
@@ -97,15 +97,15 @@ The score continues to follow the original tally and completion awards. A
 controller-only room-3 clear replay verifies progression with all three balls
 preserved; clears in the other rooms still need coverage.
 An ordinary-play replay also verifies bonus-room-2 entry and return to both main
-table halves. Recognized table fade-ins keep the original viewport until the
-palette settles, then stitching resumes with both halves at full brightness.
+table halves. Cabinet mode fades both halves in together, keeping the full-table
+projection from the initial load and throughout bonus returns.
 After the final ordinary ball is consumed, the score window shows GAME OVER
 with the final score. The original score-digit match can award another ball;
 I or II stops the match animation. A loss returns to the title menus, while a
 win resumes play with the score preserved. Replays cover both outcomes, the
-return to the stitched table and exact save/restore. During moving-score digit
-uploads, the original viewport is used because sprite fetch timing is not yet
-captured by the row-based VRAM trace.
+return to the stitched table and exact save/restore. Cabinet mode suppresses
+moving score digits on the playfield; the separate score window follows the
+award. Digit uploads never switch the main table to a single viewport.
 To view the five high scores during ordinary play, press **Enter** (Run) to
 pause, then **Backspace** (Select). The score window shows all five ranks while
 the playfield shows the original score-table screen. Press Backspace or Enter
@@ -154,7 +154,7 @@ start/pause, select, up, down and right. **The numbers above are examples, not
 verified PinOne defaults.** Use `-1` to disable a mapping; valid indices are 0–255.
 The name is a nonempty case-insensitive substring; the first matching device with
 all configured buttons is selected. Choose a distinctive name when several boards
-are connected. Settings load at startup in `--cabinet` and `--stitched` modes.
+are connected. Settings load at startup in `--cabinet` mode.
 A missing file leaves raw buttons disabled; malformed settings report an error.
 Keyboard controls and other gamepads remain available. The selected board's default
 gamepad mapping is suppressed to prevent duplicate actions.
@@ -196,8 +196,8 @@ ownership. Replay reproduces accepted commands without needing the device.
 This has virtual SDL coverage; physical PinOne calibration and cabinet acceptance
 are still pending.
 
-Add `--stitched` (which also enables cabinet mode) for the experimental 256×456
-full-table view. V switches between it and the original view. Both backgrounds
+Cabinet mode always uses the 256×456 full-table view. The former host
+`--stitched` option and V view toggle have been removed. Both backgrounds
 come from your ROM; the active half has live sprites and background changes,
 with standard score digits removed. The original pixel aspect ratio is preserved.
 The inactive half renders stored actors and flippers over its ROM background,
@@ -210,15 +210,16 @@ and transient indicator blinking remain unfinished. During a confirmed table
 change, the last complete table artwork stays visible until the new half is
 ready, for at most 32 emulated frames. The ball uses its actual stored coordinates
 on both ready and held tables when its sprite is unambiguous; uncertain sprite overlaps mask individual pixels
-instead of freezing the old ball. Title and other unsupported scenes use the original
-display. Upper-half artwork stays fixed across the 24-row join, while visible
+instead of freezing the old ball. Loading, fade-in, nudges and score awards retain
+the full-table projection. Title menus, high-score menus and bonus rooms use the
+original display. Upper-half artwork stays fixed across the 24-row join, while visible
 sprites from both halves remain present. Ball movement is not interpolated.
 The artwork offset is 216 pixels, eight less than the original ball handoff.
 Live cabinet mode replaces main-table graphics decompression and actor-bank copying
 with synchronous transfers and bypasses the handoff's two display waits. Collision
 pointers, actor restoration and gameplay setup still run in their original order.
 Every game frame supplies its full audio batch; no seam frames or music samples
-are discarded. This applies to both cabinet views. Desktop mode and old reference
+are discarded. This applies to cabinet mode. Desktop mode and old reference
 recordings retain the cartridge's loading timeline. The default video-enabled
 backend is required for continuous handoffs.
 For timing diagnostics, `--timing-log <file.csv>` records frame start/end times,
@@ -230,10 +231,11 @@ match the reference on all 1,262 supported canonical replay frames. Builds with
 the observer compiled out retain the frozen-state renderer.
 
 ```powershell
-.\out\build\windows-vs2022\Release\alien-crush.exe --rom '.\Alien Crush.pce' --stitched
+.\out\build\windows-vs2022\Release\alien-crush.exe --rom '.\Alien Crush.pce' --cabinet
 ```
 
-For reproducible screenshots and per-frame availability/hashes, add `--stitched`
+The diagnostic tools retain their separate `--stitched` capture option for exact
+reference comparisons. For per-frame availability/hashes, add `--stitched`
 to a tools capture with `--video-every 120`. Stitched BMPs are written only for
 supported or held frames; `stitched.csv` records every fallback and marks held
 images in its `held` column. `ball_updated` marks both ready and held images whose

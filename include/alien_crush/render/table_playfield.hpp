@@ -65,9 +65,14 @@ class TablePlayfield {
     std::optional<Image> compose_impl(const diagnostics::ReferenceSnapshot& current,
         const diagnostics::ReferenceSnapshot& previous,unsigned table,unsigned camera,
         std::span<const std::byte> ram,const TableRaster* raster,bool hide_ball,
-        std::vector<std::uint8_t>* coverage) const;
+        std::vector<std::uint8_t>* coverage,bool cabinet=false) const;
 public:
     explicit TablePlayfield(std::span<const std::byte> rom);
+    // Full table throughout main-table loading, fades and score awards. Menus
+    // and bonus rooms return empty. The diagnostic compose contract stays exact.
+    std::optional<Image> cabinet_frame(const diagnostics::ReferenceSnapshot& current,
+        const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram,
+        const TableRaster* raster,TableTransitionHold& transition) const;
     // Experimental presentation. Unsupported scenes or incomplete raster inputs
     // return empty. Without raster observations, uses frozen video state.
     // Previous SAT preserves the established display epoch. Inactive actors
@@ -78,6 +83,6 @@ public:
         std::optional<TableBallBackdrop>* backdrop=nullptr) const;
     std::optional<Sprite> transition_ball(unsigned table,std::span<const std::byte> ram) const;
     Image inactive_view(unsigned table,std::span<const std::byte> ram,std::span<std::uint8_t> visible_sprites={},
-        std::span<std::uint8_t> blockers={}) const;
+        std::span<std::uint8_t> blockers={},std::span<const std::uint16_t> palette={}) const;
 };
 }

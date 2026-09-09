@@ -6,6 +6,7 @@
 #include "alien_crush/render/table_playfield.hpp"
 #include <algorithm>
 #include <fstream>
+#include "cabinet_presentation_check.hpp"
 #include <iostream>
 #include <stdexcept>
 using namespace alien_crush;
@@ -33,6 +34,7 @@ int main(int argc,char** argv) {
         const bool timed=runtime->supports_display_observation();
         if(timed) runtime->observe_display(true);
         recording::Recording ending;
+        CabinetPresentationCheck cabinet_check;
         std::optional<diagnostics::ReferenceSnapshot> previous;
         render::TableTransitionHold hold;
         render::Image preview;
@@ -70,6 +72,7 @@ int main(int argc,char** argv) {
             if(n>=4400) {
                 const auto video=diagnostics::decode_reference_snapshot(runtime->save());
                 const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
+            cabinet_check.check(*table,video,previous?&*previous:nullptr,ram,timed?&raster:nullptr);
                 const auto camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
                 const auto output=previous?table->compose(video,*previous,state.table_code,camera,ram,timed?&raster:nullptr):std::nullopt;
                 const auto presented=hold.present(output,video.frame,state.table_code,camera,ram);
