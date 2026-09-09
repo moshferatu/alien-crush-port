@@ -121,6 +121,39 @@ int main(int argc,char** argv) {
             if(n==399) {
                 auto dormant=assets::inactive_table_actor_ram(ram);
                 const auto original=dormant;
+                // A visible skull saved when the ball falls to the lower half
+                // must consume the pending reset visually, before revisiting it.
+                auto skull=original;
+                unsigned skull_slot=64;
+                for(unsigned a=4;a<64;++a) if(skull[0x1500+a]==std::byte{14}) skull_slot=a;
+                require(skull_slot<64,"Upper table fixture lacks skull guard");
+                skull[0x1540+skull_slot]=std::byte{0x88};
+                skull[0x1840+skull_slot]=std::byte{2};
+                auto event_ram=last_ram;std::copy(ram.begin(),ram.end(),event_ram.begin());
+                event_ram[0x70]&=std::byte{0xfd};
+                const auto visible_skull=skull;
+                const auto visible_pieces=assets::assemble_table_actors(actors,skull);
+                require(std::any_of(visible_pieces.begin(),visible_pieces.end(),[&](const auto& p){return p.actor==skull_slot;}),
+                    "Skull reset fixture never displayed the skull");
+                assets::apply_inactive_table_events(skull,event_ram,1);
+                require(skull==visible_skull,"Skull disappeared without a drain reset");
+                event_ram[0x70]|=std::byte{2};const auto event_before=event_ram;
+                assets::apply_inactive_table_events(skull,event_ram,0);
+                require(skull==visible_skull,"Upper skull reset affected lower projection");
+                assets::apply_inactive_table_events(skull,event_ram,1);
+                require(skull[0x1840+skull_slot]==std::byte{} && skull[0x1540+skull_slot]==std::byte{0xe8},
+                    "Drained skull remained visible in dormant upper bank");
+                require(event_ram==event_before,"Presentation consumed real pending skull reset");
+                const auto pieces=assets::assemble_table_actors(actors,skull);
+                require(std::none_of(pieces.begin(),pieces.end(),[&](const auto& p){return p.actor==skull_slot;}),
+                    "Reset skull still emits sprites");
+                for(unsigned field=0;field<32;++field)
+                    std::copy_n(visible_skull.begin()+0x1504+field*64,60,event_ram.begin()+0x204+field*64);
+                event_ram[0x70]&=std::byte{0xfd};
+                const auto before_drain=table->inactive_view(1,event_ram);
+                event_ram[0x70]|=std::byte{2};
+                const auto after_drain=table->inactive_view(1,event_ram);
+                require(before_drain.pixels!=after_drain.pixels,"Inactive skull reset did not reach rendered table");
                 require(ram[0x79]==std::byte{},"Initial orb check requires lower half");
                 require(std::count(dormant.begin()+0x1504,dormant.begin()+0x1540,std::byte{19})==0,"Initial fixture already has brain orbs");
                 actors.seed_brain_orbs(dormant,0);require(dormant==original,"Lower half seeded upper orbs");
@@ -217,7 +250,7 @@ int main(int argc,char** argv) {
                 }
                 auto paused_table=std::make_unique<render::TablePlayfield>(rom);
                 std::array<std::byte,8192> paused_ram;
-                std::copy(ram.begin(),ram.end(),paused_ram.begin());paused_ram[0x53]|=std::byte{0x80};
+                std::copy(ram.begin(),ram.end(),paused_ram.begin());paused_ram[0xf6]|=std::byte{2};
                 auto paused_video=video,paused_previous=video;--paused_previous.frame;
                 render::TableTransitionHold paused_hold;
                 std::optional<render::Image> paused_image;
@@ -232,6 +265,46 @@ int main(int argc,char** argv) {
                 const auto cold=cold_table->cabinet_frame(video,nullptr,ram,&raster,cold_hold);
                 const auto reset=paused_table->cabinet_frame(video,nullptr,ram,&raster,paused_hold);
                 require(cold && reset && cold->pixels==reset->pixels,"Cold view retained stale animation history");
+                // Exercise the real Run pause path, including original active
+                // actor scheduling, rather than relying only on a synthetic flag.
+                const auto checkpoint=runtime->save();
+                auto real_pause_table=std::make_unique<render::TablePlayfield>(rom);
+                render::TableTransitionHold real_pause_hold;
+                auto real_previous=video;
+                std::optional<render::Image> frozen;
+                std::array<std::byte,8192> frozen_ram{};
+                for(unsigned tick=0;tick<40;++tick) {
+                    runtime->advance({static_cast<std::uint16_t>(tick==0?Pad::run:0),0});
+                    const auto paused=runtime->video_snapshot();const auto state=runtime->work_ram();
+                    const render::TableRaster paused_raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
+                    const auto rendered=real_pause_table->cabinet_frame(paused,&real_previous,state,&paused_raster,real_pause_hold);
+                    require((state[0xf6]&std::byte{2})!=std::byte{},"Real Run did not pause");
+                    require(rendered.has_value(),"Real pause lost stitched table");
+                    if(tick>=4) {
+                        if(frozen) {
+                            require(std::equal(state.begin()+0x1500,state.begin()+0x1d00,frozen_ram.begin()+0x1500),
+                                "Original game actors animate during pause");
+                            if(rendered->pixels!=frozen->pixels) {
+                                preview(*frozen,"pause-before");preview(*rendered,"pause-after");
+                                throw std::runtime_error("Table pixels changed during real pause at tick "+std::to_string(tick));
+                            }
+                        }
+                        frozen=rendered;std::copy(state.begin(),state.end(),frozen_ram.begin());
+                    }
+                    real_previous=paused;
+                }
+                bool resumed_motion=false;
+                for(unsigned tick=0;tick<60;++tick) {
+                    runtime->advance({static_cast<std::uint16_t>(tick==0?Pad::run:0),0});
+                    const auto resumed=runtime->video_snapshot();
+                    const render::TableRaster resumed_raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
+                    const auto rendered=real_pause_table->cabinet_frame(resumed,&real_previous,runtime->work_ram(),&resumed_raster,real_pause_hold);
+                    if(rendered && rendered->pixels!=frozen->pixels) resumed_motion=true;
+                    real_previous=resumed;
+                }
+                require(resumed_motion && (runtime->work_ram()[0xf6]&std::byte{2})==std::byte{},
+                    "Unpause did not resume table animation");
+                runtime->restore(checkpoint);
             }
             if(image && (n==399 || n==419 || n==999 || n==1019 || (n>=1399 && n<=1406))) {
                 preview(*image,std::to_string(n+1));

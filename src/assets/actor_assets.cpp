@@ -44,6 +44,18 @@ std::array<std::byte,8192> inactive_table_actor_ram(std::span<const std::byte> r
     result[0x2f]=std::byte{2}; result[0x50]=std::byte{10};
     return result;
 }
+void apply_inactive_table_events(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half) {
+    if(projected.size()!=8192 || live.size()!=8192 || half>1)
+        throw std::runtime_error("Invalid inactive table event projection");
+    // Leaving the upper table sets $70 bit 1 (03:8A24..8A26). The skull
+    // (type 14) consumes it at 02:643C..644B on its next active update.
+    // Display that reset immediately without consuming the real pending bit.
+    if(half!=1 || (live[0x70]&std::byte{2})==std::byte{}) return;
+    for(unsigned x=4;x<64;++x) if(projected[0x1500+x]==std::byte{14}) {
+        projected[0x1840+x]=std::byte{};
+        projected[0x1540+x]|=std::byte{0x60};
+    }
+}
 std::array<TableSprite,10> assemble_table_hud(std::uint32_t score_points,unsigned ball_counter) {
     if(score_points>999999900 || score_points%100 || ball_counter<1 || ball_counter>10)
         throw std::runtime_error("HUD requires settled main-table score and ball counter");

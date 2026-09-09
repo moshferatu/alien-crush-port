@@ -143,6 +143,7 @@ Image TablePlayfield::inactive_view(unsigned table,std::span<const std::byte> ra
     std::span<std::uint8_t> blockers,std::span<const std::uint16_t> palette) const {
     if(table>1) throw std::runtime_error("Unknown inactive table");
     auto projected=assets::inactive_table_actor_ram(ram);
+    assets::apply_inactive_table_events(projected,ram,table);
     projected[0x79]=static_cast<std::byte>(table);
     for(const auto address:{0x53,0x54,0x99,0x9a}) projected[address]=ram[address];
     auto vram=tables_[table].vram;
@@ -185,6 +186,14 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
     if(half>1 || scene.title_menu || scene.high_score_menu) {
         transition.reset();animation_half_=2;return std::nullopt;
     }
+    // The original pause stops actor scripts but its video/palette machinery
+    // still runs. Freeze the complete cabinet image, including palette pulses.
+    // Keep the private clock current so resume continues the saved visual phase.
+    if((std::to_integer<unsigned>(ram[0xf6])&2) && previous &&
+        current.frame==animation_frame_+1 && animation_half_==1-half && cabinet_image_) {
+        animation_frame_=current.frame;
+        return cabinet_image_;
+    }
     // Maintain a private visual bank. A frame is advanced only once even if the
     // host requests both the regular image and a clean ball backdrop. Loading a
     // state, changing scenes or receiving a new dormant bank reseeds it.
@@ -198,10 +207,12 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
         actors_.seed_brain_orbs(animation_actors_,1-half);
         animation_half_=1-half;
     } else if(current.frame==animation_frame_+1 &&
+        !(std::to_integer<unsigned>(ram[0xf6])&2) &&
         !(std::to_integer<unsigned>(ram[0x53])&0x80) && !(std::to_integer<unsigned>(ram[0x54])&0x80)) {
         actors_.advance_animation(animation_actors_);
     }
     animation_frame_=current.frame;
+    assets::apply_inactive_table_events(animation_actors_,ram,1-half);
     actors_.mirror_flippers(animation_actors_,ram,1-half);
     std::array<std::byte,8192> visual_ram;
     std::copy(ram.begin(),ram.end(),visual_ram.begin());

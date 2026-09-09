@@ -48,6 +48,8 @@ std::vector<ActorSprite> assemble_table_actors(const ActorAssets& assets,std::sp
 // Presentation-only projection of the inactive bank swapped by 01:46FD..4740.
 // Slots 0..3 (including the ball) remain absent. Never writes runtime RAM.
 std::array<std::byte,8192> inactive_table_actor_ram(std::span<const std::byte> ram);
+// Apply pending gameplay invalidations to a private dormant actor projection.
+void apply_inactive_table_events(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half);
 // Background actor types 7/20 explicitly redraw on table return (RAM 68 bit 1).
 // Accepts active-layout RAM, including a presentation projection of the stored bank.
 // Other actors can retain stale descriptors and are deliberately excluded.

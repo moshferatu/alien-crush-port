@@ -1,5 +1,21 @@
 # Progress
 
+Cabinet pause and upper skull reset (2026-09-09):
+
+- Cabinet animation now recognizes the original pause flag (RAM F6 bit 1).
+  Holds the complete stitched image during pause, including palette effects,
+  and preserves the private animation phase through resume. Original actor
+  scripts stop during Run pause; video/palette activity can still change pixels.
+- Projects the upper skull's pending drain reset (RAM 70 bit 1) immediately.
+  Type 14 now receives the visual fields from 02:643C..644B in the private
+  inactive bank, instead of waiting for the next upper-table visit. Runtime RAM
+  and its pending event remain untouched.
+- Regression covers real Run pause/resume, frozen actor state and table pixels,
+  visible/hidden skull sprite and image output, half/event isolation, and 1,800
+  unchanged RAM/video/audio replay frames. Graphics, cabinet controls and
+  inactive animation pass; table replay also passed during the initial check.
+  Logs: out/build-pause-skull.log and out/test-pause-skull-final.log.
+
 Enter launch/pause ownership (2026-09-09):
 
 - Fixed Enter becoming Run/Pause at full charge. Host input had reused the
