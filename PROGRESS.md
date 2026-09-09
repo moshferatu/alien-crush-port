@@ -1,5 +1,30 @@
 # Progress
 
+Inactive cabinet animation (2026-09-09):
+
+- Cabinet rendering now continues recognized in-progress ROM actor animation
+  sequences on a private copy of the dormant bank, using FD35's fixed-point
+  reflection and FD8F/FDA8's frame selection. Idle collision-triggered actors
+  remain idle; positions, scores, collision flags and real actor RAM are untouched.
+- Both pairs of flippers follow the live controls through their distinct four-pose
+  ROM sequences at 04:BEAF..BEBE. Shared palette entries follow live color cycling;
+  table-specific base colors and recovered fade phases retain their own palettes.
+- Presentation advances once per game frame, pauses with the game and reseeds on
+  scene/half changes, changed source banks, frame discontinuities or cold views.
+  Repeated requests use a cached cabinet image, including during seam holds.
+- Compared Devil's Crush's retained actor phase refresh in pce_sprite_overlay.cpp
+  and its SeededActorTracker in app/main.cpp. DC has live off-camera phases;
+  Alien's swapped bank is frozen, requiring a separate cosmetic continuation.
+- Verification: 397 lower and 632 upper inactive-half image changes while the
+  corresponding real bank stayed frozen; 1,800 RAM/video/audio fingerprints match
+  a run without presentation. Synthetic checks cover ROM oscillator endpoints
+  and all 16 flipper pose mappings, paused presentation, cold-view reset and
+  repeated rendering. Visually inspected out/inactive-animation.png.
+- Eight focused Release checks passed (97.83 s), covering cabinet fades, awards,
+  original replay and native seam crossings; three core Debug checks passed.
+  Final warning-free builds passed the animation and host seam checks again
+  (16.88 s), plus all three Debug checks.
+
 Cabinet presentation fixes (2026-09-09):
 
 - `--cabinet` now always stitches the main table. Removed the host `--stitched`

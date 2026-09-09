@@ -172,9 +172,40 @@ Image TablePlayfield::inactive_view(unsigned table,std::span<const std::byte> ra
 std::optional<Image> TablePlayfield::cabinet_frame(const diagnostics::ReferenceSnapshot& current,
     const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram,
     const TableRaster* raster,TableTransitionHold& transition) const {
+    if(previous && current.frame==cabinet_frame_number_) return cabinet_image_;
+    cabinet_image_=cabinet_frame_impl(current,previous,ram,raster,transition);
+    cabinet_frame_number_=current.frame;
+    return cabinet_image_;
+}
+std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::ReferenceSnapshot& current,
+    const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram,
+    const TableRaster* raster,TableTransitionHold& transition) const {
     const auto scene=diagnostics::observe_alien_state(ram);
     const unsigned half=scene.table_code;
-    if(half>1 || scene.title_menu || scene.high_score_menu) {transition.reset();return std::nullopt;}
+    if(half>1 || scene.title_menu || scene.high_score_menu) {
+        transition.reset();animation_half_=2;return std::nullopt;
+    }
+    // Maintain a private visual bank. A frame is advanced only once even if the
+    // host requests both the regular image and a clean ball backdrop. Loading a
+    // state, changing scenes or receiving a new dormant bank reseeds it.
+    const bool reseed=!previous || animation_half_!=1-half ||
+        (current.frame!=animation_frame_ && current.frame!=animation_frame_+1) ||
+        !std::equal(ram.begin()+0x204,ram.begin()+0xa00,animation_source_.begin()+0x204);
+    if(reseed) {
+        std::copy(ram.begin(),ram.end(),animation_source_.begin());
+        animation_actors_=assets::inactive_table_actor_ram(ram);
+        animation_half_=1-half;
+    } else if(current.frame==animation_frame_+1 &&
+        !(std::to_integer<unsigned>(ram[0x53])&0x80) && !(std::to_integer<unsigned>(ram[0x54])&0x80)) {
+        actors_.advance_animation(animation_actors_);
+    }
+    animation_frame_=current.frame;
+    actors_.mirror_flippers(animation_actors_,ram,1-half);
+    std::array<std::byte,8192> visual_ram;
+    std::copy(ram.begin(),ram.end(),visual_ram.begin());
+    for(unsigned field=0;field<32;++field)
+        std::copy_n(animation_actors_.begin()+0x1504+field*64,60,visual_ram.begin()+0x204+field*64);
+    ram=visual_ram;
     const unsigned camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
     std::optional<Image> live;
     std::optional<TableBallBackdrop> backdrop;
@@ -310,10 +341,19 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
     } else live=render::compose(current.vram,current.palette,sat,{256,240,0,0,0,0xc0},live_sprites,active_blocks,hidden);
     std::vector<std::uint8_t> inactive_blocks(coverage?256*240:0);
     std::span<const std::uint16_t> inactive_palette;
+    auto animated_palette=tables_[1-table].palette;
     if(cabinet) {
         const auto fade=std::find(partial_fades_[table].begin(),partial_fades_[table].end(),current.palette);
         if(fade!=partial_fades_[table].end())
             inactive_palette=partial_fades_[1-table][static_cast<std::size_t>(fade-partial_fades_[table].begin())];
+        else {
+            // Shared palette entries carry the game's live color cycles even
+            // when their artwork belongs to the dormant half. Do not transfer
+            // colors between unrelated table-specific palette entries.
+            for(unsigned i=0;i<512;++i)
+                if(tables_[table].palette[i]==animated_palette[i]) animated_palette[i]=current.palette[i];
+            inactive_palette=animated_palette;
+        }
     }
     const auto inactive=inactive_view(1-table,ram,inactive_sprites,inactive_blocks,inactive_palette);
     if(coverage) {

@@ -96,6 +96,70 @@ std::vector<ActorPiece> decode_actor_pieces(std::span<const std::byte> data) {
 ActorAssets::ActorAssets(std::span<const std::byte> image) {
     if(!rom::matches_supported_rom(image.size(),rom::compute_digests(image))) throw std::runtime_error("Unsupported ROM for actor extraction");
     std::copy_n(image.begin()+0x2c000,banks_.size(),banks_.begin());
+    std::copy_n(image.begin()+0x8000,sequences_.size(),sequences_.begin());
+}
+void ActorAssets::mirror_flippers(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half) const {
+    if(projected.size()!=8192 || live.size()!=8192 || half>1) throw std::runtime_error("Invalid flipper projection");
+    // 01:4B29..4B76 selects four four-pose sequences. The active flippers
+    // already follow the actual controls, including press, hold and release.
+    for(unsigned x=4;x<64;++x) {
+        const auto type=std::to_integer<unsigned>(projected[0x1500+x]);
+        if(type!=2 && type!=3) continue;
+        const unsigned target=0x1eaf+(type-2)*8+half*4;
+        for(unsigned a=4;a<64;++a) {
+            if(live[0x1500+a]!=projected[0x1500+x]) continue;
+            const auto active_half=std::to_integer<unsigned>(live[0x79]);
+            if(active_half>1) break;
+            const unsigned source=0x1eaf+(type-2)*8+active_half*4;
+            for(unsigned pose=0;pose<4;++pose) if(live[0x1800+a]==sequences_[source+pose]) {
+                projected[0x1800+x]=sequences_[target+pose];break;
+            }
+            break;
+        }
+    }
+}
+void ActorAssets::advance_animation(std::span<std::byte> ram) const {
+    if(ram.size()!=8192) throw std::runtime_error("Animation requires private 8192-byte actor RAM");
+    auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+    auto put=[&](unsigned p,unsigned v){ram[p]=static_cast<std::byte>(v&255);};
+    for(unsigned x=4;x<64;++x) {
+        const auto type=b(0x1500+x),count=b(0x1a40+x);
+        // Continue an animation already in progress. Collision-triggered actors
+        // at rest stay at rest; the ball and launcher never enter this path.
+        if(type<7 || type>90 || !b(0x1840+x) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
+        unsigned step=b(0x1b80+x)|(b(0x1bc0+x)<<8);
+        unsigned phase=b(0x1c00+x)|(b(0x1c40+x)<<8);
+        if(!step || (phase>>8)>count || ((phase>>8)==count && !(step&0x8000))) continue;
+        const auto pointer=std::to_integer<unsigned>(sequences_[0x1df7+type-1])|
+            (std::to_integer<unsigned>(sequences_[0x1e51+type-1])<<8);
+        if(pointer<0xa000 || pointer+count>0xc000) continue;
+        const auto sequence=std::span(sequences_).subspan(pointer-0xa000,count);
+        // Some actor tables contain movement data instead of sprite descriptors.
+        // Accept only a sequence containing the actual saved visual selection.
+        const bool patterns=type==26 || type==27;
+        const unsigned output=(patterns?0x1a80:0x1800)+x;
+        if(std::find(sequence.begin(),sequence.end(),ram[output])==sequence.end()) continue;
+        bool valid=true;
+        for(const auto entry:sequence) {
+            const auto id=std::to_integer<std::uint8_t>(entry);
+            if(patterns) {if(id>=17) valid=false;}
+            else {
+                try { if(type==7 || type==20) (void)background(id); else (void)pieces(id); }
+                catch(const std::runtime_error&) {valid=false;}
+            }
+        }
+        if(!valid) continue;
+        // Exact fixed-point reflection from 00:FD35..FD8E, including its
+        // asymmetric endpoints and byte wrapping. Only visual fields change.
+        phase=(phase+step)&65535;
+        if(!(step&0x8000)) {
+            if((phase>>8)==count) {step=(65536-step)&65535;phase=(phase-256)&0xff00;}
+        } else if((phase>>8)==0 || (phase&0x8000)) {step=(65536-step)&65535;phase=0;}
+        if((phase>>8)>=count) continue;
+        put(0x1b80+x,step);put(0x1bc0+x,step>>8);
+        put(0x1c00+x,phase);put(0x1c40+x,phase>>8);
+        ram[output]=sequence[phase>>8];
+    }
 }
 std::vector<ActorPiece> ActorAssets::pieces(std::uint8_t id,unsigned first_slot) const {
     const auto address=std::to_integer<unsigned>(banks_[0x24b+id])|(std::to_integer<unsigned>(banks_[0x34b+id])<<8);

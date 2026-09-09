@@ -61,6 +61,14 @@ class TablePlayfield {
     std::array<assets::TableIndicator,29> indicators_;
     assets::LowerCounterTiles counter_;
     std::array<std::vector<std::array<std::uint16_t,512>>,2> partial_fades_;
+    mutable std::array<std::byte,8192> animation_source_{},animation_actors_{};
+    mutable std::uint64_t animation_frame_{};
+    mutable unsigned animation_half_{2};
+    mutable std::uint64_t cabinet_frame_number_{~std::uint64_t{0}};
+    mutable std::optional<Image> cabinet_image_;
+    std::optional<Image> cabinet_frame_impl(const diagnostics::ReferenceSnapshot& current,
+        const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram,
+        const TableRaster* raster,TableTransitionHold& transition) const;
     bool matches(const diagnostics::ReferenceSnapshot&,unsigned table) const;
     std::optional<Image> compose_impl(const diagnostics::ReferenceSnapshot& current,
         const diagnostics::ReferenceSnapshot& previous,unsigned table,unsigned camera,

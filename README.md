@@ -200,9 +200,12 @@ Cabinet mode always uses the 256×456 full-table view. The former host
 `--stitched` option and V view toggle have been removed. Both backgrounds
 come from your ROM; the active half has live sprites and background changes,
 with standard score digits removed. The original pixel aspect ratio is preserved.
-The inactive half renders stored actors and flippers over its ROM background,
-preserving their last poses without advancing their animation or physics. The
-ball appears only on the active half. Persistent indicator colors and each half's
+The inactive half keeps shared palette cycles live, mirrors the actual flipper
+poses through each half's ROM frame tables, and continues recognized in-progress
+sprite animation sequences in a private visual bank. Actor positions, collisions
+and scoring still follow the original game; idle collision-triggered objects stay
+at rest. Animation pauses with the game and reseeds after a table change, scene
+change or quick load. The ball appears only on the active half. Persistent indicator colors and each half's
 table overlay are restored from game state, as is the lower table's seven-variant
 counter graphic and the two large background actors that redraw when a table
 is restored. Other inactive background changes
