@@ -1,5 +1,27 @@
 # Progress
 
+Cabinet publish workflow (2026-09-09):
+
+- Added tools/Publish-Cabinet.ps1 based on the Devil's Crush publisher. Builds
+  the existing static windows-cabinet preset and installs only the new Runtime
+  component to a temporary stage before updating the sibling alien-crush-cabinet
+  folder. Supports Destination, RomPath, SkipBuild and CMakePath; discovers Visual
+  Studio's CMake and works from other working directories.
+- Package includes the executable, validated/default-named ROM, licenses,
+  README, Launch-Cabinet.cmd, CABINET-SETUP.txt and shared Syncthing ignore rules.
+  Preserves destination files, portable-data, hidden .stignore attributes and
+  custom ignore rules. Rejects workspace children/ancestors and drive roots.
+  Cleans only its verified temporary staging directory.
+- Documented device-local .stignore behavior: exclusions must be configured on
+  both computers before the initial sync. Cabinet layout, bindings, artwork and
+  states are excluded; no Syncthing configuration was changed by this work.
+- Built and published D:/Workspace/alien-crush-cabinet. Verified the published
+  launcher with SDL dummy video/audio, repeated publishing from another working
+  directory, paths with spaces, renamed ROM input, local-settings/custom-ignore
+  preservation, BOM-free ignore encoding and destination rejection checks.
+  dumpbin /dependents shows only Windows system DLLs (no SDL or VC runtime DLL).
+  Build/publish log: out/publish-cabinet.log.
+
 Cabinet ball numbering and animated backglass (2026-09-09):
 
 - DMD now maps the ordinary three-ball reserve 3/2/1 to BALL 1/2/3,

@@ -22,6 +22,46 @@ cmake --build --preset windows-release
 ctest --preset windows-release
 ```
 
+## Publish to the cabinet
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\Publish-Cabinet.ps1
+```
+
+Builds the static `windows-cabinet` Release executable and publishes to
+`D:\Workspace\alien-crush-cabinet` (a sibling of your checkout). Use
+`-Destination 'E:\Syncthing\Alien Crush'` to choose another folder, `-RomPath`
+for a differently located ROM, or `-SkipBuild` to publish the existing cabinet
+build. The script finds CMake on PATH or through Visual Studio; `-CMakePath`
+overrides discovery. It works from any current directory.
+
+The package includes the executable, ROM, licenses, documentation and
+`Launch-Cabinet.cmd`. SDL and the Microsoft runtime are linked statically.
+Run the launcher on the cabinet, or configure your frontend to launch
+`alien-crush.exe --cabinet`. Close the game before syncing an executable update.
+Republishing preserves local settings and other files in the destination.
+
+Point Syncthing at **only the published folder**. Before the first sync, add
+the following Ignore Patterns on **both computers**:
+
+```text
+/portable-data
+/logs
+/captures
+/traces
+*.state
+*.acrec
+```
+
+The script creates the workstation's `.stignore`, retaining existing custom
+rules and including the packaged `syncthing-ignore.txt`. Once that file exists
+on the cabinet, `#include syncthing-ignore.txt` can replace the patterns above.
+[Syncthing does not sync `.stignore` itself](https://docs.syncthing.net/users/ignoring.html),
+so set up the cabinet's exclusions separately. `CABINET-SETUP.txt` in the package
+contains these instructions. Monitor layouts, input/plunger bindings, custom
+backglass artwork and quick states under `portable-data` stay machine-local;
+copy any desired bindings or artwork to the cabinet manually once.
+
 ## Play
 
 ```powershell
