@@ -301,7 +301,30 @@ std::optional<Image> TablePlayfield::cabinet_frame(const diagnostics::ReferenceS
     const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram,
     const TableRaster* raster,TableTransitionHold& transition) const {
     if(previous && current.frame==cabinet_frame_number_) return cabinet_image_;
+    const bool frozen=cabinet_image_ && previous && (std::to_integer<unsigned>(ram[0xf6])&2) &&
+        current.frame==animation_frame_+1 && animation_half_==1-std::to_integer<unsigned>(ram[0x79]);
     cabinet_image_=cabinet_frame_impl(current,previous,ram,raster,transition);
+    const auto state=diagnostics::observe_alien_state(ram);
+    if(!frozen && cabinet_image_ && state.match_visible && (current.control&0xc0)==0xc0) {
+        // 03:831A..8342 writes these directly to reserved SAT slots, outside
+        // the ordinary actor assembler. Keep them above the stitched table,
+        // using live state and the match artwork loaded by the game (which
+        // differs from the normal HUD font).
+        std::array<std::uint16_t,256> digits_sat{};
+        for(unsigned i=0;i<3;++i) {
+            digits_sat[i*4+2]=static_cast<std::uint16_t>(40+(i==0?state.match_digit*2:0));
+            digits_sat[i*4+3]=0x8f;
+        }
+        const auto digits=render::sprites(current.vram,current.palette,digits_sat,0);
+        const unsigned y=112+(state.table_code==0?table_half_offset:0);
+        for(unsigned i=0;i<3;++i) {
+            const auto& digit=digits[i].image;
+            for(unsigned row=0;row<16;++row) for(unsigned col=0;col<16;++col) {
+                const auto color=digit.pixels[row*16+col];
+                if(color>>24) cabinet_image_->pixels[(y+row)*256+136+i*16+col]=color;
+            }
+        }
+    }
     cabinet_frame_number_=current.frame;
     return cabinet_image_;
 }

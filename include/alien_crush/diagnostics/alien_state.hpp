@@ -16,6 +16,8 @@ struct AlienState {
     bool bonus_round_over{}; // FDDF exits bonus loop on RAM 78 bit 0.
     bool bonus_cleared{}; // Results routine 1F:9736 sets RAM 85 bit 0 after evaluating targets.
     bool game_over{}; // 01:410F sets RAM 78 bit 1 after the final ordinary ball is consumed.
+    bool match_visible{}; // Type 43 actions 2..4 own the last-chance digit sprites.
+    std::uint8_t match_digit{}; // Hundreds digit; the two trailing digits are zero.
     bool high_score_menu{}; // Verified pause viewer and practice game-end score calls; presentation only.
 };
 // Diagnostics/presentation only: not a gameplay-validity or bridge-write gate.

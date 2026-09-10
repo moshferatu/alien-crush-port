@@ -179,6 +179,7 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
     auto put=[&](unsigned p,unsigned v){ram[p]=static_cast<std::byte>(v&255);};
     for(unsigned x=4;x<64;++x) {
         const auto type=b(0x1500+x),count=b(0x1a40+x);
+        if(type==43) continue; // Last-chance spin/result belongs to live gameplay.
         // 02:6FA3..700A / 70C5..7225: indicators open once, hold while their group
         // is enabled, then close once. They are not continuous oscillators.
         if(type==42 || (type>=45 && type<=47)) {

@@ -7,8 +7,8 @@
 namespace alien_crush::render {
 namespace {
 // Five-bit rows. Labels are host UI, not claimed as cartridge font assets.
-constexpr std::string_view letters="SCOREHIGBALPUNDMV";
-constexpr std::array<std::array<unsigned,7>,17> labels{{
+constexpr std::string_view letters="SCOREHIGBALPUNDMVT";
+constexpr std::array<std::array<unsigned,7>,18> labels{{
     {15,16,16,14,1,1,30},{14,17,16,16,16,17,14},
     {14,17,17,17,17,17,14},{30,17,17,30,20,18,17},
     {31,16,16,30,16,16,31},{17,17,17,31,17,17,17},
@@ -16,7 +16,8 @@ constexpr std::array<std::array<unsigned,7>,17> labels{{
     {30,17,17,30,17,17,30},{14,17,17,31,17,17,17},
     {16,16,16,16,16,16,31},{30,17,17,30,16,16,16},
     {17,17,17,17,17,17,14},{17,25,25,21,19,19,17},
-    {30,17,17,17,17,17,30},{17,27,21,21,17,17,17},{17,17,17,17,17,10,4}}};
+    {30,17,17,17,17,17,30},{17,27,21,21,17,17,17},{17,17,17,17,17,10,4},
+    {31,4,4,4,4,4,4}}};
 void label(Image& image,std::string_view text,int x,int y) {
     for(const char c:text) {
         if(c==' ') {x+=6;continue;}
@@ -46,8 +47,9 @@ ScorePanel ScorePanel::from_rom(std::span<const std::byte> rom) {
 }
 Image ScorePanel::compose(const diagnostics::AlienState& state) const {
     Image result{256,96,std::vector<std::uint32_t>(256*96,0xff000000)};
-    auto number=[&](std::uint32_t value,int center,int y,int scale) {
-        const auto text=std::to_string(value);
+    auto number=[&](std::uint32_t value,int center,int y,int scale,unsigned places=0) {
+        auto text=std::to_string(value);
+        if(text.size()<places) text.insert(0,places-text.size(),'0');
         const auto width=(static_cast<int>(text.size())-1)*10*scale+16*scale;
         int x=center-width/2;
         for(const char c:text) {
@@ -77,7 +79,11 @@ Image ScorePanel::compose(const diagnostics::AlienState& state) const {
     const auto heading=state.game_over?"GAME OVER":state.bonus_cleared?"BONUS CLEAR":state.bonus_round_over?"ROUND OVER":"SCORE";
     label(result,heading,state.game_over?101:state.bonus_cleared?95:state.bonus_round_over?98:113,6);
     number(state.score_points,128,18,2);
-    label(result,"HIGH",77,61);number(state.high_scores[0],88,73,1);
+    if(state.match_visible) {
+        label(result,"MATCH",74,61);number(state.match_digit*100u,88,73,1,3);
+    } else {
+        label(result,"HIGH",77,61);number(state.high_scores[0],88,73,1);
+    }
     label(result,state.bonus_room?"BONUS":"BALL",state.bonus_room?202:205,61);
     // Three-ball game: 3/2/1 remaining becomes BALL 1/2/3. Keep BALL 3
     // during the final drain/results, and bound extra-ball reserves at BALL 1.

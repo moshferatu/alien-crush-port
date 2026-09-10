@@ -42,6 +42,7 @@ int main(int argc,char** argv) {
         std::vector<std::uint32_t> final_pixels;
         std::vector<std::int16_t> final_audio;
         unsigned drops=0,game_over_frames=0,awarded_frames=0,returned_stitched=0,stitched_frames=0;
+        unsigned match_frames=0,match_values=0;
         bool launched=false;
         std::uint8_t last_ball=3;
         constexpr std::array<unsigned,3> drop_frames{2845,3760,4785};
@@ -51,6 +52,11 @@ int main(int argc,char** argv) {
             const std::vector<std::int16_t> audio(frame.stereo.begin(),frame.stereo.end());
             const auto ram=runtime->work_ram();
             const auto state=diagnostics::observe_alien_state(ram);
+            if(state.match_visible) {
+                ++match_frames;match_values|=1u<<state.match_digit;
+                if(n+1>=4874) require(state.match_digit==7,"Winning match holds the score's hundreds digit");
+            }
+            if(n>=5310) require(!state.match_visible,"Match display clears before resumed play");
             require(!state.demo_play && ram[0x7c]==std::byte{},"Ordinary drains remain outside practice and demo");
             if(state.ball_counter<last_ball) {
                 require(drops<drop_frames.size() && n+1==drop_frames[drops] && state.ball_counter+1==last_ball,"Original ball consumption boundaries");
@@ -59,7 +65,11 @@ int main(int argc,char** argv) {
             require(state.game_over==(n+1>=4785 && n+1<4874),"Final-ball match presentation boundaries");
             game_over_frames+=state.game_over;
             if(n>=4664 && n<5311) require(state.score_points==21700,"Match preserves the 21,700-point score");
-            if(n==4899) preview=panel.compose(state);
+            if(n==4899) {
+                preview=panel.compose(state);
+                auto zero=state;zero.match_digit=0;
+                require(panel.compose(zero).pixels!=preview.pixels,"ROM DMD artwork distinguishes winning 700 from 000");
+            }
             require(!state.title_menu,"Winning match resumes without returning to title");
             const bool awarded=(std::to_integer<unsigned>(ram[0x78])&8)!=0;
             require(awarded==(n+1>=4874 && n+1<5311),"Original match-award interval");
@@ -100,6 +110,8 @@ int main(int argc,char** argv) {
             if(n==5699) {final_ram.assign(ram.begin(),ram.end());final_pixels=pixels;final_audio=audio;}
         }
         require(drops==3 && game_over_frames==89 && awarded_frames==437 && returned_stitched>0 && launched,"Three drains, successful match and resumed stitched ball movement covered");
+        require(match_frames>437 && (match_values&(match_values-1)),"Match digits spin and remain visible through the award");
+        require(cabinet_check.verified_match_frames>400,"Winning match sprites compared against original artwork");
         if(timed) require(stitched_frames>0,"Last-ball route exercises stitched rendering");
         runtime->restore(ending.initial);
         for(unsigned i=0;i<ending.inputs.size();++i) {

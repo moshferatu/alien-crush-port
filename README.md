@@ -136,7 +136,10 @@ rearm cabinet controls, cancelling an owned analog draw before gameplay resumes.
 The score window uses the original game digits for score, high score and ball
 counter in a fixed layout with sharp scaling and black borders. Digit size stays
 stable as values grow. The three-ball DMD counts up: BALL 1, BALL 2, BALL 3,
-retaining BALL 3 through the final drain. During the title and selection menus it shows the high
+retaining BALL 3 through the final drain. During the last-chance extra-ball spin,
+the playfield displays the original three match digits and the DMD replaces its
+high-score field with MATCH and the same value, including a stopped result.
+During the title and selection menus it shows the high
 score and a "PRESS RUN" prompt, hiding the inactive score and ball counter.
 Attract-mode demos show the same high score and prompt with a "DEMO" label;
 simulated scores and ball counts stay hidden. Run returns to the original menus.

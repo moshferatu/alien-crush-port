@@ -1,5 +1,25 @@
 # Progress
 
+Last-chance match digits (2026-09-10):
+
+- Recovered type 43 actions 2..4: 03:831A..8342 draws three reserved SAT
+  digits outside normal actor assembly. Cabinet SAT reconstruction omitted
+  them, and ordinary HUD suppression would hide their patterns as well.
+- Render the live hundreds digit and two zeroes above the cabinet table at
+  the original position, using the game's loaded match font and palette.
+  Keep type 43 out of private cosmetic animation. Spin, stopped result and
+  extra-ball award all follow actual RAM, including removal at action 5.
+- DMD replaces its high-score footer with MATCH and the same three digits,
+  including 000, while preserving the final score. Menus take precedence.
+- Tests compare cabinet pixels with original reserved SAT artwork on both
+  winning and losing replays, cover all ten DMD values and visibility states,
+  and retain exact gameplay/video/audio restore checks. Inspected playfield
+  cabinet-previews/4860.bmp and the match-smoke score-panel preview.
+- Release build and all seven targeted tests passed, including animation,
+  continuous handoff and cabinet smoke. Logs: out/build-match-digits.log and
+  out/test-match-digits-final.log. Published D:\Workspace\alien-crush-cabinet
+  with tools/Publish-Cabinet.ps1 (out/publish-match-digits.log).
+
 Red-eye palette startup flash (2026-09-10):
 
 - Traced the white flash to frame 364: lower palette script 18 starts at phase

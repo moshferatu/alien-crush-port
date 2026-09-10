@@ -86,11 +86,34 @@ int main() {
             const auto game_over=panel.compose(state);
             require(game_over.pixels!=playing.pixels,"Game-over heading is visible");
             require(std::equal(game_over.pixels.begin()+18*256,game_over.pixels.end(),playing.pixels.begin()+18*256),"Game over retains final score and lower fields");
+            state.match_visible=true;
+            for(unsigned digit=0;digit<10;++digit) {
+                state.match_digit=static_cast<std::uint8_t>(digit);
+                const auto match=panel.compose(state);
+                require(match.pixels[74*256+70]==0xff100000+digit &&
+                    match.pixels[74*256+80]==0xff100000 && match.pixels[74*256+90]==0xff100000,
+                    "DMD shows every match digit followed by two zeroes, including 000");
+                require(std::equal(match.pixels.begin(),match.pixels.begin()+50*256,game_over.pixels.begin()),
+                    "Match preserves final score and heading");
+            }
+            state.match_visible=false;
             state.title_menu=true;
             const auto game_over_title=panel.compose(state);state.game_over=false;
             require(panel.compose(state).pixels==game_over_title.pixels,"Title takes precedence over stale game-over state");
             require(std::equal(ended_bonus.pixels.begin()+18*256,ended_bonus.pixels.end(),active_bonus.pixels.begin()+18*256),"Round status retains score and lower fields");
             std::array<std::byte,8192> scene{};
+            scene[0x151b]=std::byte{43};scene[0x155b]=std::byte{0xc4};scene[0x1c5b]=std::byte{7};
+            for(unsigned action=0;action<6;++action) {
+                scene[0x185b]=static_cast<std::byte>(action);
+                const auto match=diagnostics::observe_alien_state(scene);
+                require(match.match_visible==(action>=2 && action<=4),"Match visible only during spin, stop and result");
+                if(match.match_visible) require(match.match_digit==7,"Match reads the live hundreds digit");
+            }
+            scene[0x185b]=std::byte{4};scene[0x46]=std::byte{1};
+            require(diagnostics::observe_alien_state(scene).match_visible,"Winning extra ball retains match result");
+            scene[0x1c5b]=std::byte{10};
+            require(!diagnostics::observe_alien_state(scene).match_visible,"Uninitialized match digit rejected");
+            scene={};
             state={};state.high_score_menu=true;
             state.high_scores={4294967295U,123456700,1000000,100,0};
             const auto ranks=panel.compose(state);

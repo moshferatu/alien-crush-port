@@ -39,6 +39,17 @@ AlienState observe_alien_state(std::span<const std::byte> ram) {
     result.bonus_cleared=result.bonus_room!=0 && (b(0x85)&1)!=0;
     result.game_over=result.table_code<2 && result.ball_counter==0 && b(0x7c)==0 &&
         !result.demo_play && (b(0x78)&3)==3;
+    // 03:82CC initializes the spin; 83CC resolves it; 8403 removes the
+    // three reserved digit sprites on entering action 5. A winning result
+    // remains visible after the ball counter is incremented.
+    if(result.table_code<2 && !result.title_menu && !result.high_score_menu && !result.demo_play)
+        for(unsigned x=4;x<64;++x)
+            if(b(0x1500+x)==43 && (b(0x1540+x)&0x80) &&
+                b(0x1840+x)>=2 && b(0x1840+x)<=4 && b(0x1c40+x)<10) {
+                result.match_visible=true;
+                result.match_digit=static_cast<std::uint8_t>(b(0x1c40+x));
+                break;
+            }
     return result;
 }
 }

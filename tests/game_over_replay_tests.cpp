@@ -91,6 +91,7 @@ int main(int argc,char** argv) {
             if(n==5699) {final_ram.assign(ram.begin(),ram.end());final_pixels=pixels;final_audio=audio;}
         }
         require(drops==3 && game_over_frames==771,"All three drains and complete game-over interval covered");
+        require(cabinet_check.verified_match_frames>100,"Losing match digits remain visible through the result");
         if(timed) require(stitched_frames>0,"Last-ball route exercises stitched rendering");
         runtime->restore(ending.initial);
         for(unsigned i=0;i<ending.inputs.size();++i) {
