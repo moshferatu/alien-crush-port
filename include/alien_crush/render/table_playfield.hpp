@@ -54,6 +54,25 @@ public:
         unsigned table,unsigned camera,std::span<const std::byte> ram,
         const TableBallBackdrop* backdrop=nullptr,const Sprite* ball=nullptr);
 };
+// Persistent visual timelines for both original actor banks. Gameplay changes
+// reconcile per actor; swapping banks alone never replaces a visual timeline.
+class TableAnimation {
+    std::array<std::array<std::byte,8192>,2> source_{},actors_{};
+    std::array<std::array<std::uint16_t,512>,2> colors_{};
+    std::array<std::array<bool,512>,2> color_owned_{};
+    std::array<std::byte,16384> palette_rom_{};
+    std::array<std::byte,256> palette_tables_{};
+    bool valid_{};
+    unsigned active_{2};
+    void palette_step(std::span<std::byte> ram,unsigned half) const;
+public:
+    explicit TableAnimation(std::span<const std::byte> rom);
+    void reset() {valid_=false;}
+    void update(const assets::ActorAssets&,std::span<const std::byte> ram,bool advance);
+    const auto& actors(unsigned half) const {return actors_[half];}
+    void apply_palette(unsigned half,std::span<std::uint16_t> palette) const;
+    bool owns_color(unsigned half,unsigned color) const {return color_owned_[half][color];}
+};
 class TablePlayfield {
     std::array<assets::TableBackground,2> tables_;
     std::array<assets::TableSprites,2> sprites_;
@@ -61,7 +80,7 @@ class TablePlayfield {
     std::array<assets::TableIndicator,29> indicators_;
     assets::LowerCounterTiles counter_;
     std::array<std::vector<std::array<std::uint16_t,512>>,2> partial_fades_;
-    mutable std::array<std::byte,8192> animation_source_{},animation_actors_{};
+    mutable TableAnimation animation_;
     mutable std::uint64_t animation_frame_{};
     mutable unsigned animation_half_{2};
     mutable std::uint64_t cabinet_frame_number_{~std::uint64_t{0}};

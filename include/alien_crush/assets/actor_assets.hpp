@@ -26,7 +26,8 @@ public:
     // Dynamic stream selected by 16:A0DF; callers establish the pending bit/epoch.
     ActorPatternTransfer pattern_transfer(std::uint8_t type,std::uint8_t selection,std::uint16_t pattern_base) const;
     // Visual-only continuation of the ROM's FD35/FD8F animation oscillator,
-    // orb bob/respawn/explosion and orange alien emerge/retreat routines.
+    // orb bob/respawn/explosion, orange alien emerge/retreat and indicator
+    // open/hold/close routines. Indicators read live group state from the copy.
     // Input uses the active actor layout but must be a private presentation copy.
     void advance_animation(std::span<std::byte> ram) const;
     // Populate the pending first brain-orb group in a private inactive bank.

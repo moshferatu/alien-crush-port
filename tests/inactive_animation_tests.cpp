@@ -22,6 +22,105 @@ void preview(const render::Image& image,const std::string& name) {
     for(int y=455;y>=0;--y) for(int x=0;x<256;++x) word(image.pixels[y*256+x],4);
     require(bool(out),"Cannot write animation preview");
 }
+void seam_continuity(std::span<const std::byte> rom,const diagnostics::ReferenceSnapshot& video,std::span<const std::byte> ram) {
+    // Run identical visual time with and without repeated bank
+    // swaps. Neither actor phase nor the tentacle palette may jump
+    // when the active viewport changes. Exercise cabinet rendering,
+    // not just the oscillator in isolation.
+    auto fixed=std::make_unique<render::TablePlayfield>(rom);
+    auto crossing=std::make_unique<render::TablePlayfield>(rom);
+    render::TableTransitionHold fixed_hold,crossing_hold;
+    struct Fixture {
+        std::array<assets::TableBackground,2> backgrounds;
+        std::array<assets::TableSprites,2> sprite_assets;
+        diagnostics::ReferenceSnapshot fixed_video,crossing_video;
+        std::optional<diagnostics::ReferenceSnapshot> fixed_previous,crossing_previous;
+        Fixture(std::span<const std::byte> rom,const diagnostics::ReferenceSnapshot& video)
+            :backgrounds(assets::decode_table_backgrounds(rom)),sprite_assets(assets::decode_table_sprites(rom)),
+             fixed_video(video),crossing_video(video) {}
+    };
+    auto fixture=std::make_unique<Fixture>(rom,video);
+    const auto& backgrounds=fixture->backgrounds;
+    const auto& sprite_assets=fixture->sprite_assets;
+    std::array<std::byte,8192> seam_ram{};
+    std::copy(ram.begin(),ram.end(),seam_ram.begin());
+    std::fill(seam_ram.begin()+0x1500,seam_ram.begin()+0x1d00,std::byte{});
+    std::fill(seam_ram.begin()+0x200,seam_ram.begin()+0xa00,std::byte{});
+    std::fill(seam_ram.begin()+0x1245,seam_ram.begin()+0x1445,std::byte{});
+    seam_ram[0x79]=std::byte{1};seam_ram[0x70]=std::byte{};
+    seam_ram[0x53]=seam_ram[0x54]=seam_ram[0xf6]=std::byte{};
+    // Upper-right tentacles, type 34, in their ordinary waving loop.
+    constexpr unsigned tentacle=26;
+    for(unsigned field=0;field<32;++field)
+        seam_ram[0x1500+field*64+tentacle]=ram[0x1500+field*64+tentacle];
+    require(seam_ram[0x1500+tentacle]==std::byte{34},"Missing real tentacle fixture");
+    // A lower-table oscillator must survive the same crossings independently.
+    seam_ram[0x204]=std::byte{33};seam_ram[0x244]=std::byte{0x88};
+    seam_ram[0x2c4]=std::byte{228};seam_ram[0x384]=std::byte{168};
+    seam_ram[0x504]=std::byte{143};seam_ram[0x544]=std::byte{1};
+    seam_ram[0x744]=std::byte{6};seam_ram[0x884]=std::byte{0x20};
+    for(unsigned field=0;field<8;++field)
+        seam_ram[0x1245+field*64+51]=ram[0x1245+field*64+51];
+    for(unsigned slot:{34u,35u}) for(unsigned field=0;field<8;++field)
+        seam_ram[0x1245+field*64+slot]=ram[0x1245+field*64+slot];
+    require(seam_ram[0x1245+34]==std::byte{6} && seam_ram[0x1245+35]==std::byte{6},
+        "Missing fleshy-border palette scripts");
+    require(seam_ram[0x1278]==std::byte{1},"Missing tentacle palette script");
+    auto& fixed_video=fixture->fixed_video;auto& crossing_video=fixture->crossing_video;
+    auto& fixed_previous=fixture->fixed_previous;auto& crossing_previous=fixture->crossing_previous;
+    std::optional<render::Image> first_tentacles;
+    unsigned changed_tentacles=0,changed_flesh=0;
+    for(unsigned tick=0;tick<160;++tick) {
+        auto swapped=seam_ram;
+        const unsigned half=(tick/17)%2;
+        if(!half) for(unsigned field=0;field<32;++field) for(unsigned x=4;x<64;++x)
+            std::swap(swapped[0x1500+field*64+x],swapped[0x200+field*64+x]);
+        swapped[0x79]=static_cast<std::byte>(half);
+        const auto prepare=[&](auto& snapshot,unsigned h) {
+            snapshot.frame=2000+tick;snapshot.vram=backgrounds[h].vram;
+            std::copy(sprite_assets[h].vram.begin()+0x4000,sprite_assets[h].vram.end(),snapshot.vram.begin()+0x4000);
+            snapshot.palette=backgrounds[h].palette;snapshot.sat.fill(0);
+            snapshot.control=0xc0;snapshot.memory_width=0;snapshot.scroll_x=snapshot.scroll_y=0;
+        };
+        prepare(fixed_video,1);prepare(crossing_video,half);
+        const auto stationary=fixed->cabinet_frame(fixed_video,fixed_previous?&*fixed_previous:nullptr,seam_ram,nullptr,fixed_hold);
+        const auto moving=crossing->cabinet_frame(crossing_video,crossing_previous?&*crossing_previous:nullptr,swapped,nullptr,crossing_hold);
+        require(stationary && moving,"Bank swap lost cabinet image");
+        if(stationary->pixels!=moving->pixels) {
+            preview(*stationary,"seam-expected");preview(*moving,"seam-actual");
+            throw std::runtime_error("Bank swap reset animation at tick "+std::to_string(tick));
+        }
+        if(!first_tentacles) {first_tentacles=moving;preview(*moving,"tentacles-start");}
+        else if(first_tentacles->pixels!=moving->pixels) ++changed_tentacles;
+        // The left border must visibly cycle with the upper half inactive;
+        // tentacle movement elsewhere must not satisfy this regression.
+        if(!half) {
+            bool changed=false;
+            for(unsigned y=100;y<180;++y) for(unsigned x=0;x<40;++x)
+                changed|=first_tentacles->pixels[y*256+x]!=moving->pixels[y*256+x];
+            changed_flesh+=changed;
+        }
+        if(tick==8) preview(*moving,"flesh-offscreen-later");
+        if(tick==24) preview(*moving,"tentacles-later");
+        fixed_previous=fixed_video;crossing_previous=crossing_video;
+    }
+    require(changed_tentacles>100,"Tentacle geometry/palette froze during bank swaps");
+    require(changed_flesh>40,"Upper-left fleshy border froze while upper table was inactive");
+    auto timeline=std::make_unique<render::TableAnimation>(rom);
+    assets::ActorAssets actor_assets(rom);
+    timeline->update(actor_assets,seam_ram,false);
+    for(unsigned i=0;i<11;++i) timeline->update(actor_assets,seam_ram,true);
+    auto expected_lower=timeline->actors(0);actor_assets.advance_animation(expected_lower);
+    auto hit=seam_ram;hit[0x1840+tentacle]=std::byte{3};
+    timeline->update(actor_assets,hit,true);
+    require(timeline->actors(1)[0x1840+tentacle]==std::byte{3},"Live hit failed to supersede cosmetic state");
+    for(unsigned field=0;field<32;++field)
+        require(timeline->actors(0)[0x1504+field*64]==expected_lower[0x1504+field*64],
+            "Unrelated actor event reset lower animation");
+    hit[0x1500+tentacle]=hit[0x1540+tentacle]=std::byte{};
+    timeline->update(actor_assets,hit,true);
+    require(timeline->actors(1)[0x1500+tentacle]==std::byte{},"Retained actor survived authoritative removal");
+}
 }
 int main(int argc,char** argv) {
     try {
@@ -46,6 +145,45 @@ int main(int argc,char** argv) {
         require(projected[0x1c40+slot]==std::byte{0} && projected[0x1bc0+slot]==std::byte{0},"Lower animation reflection differs from FD35");
         projected[0x1840+slot]=std::byte{0};const auto idle=projected;
         actors.advance_animation(projected);require(projected==idle,"Animation woke a collision-triggered idle actor");
+        // Exercise every slot-specific red-eye sequence plus both related
+        // indicator types. Opening must end in a stable hold, not endless flashes.
+        for(unsigned indicator_type:{42u,45u,46u,47u}) for(unsigned eye=55;eye<64;++eye) {
+            std::array<std::byte,8192> indicator{};
+            const unsigned pointer=indicator_type==47?0xbf56+(eye-55)*3:
+                std::to_integer<unsigned>(rom[0x9df7+indicator_type-1])|
+                (std::to_integer<unsigned>(rom[0x9e51+indicator_type-1])<<8);
+            const unsigned enabled=indicator_type==42?0x4a:(indicator_type==45?0x4d:(indicator_type==46?0x4c:0x4e));
+            const unsigned release=indicator_type==42?0x57:(indicator_type==45?0x60:(indicator_type==46?0x5d:0x63));
+            const unsigned target=indicator_type==42?0x59:release+1;
+            indicator[0x1500+eye]=static_cast<std::byte>(indicator_type);
+            indicator[0x1540+eye]=std::byte{0xc0};indicator[0x1a40+eye]=std::byte{3};
+            indicator[0x1bc0+eye]=std::byte{1};indicator[0x1840+eye]=std::byte{1};
+            indicator[0x1800+eye]=rom[pointer-0x2000];indicator[enabled]=std::byte{1};
+            for(unsigned tick=0;tick<4;++tick) {
+                actors.advance_animation(indicator);
+                require(indicator[0x1800+eye]==rom[pointer-0x2000+std::min(tick+1,2u)],
+                    "Indicator opening uses another eye's descriptor or wrong phase");
+            }
+            require(indicator[0x1840+eye]==std::byte{2},"Indicator opening did not enter hold");
+            const auto held=indicator;
+            for(unsigned tick=0;tick<240;++tick) actors.advance_animation(indicator);
+            require(indicator==held,"Inactive indicator flashes instead of holding its lit pose");
+            indicator[release]=std::byte{0x80};indicator[target]=static_cast<std::byte>(eye-1);
+            actors.advance_animation(indicator);
+            require(indicator[0x1840+eye]==std::byte{2},"Another indicator's release closed this eye");
+            indicator[target]=static_cast<std::byte>(eye);
+            const auto event=indicator[release];actors.advance_animation(indicator);
+            require(indicator[0x1840+eye]==std::byte{3} && indicator[release]==event,
+                "Indicator release was ignored or consumed gameplay signal");
+            for(unsigned tick=0;tick<3;++tick) actors.advance_animation(indicator);
+            require(indicator[0x1840+eye]==std::byte{} && indicator[0x1800+eye]==rom[pointer-0x2000],
+                "Inactive indicator did not close to its own resting descriptor");
+            const auto resting=indicator;
+            for(unsigned tick=0;tick<240;++tick) actors.advance_animation(indicator);
+            require(indicator==resting,"Inactive resting eye restarted its flash");
+            indicator=held;indicator[enabled]=std::byte{};actors.advance_animation(indicator);
+            require(indicator[0x1840+eye]==std::byte{3},"Expired indicator group did not release held eye");
+        }
         for(unsigned orb_type:{70u,71u}) {
             std::array<std::byte,8192> orb{};
             orb[0x1504]=static_cast<std::byte>(orb_type);orb[0x1544]=std::byte{0xe0};
@@ -104,6 +242,7 @@ int main(int argc,char** argv) {
         }
 
         auto table=std::make_unique<render::TablePlayfield>(rom);
+        auto palette_probe=std::make_unique<render::TableAnimation>(rom);
         auto runtime=make_reference_runtime(HandoffMode::continuous);runtime->load(path);runtime->observe_display(true);
         const auto initial=runtime->save();
         std::vector<std::string> fingerprints;
@@ -112,12 +251,45 @@ int main(int argc,char** argv) {
         std::array<std::byte,8192> last_ram{};
         std::array<unsigned,2> animated{};
         render::TableTransitionHold hold;
-        unsigned ball_pixels=0,orb_frames=0,brain_frames=0;
+        unsigned ball_pixels=0,orb_frames=0,brain_frames=0,palette_frames=0,flesh_frames=0;
         for(unsigned n=0;n<1800;++n) {
             const auto frame=runtime->advance(recording::canonical_input(n));
             fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
             const auto video=runtime->video_snapshot();const auto ram=runtime->work_ram();
             const auto before=runtime->save();
+            if(n && ram[0x79]==std::byte{1} && last_ram[0x79]==std::byte{1}) {
+                for(unsigned palette_slot:{34u,35u}) {
+                    if(ram[0x1245+palette_slot]!=std::byte{6} || last_ram[0x1245+palette_slot]!=std::byte{6} ||
+                        ram[0x1285+palette_slot]!=std::byte{} || last_ram[0x1285+palette_slot]!=std::byte{} ||
+                        ram[0x1385+palette_slot]==last_ram[0x1385+palette_slot]) continue;
+                    auto offscreen=last_ram;offscreen[0x79]=std::byte{};
+                    palette_probe->reset();palette_probe->update(actors,offscreen,false);
+                    palette_probe->update(actors,offscreen,true);
+                    for(unsigned field=0;field<8;++field) {
+                        const unsigned p=0x1245+field*64+palette_slot;
+                        require(palette_probe->actors(1)[p]==ram[p],"Fleshy-border palette differs from original F603 update");
+                    }
+                    ++flesh_frames;
+                }
+            }
+            if(n && ram[0x79]==std::byte{1} && last_ram[0x79]==std::byte{1} &&
+                ram[0x1278]==std::byte{1} && last_ram[0x1278]==std::byte{1} &&
+                ram[0x1285+51]==std::byte{} && last_ram[0x1285+51]==std::byte{} &&
+                ram[0x1385+51]!=last_ram[0x1385+51]) {
+                auto offscreen=last_ram;offscreen[0x79]=std::byte{};
+                palette_probe->reset();palette_probe->update(actors,offscreen,false);
+                palette_probe->update(actors,offscreen,true);
+                for(unsigned field=0;field<8;++field) {
+                    const unsigned p=0x1245+field*64+51;
+                    if(palette_probe->actors(1)[p]!=ram[p]) throw std::runtime_error("Tentacle palette mismatch frame "+
+                        std::to_string(n+1)+" field "+std::to_string(field)+" predicted "+
+                        std::to_string(std::to_integer<unsigned>(palette_probe->actors(1)[p]))+" actual "+
+                        std::to_string(std::to_integer<unsigned>(ram[p]))+" prior phase "+
+                        std::to_string(std::to_integer<unsigned>(last_ram[0x13c5+51])*256+std::to_integer<unsigned>(last_ram[0x1385+51]))+
+                        " step "+std::to_string(std::to_integer<unsigned>(last_ram[0x1345+51])*256+std::to_integer<unsigned>(last_ram[0x1305+51])));
+                }
+                ++palette_frames;
+            }
             if(n==399) {
                 auto dormant=assets::inactive_table_actor_ram(ram);
                 const auto original=dormant;
@@ -166,6 +338,25 @@ int main(int argc,char** argv) {
                     ++count;
                 }
                 require(count==5,"Initial cabinet view lacks the five brain orbs");
+                // Startup creates the persistent timeline before the dormant
+                // controller arrives. It must seed on readiness, not just reset.
+                auto startup=std::make_unique<render::TableAnimation>(rom);
+                auto loading=event_ram;
+                std::fill(loading.begin()+0x204,loading.begin()+0xa00,std::byte{});
+                startup->update(actors,loading,false);
+                require(std::count(startup->actors(1).begin()+0x1504,startup->actors(1).begin()+0x1540,std::byte{19})==0,
+                    "Brain orbs appeared before the initial controller was ready");
+                startup->update(actors,ram,true);
+                require(std::count(startup->actors(1).begin()+0x1504,startup->actors(1).begin()+0x1540,std::byte{19})==5,
+                    "Persistent startup timeline missed the initial brain-orb group");
+                auto expected_orbs=startup->actors(1);
+                for(unsigned tick=0;tick<120;++tick) {
+                    actors.advance_animation(expected_orbs);startup->update(actors,ram,true);
+                    for(unsigned a=4;a<64;++a) if(expected_orbs[0x1500+a]==std::byte{19})
+                        for(unsigned field=0;field<32;++field)
+                            require(startup->actors(1)[0x1500+field*64+a]==expected_orbs[0x1500+field*64+a],
+                                "Initial brain-orb animation was reseeded while waiting for first visit");
+                }
                 const auto seeded=dormant;actors.seed_brain_orbs(dormant,1);
                 require(dormant==seeded,"Initial brain orbs were duplicated");
                 unsigned mixed_frames=0,rest_frames=0;
@@ -224,6 +415,41 @@ int main(int argc,char** argv) {
                 }
             }
             if(n==999) {
+                seam_continuity(rom,video,ram);
+                require(ram[0x79]==std::byte{1} && image,"Eye seam fixture requires active upper table");
+                auto eyes=assets::inactive_table_actor_ram(ram);
+                auto eye_ram=last_ram;std::copy(ram.begin(),ram.end(),eye_ram.begin());
+                unsigned eye_count=0;
+                for(unsigned a=4;a<64;++a) {
+                    if(eyes[0x1500+a]!=std::byte{47}) {
+                        eyes[0x1500+a]=std::byte{};eyes[0x1540+a]=std::byte{};continue;
+                    }
+                    ++eye_count;eyes[0x1840+a]=std::byte{1};eyes[0x1a40+a]=std::byte{3};
+                    eyes[0x1b80+a]=std::byte{};eyes[0x1bc0+a]=std::byte{1};
+                    eyes[0x1c00+a]=eyes[0x1c40+a]=std::byte{};
+                    eyes[0x1800+a]=rom[0x9f56+(a-55)*3];
+                }
+                require(eye_count==9,"Dormant lower bank lacks the nine red eyes");
+                eyes[0x4e]=std::byte{1};
+                const auto render_eyes=[&]() {
+                    for(unsigned field=0;field<32;++field)
+                        std::copy_n(eyes.begin()+0x1504+field*64,60,eye_ram.begin()+0x204+field*64);
+                    return table->inactive_view(0,eye_ram);
+                };
+                const auto resting_eyes=render_eyes();
+                for(unsigned tick=0;tick<4;++tick) actors.advance_animation(eyes);
+                const auto lit_eyes=render_eyes();
+                require(lit_eyes.pixels!=resting_eyes.pixels,"Eye fixture never visibly opened");
+                for(unsigned tick=0;tick<240;++tick) {
+                    actors.advance_animation(eyes);
+                    require(render_eyes().pixels==lit_eyes.pixels,"Dormant red eyes flickered during hold");
+                }
+                eyes[0x4e]=std::byte{};
+                for(unsigned tick=0;tick<4;++tick) actors.advance_animation(eyes);
+                require(render_eyes().pixels==resting_eyes.pixels,"Dormant red eyes did not visually return to normal");
+                const render::Image upper{256,240,{image->pixels.begin(),image->pixels.begin()+256*240}};
+                preview(render::stitch_table_views(resting_eyes,upper,1),"eyes-resting");
+                preview(render::stitch_table_views(lit_eyes,upper,1),"eyes-held");
                 // Move only a private ball copy across the reported occluders.
                 // This includes artwork on the other side of the stitch.
                 const auto original_ball=table->transition_ball(std::to_integer<unsigned>(ram[0x79]),ram);
@@ -319,6 +545,8 @@ int main(int argc,char** argv) {
         }
         require(animated[0]>50 && animated[1]>50,"Both dormant halves must animate while their game-state bank stays frozen");
         require(ball_pixels>10000 && orb_frames>100 && brain_frames>100,"Insufficient ball layering or original orb-motion coverage");
+        require(palette_frames>100,"Insufficient original tentacle palette comparisons");
+        require(flesh_frames>200,"Insufficient original fleshy-border palette comparisons");
         runtime->restore(initial);runtime->observe_display(false);
         for(unsigned n=0;n<1800;++n) {
             const auto frame=runtime->advance(recording::canonical_input(n));

@@ -1,5 +1,80 @@
 # Progress
 
+Initial brain orbs with a persistent timeline (2026-09-10):
+
+- The timeline can initialize before the upper dormant bank loads. Its previous
+  one-time seeding check therefore missed the first-spawn controller. Check for
+  that controller after each inactive-bank reconciliation instead; the existing
+  guard preserves populated groups and excludes later respawn waits.
+- Added a regression starting with an empty dormant bank, then loading the real
+  initial controller: all five orbs appear and retain their independent animation
+  state for 120 updates without restarting. Visually verified frame 400 before
+  the first upper-table visit. Build/test logs: out/build-initial-orbs.log and
+  out/test-initial-orbs.log.
+
+Offscreen fleshy-border color animation (2026-09-10):
+
+- Fixed the missing script-6 palette handling introduced by the persistent
+  palette change. Upper palette slots 34/35 animate the fleshy border using
+  F319/F603's forward loop, which wraps to zero rather than reflecting like
+  the tentacle script. Both halves now retain and render these sequences;
+  the seam-continuity implementation remains in place.
+- Extended the rendered seam comparison with both real border scripts and an
+  independent upper-left pixel-region check while the lower half is active.
+  Compared over 200 script updates against the original runtime. Inspected
+  tentacles-start.bmp and flesh-offscreen-later.bmp in inactive-previews.
+- Validation logs: out/build-flesh-animation.log and out/test-flesh-animation.log.
+- Graphics, inactive animation, continuous handoff and cabinet smoke passed
+  (4/4), including the unchanged 1,800-frame gameplay/audio replay. Rebuilt and
+  published D:\Workspace\alien-crush-cabinet; out/publish-flesh-animation.log.
+
+Persistent cabinet animation and tentacle colors (2026-09-10):
+
+- Compared Devil's Crush's persistent sprite overlay and table-wide palette
+  handling. Alien Crush now retains a visual timeline for each actor bank,
+  including when that half becomes active again. Ordinary animation advances
+  without a bank-wide reseed; live hits, spawns and removals reconcile per actor.
+  Active cabinet sprites use the retained poses too, while runtime RAM, collision
+  state and audio remain untouched. Loads and scene changes reset the timelines.
+- Removed the extra held image on a seam's first ready destination frame. Pause
+  still freezes the complete cabinet image and resumes its saved visual clocks.
+- Recovered the tentacles' separate palette script (slot 51). F292 only runs the
+  active half's 32 palette slots; the previous renderer substituted default colors
+  offscreen. Cabinet presentation now continues script-1 palette oscillators for
+  both halves using F57E's exact reflection and F463's ROM frame/range tables.
+  Retains script-8 selections; replaces the old equal-RGB palette-sharing guess.
+- Extended original open/hold/close behavior to type 42 upper-head indicators.
+- A 160-frame rendered comparison with repeated swaps is pixel-identical to a
+  stationary viewport for upper tentacles and a lower oscillator. Tests also
+  cover per-actor hit/removal reconciliation and compare the offscreen tentacle
+  palette clock against over 100 original active updates. Visually inspected
+  inactive-previews/tentacles-start.bmp and tentacles-later.bmp.
+- Release graphics, inactive animation, continuous handoff and cabinet smoke
+  passed (4/4); the 1,800-frame RAM/video/audio replay remains exact. Logs:
+  out/build-animation-continuity.log and out/test-animation-continuity-final.log.
+- Rebuilt and published D:\Workspace\alien-crush-cabinet; publish log:
+  out/publish-animation-continuity.log.
+
+Inactive red-eye animation across the seam (2026-09-10):
+
+- Recovered type 47's per-slot sequence selection: 02:71D2..71E7 and
+  02:720A..721F call FD30 with BF56 + (slot-55)*3. The generic FD2B lookup
+  selected only the first eye's sequence; other eyes could stop updating.
+- Types 45..47 now follow their original open/hold/close gates rather than
+  looping the oscillator during a held or completed animation. Read-only live
+  group state releases dormant indicators; presentation does not consume real
+  release signals or synthesize new hits. Palette sharing was left unchanged.
+- Tests cover all nine eye sequences and related indicator types, targeted
+  release versus another slot, group expiry, stable holds and settled rests.
+  An upper-table fixture verifies the dormant lower eyes' rendered pixels stay
+  identical for 240 held frames and return to their resting image on release.
+  Visually inspected eyes-resting.bmp and eyes-held.bmp in inactive-previews.
+  The existing 1,800-frame RAM/video/audio replay remains exact.
+- Release build and graphics, inactive animation, continuous handoff and cabinet
+  smoke tests passed (4/4, 31.98s); cabinet package rebuilt and published.
+  Logs: out/build-seam-eyes.log, out/test-seam-eyes-final.log and
+  out/publish-seam-eyes.log.
+
 Bottom-aligned cabinet table (2026-09-09):
 
 - Anchored the stitched table to the physical bottom of the playfield window,

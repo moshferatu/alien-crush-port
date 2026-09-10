@@ -179,6 +179,23 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
     auto put=[&](unsigned p,unsigned v){ram[p]=static_cast<std::byte>(v&255);};
     for(unsigned x=4;x<64;++x) {
         const auto type=b(0x1500+x),count=b(0x1a40+x);
+        // 02:6FA3..700A / 70C5..7225: indicators open once, hold while their group
+        // is enabled, then close once. They are not continuous oscillators.
+        if(type==42 || (type>=45 && type<=47)) {
+            if(!(b(0x1540+x)&0x80) || count!=3 || (type==47 && (x<55 || x>63))) continue;
+            const auto action=b(0x1840+x);
+            const unsigned enabled=type==42?0x4a:(type==45?0x4d:(type==46?0x4c:0x4e));
+            const unsigned release=type==42?0x57:(type==45?0x60:(type==46?0x5d:0x63));
+            const unsigned target=type==42?0x59:release+1;
+            if(action==1) {
+                if(b(0x1bc0+x)&0x80) {put(0x1840+x,2);continue;}
+            } else if(action==2) {
+                if(!b(enabled) || ((b(release)&0x80) && b(target)==x)) put(0x1840+x,3);
+                continue;
+            } else if(action==3) {
+                if(!(b(0x1c00+x)|b(0x1c40+x))) {put(0x1840+x,0);continue;}
+            } else continue; // New hits belong exclusively to the real actor bank.
+        }
         // Brain-side orbs (type 19, 02:76CA..77E3) wobble horizontally
         // and can be saved mid-hop. Neither motion uses the FD35 oscillator.
         // Continue saved movement without hits/global triggers or gameplay RNG;
@@ -305,7 +322,10 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
         unsigned step=b(0x1b80+x)|(b(0x1bc0+x)<<8);
         unsigned phase=b(0x1c00+x)|(b(0x1c40+x)<<8);
         if(!step || (phase>>8)>count || ((phase>>8)==count && !(step&0x8000))) continue;
-        const auto pointer=std::to_integer<unsigned>(sequences_[0x1df7+type-1])|
+        // Type 47 calls FD30 with BF56 + (slot-55)*3, not the common FD2B
+        // type table. Each of the nine red eyes has its own sprite shapes.
+        const auto pointer=type==47?0xbf56+(x-55)*3:
+            std::to_integer<unsigned>(sequences_[0x1df7+type-1])|
             (std::to_integer<unsigned>(sequences_[0x1e51+type-1])<<8);
         if(pointer<0xa000 || pointer+count>0xc000) continue;
         const auto sequence=std::span(sequences_).subspan(pointer-0xa000,count);

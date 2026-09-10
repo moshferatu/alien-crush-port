@@ -124,9 +124,129 @@ Image stitch_table_views(const Image& lower,const Image& upper,unsigned active_t
     }
     return result;
 }
+TableAnimation::TableAnimation(std::span<const std::byte> rom) {
+    if(rom.size()!=262144) throw std::runtime_error("Invalid table animation ROM");
+    std::copy_n(rom.begin()+0x36000,palette_rom_.size(),palette_rom_.begin());
+    std::copy_n(rom.begin()+0x1192,palette_tables_.size(),palette_tables_.begin());
+}
+void TableAnimation::palette_step(std::span<std::byte> ram,unsigned half) const {
+    const auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+    const auto put=[&](unsigned p,unsigned v){ram[p]=static_cast<std::byte>(v&255);};
+    for(unsigned x=half*32;x<(half+1)*32;++x) {
+        // Palette script 1, F2E5/F57E: fixed-point ping-pong with a
+        // different upper reflection fraction from the sprite oscillator.
+        const auto script=b(0x1245+x);
+        if(script!=1 && script!=6) continue;
+        const auto count=b(0x1405+x);
+        unsigned step=b(0x1305+x)|(b(0x1345+x)<<8);
+        unsigned phase=b(0x1385+x)|(b(0x13c5+x)<<8);
+        if(!count || !step || (phase>>8)>count || ((phase>>8)==count && !(step&0x8000))) continue;
+        phase=(phase+step)&65535;
+        // Script 6 (F319/F603), used by the fleshy table borders, wraps
+        // straight to zero instead of reversing direction at either endpoint.
+        if(script==6) {
+            if((phase>>8)==count) phase=0;
+        } else if(!(step&0x8000) && (phase>>8)==count) {
+            phase=((phase-256)&0xff00)|(step&255);step=(65536-step)&65535;
+        } else if((step&0x8000) && !(phase>>8)) {phase=0;step=(65536-step)&65535;}
+        put(0x1305+x,step);put(0x1345+x,step>>8);
+        put(0x1385+x,phase);put(0x13c5+x,phase>>8);
+        const auto stop=b(0x1285+x);
+        if((stop&0x80) && ((script==1 && (stop&0x40)) || (phase>>8)==b(0x12c5+x))) {
+            if(script==1 && (stop&0x40)) put(0x13c5+x,b(0x12c5+x));
+            // Preserve the final palette selection for this presentation tick.
+            put(0x1245+x,8);
+        }
+    }
+}
+void TableAnimation::update(const assets::ActorAssets& assets,std::span<const std::byte> ram,bool advance) {
+    if(ram.size()!=8192 || std::to_integer<unsigned>(ram[0x79])>1)
+        throw std::runtime_error("Invalid table animation state");
+    const unsigned active=std::to_integer<unsigned>(ram[0x79]);
+    for(unsigned half=0;half<2;++half) {
+        std::array<std::byte,8192> incoming;
+        std::copy(ram.begin(),ram.end(),incoming.begin());
+        if(half!=active) for(unsigned field=0;field<32;++field)
+            std::copy_n(ram.begin()+0x204+field*64,60,incoming.begin()+0x1504+field*64);
+        incoming[0x79]=static_cast<std::byte>(half);
+        incoming[0x2e]=std::byte{};incoming[0x2f]=std::byte{2};incoming[0x50]=std::byte{10};
+        auto& visual=actors_[half];
+        // Read signals without consuming hit queues, release flags or RNG.
+        for(unsigned address:{0x4au,0x4cu,0x4du,0x4eu,0x57u,0x59u,0x5du,0x5eu,0x60u,0x61u,0x63u,0x64u})
+            visual[address]=ram[address];
+        if(!valid_) {
+            visual=incoming;
+        } else {
+            auto expected=source_[half];
+            // Predict ordinary local animation to distinguish it from a hit,
+            // spawn, drain or other authoritative gameplay change.
+            if(advance && active_==half && active==half) assets.advance_animation(expected);
+            if(advance) assets.advance_animation(visual);
+            for(unsigned x=4;x<64;++x) {
+                bool unchanged=true,predicted=true;
+                for(unsigned field=0;field<32;++field) {
+                    const unsigned p=0x1500+field*64+x;
+                    // One-shot VRAM upload flags are not actor lifecycle events.
+                    const auto mask=field==1?std::byte{0xef}:std::byte{0xff};
+                    unchanged&=(incoming[p]&mask)==(source_[half][p]&mask);
+                    predicted&=(incoming[p]&mask)==(expected[p]&mask);
+                }
+                if(!unchanged && !predicted) for(unsigned field=0;field<32;++field) {
+                    const unsigned p=0x1500+field*64+x;visual[p]=incoming[p];
+                }
+            }
+        }
+        // The timeline can start before the dormant bank has finished loading.
+        // Seed when its first-spawn controller becomes ready, not only when
+        // the timeline is first created. The helper preserves existing groups
+        // and rejects the later respawn timer.
+        if(half!=active) assets.seed_brain_orbs(visual,half);
+        assets::apply_inactive_table_events(visual,ram,half);
+        assets.mirror_flippers(visual,ram,half);
+
+        // Both halves have dedicated scheduler slots, although the original
+        // F292 dispatch only visits the active half's 32 slots. Continue the
+        // retained palette scripts and use their ROM ranges, never RGB equality.
+        auto expected_palette=source_[half];
+        if(valid_ && advance && active_==half && active==half) palette_step(expected_palette,half);
+        if(valid_ && advance) palette_step(visual,half);
+        color_owned_[half].fill(false);
+        for(unsigned x=half*32;x<(half+1)*32;++x) {
+            bool unchanged=valid_,predicted=valid_;
+            for(unsigned field=0;field<8;++field) {
+                const unsigned p=0x1245+field*64+x;
+                unchanged&=incoming[p]==source_[half][p];predicted&=incoming[p]==expected_palette[p];
+            }
+            if(!unchanged && !predicted) for(unsigned field=0;field<8;++field) {
+                const unsigned p=0x1245+field*64+x;visual[p]=incoming[p];
+            }
+            if(visual[0x1245+x]!=std::byte{1} && visual[0x1245+x]!=std::byte{6} &&
+                visual[0x1245+x]!=std::byte{8}) continue;
+            // F463 selects a packed ROM frame using F192/F1D2, F212/F252.
+            const auto b=[&](unsigned p){return std::to_integer<unsigned>(palette_tables_[p]);};
+            const auto first=b(128+x),last=b(192+x);
+            if(first>last || last>30 || (first&1) || (last&1)) continue;
+            const unsigned bytes=last-first+2;
+            const unsigned pointer=b(x)|(b(64+x)<<8);
+            const unsigned offset=pointer+bytes*std::to_integer<unsigned>(visual[0x13c5+x]);
+            if(offset<0xa000 || offset+bytes>0xe000) continue;
+            for(unsigned i=0;i<bytes;i+=2) {
+                const unsigned color=(x%32)*16+(first+i)/2,p=offset-0xa000+i;
+                colors_[half][color]=static_cast<std::uint16_t>(std::to_integer<unsigned>(palette_rom_[p])|
+                    ((std::to_integer<unsigned>(palette_rom_[p+1])&1)<<8));
+                color_owned_[half][color]=true;
+            }
+        }
+        source_[half]=incoming;
+    }
+    valid_=true;active_=active;
+}
+void TableAnimation::apply_palette(unsigned half,std::span<std::uint16_t> palette) const {
+    for(unsigned i=0;i<512;++i) if(color_owned_[half][i]) palette[i]=colors_[half][i];
+}
 TablePlayfield::TablePlayfield(std::span<const std::byte> rom)
     :tables_(assets::decode_table_backgrounds(rom)),sprites_(assets::decode_table_sprites(rom)),actors_(rom),
-    indicators_(assets::decode_table_indicators(rom)),counter_(assets::decode_lower_counter_tiles(rom)) {
+    indicators_(assets::decode_table_indicators(rom)),counter_(assets::decode_lower_counter_tiles(rom)),animation_(rom) {
     // E4A1 starts black, visits thresholds 21..1, and increments the channel
     // with the largest remaining distance (ties: red, green, blue). Recognize
     // only complete original palette states; do not guess a brightness scalar.
@@ -184,7 +304,7 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
     const auto scene=diagnostics::observe_alien_state(ram);
     const unsigned half=scene.table_code;
     if(half>1 || scene.title_menu || scene.high_score_menu) {
-        transition.reset();animation_half_=2;return std::nullopt;
+        transition.reset();animation_half_=2;animation_.reset();return std::nullopt;
     }
     // The original pause stops actor scripts but its video/palette machinery
     // still runs. Freeze the complete cabinet image, including palette pulses.
@@ -194,39 +314,34 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
         animation_frame_=current.frame;
         return cabinet_image_;
     }
-    // Maintain a private visual bank. A frame is advanced only once even if the
-    // host requests both the regular image and a clean ball backdrop. Loading a
-    // state, changing scenes or receiving a new dormant bank reseeds it.
-    const bool reseed=!previous || animation_half_!=1-half ||
-        (current.frame!=animation_frame_ && current.frame!=animation_frame_+1) ||
-        !std::equal(ram.begin()+0x204,ram.begin()+0xa00,animation_source_.begin()+0x204);
-    if(reseed) {
-        std::copy(ram.begin(),ram.end(),animation_source_.begin());
-        animation_actors_=assets::inactive_table_actor_ram(ram);
-        animation_actors_[0x1217]=ram[0x1217];animation_actors_[0x1218]=ram[0x1218];
-        actors_.seed_brain_orbs(animation_actors_,1-half);
-        animation_half_=1-half;
-    } else if(current.frame==animation_frame_+1 &&
+    // Reset only on a discontinuity, never on a normal bank swap. Keep the
+    // same visual timelines when a half becomes active again.
+    const bool reseed=!previous || animation_half_>1 ||
+        (current.frame!=animation_frame_ && current.frame!=animation_frame_+1);
+    if(reseed) animation_.reset();
+    animation_.update(actors_,ram,!reseed && current.frame==animation_frame_+1 &&
         !(std::to_integer<unsigned>(ram[0xf6])&2) &&
-        !(std::to_integer<unsigned>(ram[0x53])&0x80) && !(std::to_integer<unsigned>(ram[0x54])&0x80)) {
-        actors_.advance_animation(animation_actors_);
-    }
+        !(std::to_integer<unsigned>(ram[0x53])&0x80) && !(std::to_integer<unsigned>(ram[0x54])&0x80));
+    animation_half_=1-half;
     animation_frame_=current.frame;
-    assets::apply_inactive_table_events(animation_actors_,ram,1-half);
-    actors_.mirror_flippers(animation_actors_,ram,1-half);
     std::array<std::byte,8192> visual_ram;
     std::copy(ram.begin(),ram.end(),visual_ram.begin());
-    for(unsigned field=0;field<32;++field)
-        std::copy_n(animation_actors_.begin()+0x1504+field*64,60,visual_ram.begin()+0x204+field*64);
+    for(unsigned field=0;field<32;++field) {
+        std::copy_n(animation_.actors(1-half).begin()+0x1504+field*64,60,visual_ram.begin()+0x204+field*64);
+        std::copy_n(animation_.actors(half).begin()+0x1504+field*64,60,visual_ram.begin()+0x1504+field*64);
+    }
     ram=visual_ram;
     const unsigned camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
     std::optional<Image> live;
     std::optional<TableBallBackdrop> backdrop;
-    if(previous && current.frame==previous->frame+1 && camera==0 && matches(current,half) && matches(*previous,half)) {
-        live=compose_impl(current,*previous,half,camera,ram,raster,false,nullptr,true);
+    if(previous && current.frame==previous->frame+1 && camera==0 && matches(current,half)) {
+        // The retained actors are already in the destination half's epoch.
+        // Its first loaded frame need not hold the outgoing animation image.
+        const auto* ready_raster=matches(*previous,half)?raster:nullptr;
+        live=compose_impl(current,*previous,half,camera,ram,ready_raster,false,nullptr,true);
         if(live) {
             TableBallBackdrop clean;
-            if(auto image=compose_impl(current,*previous,half,camera,ram,raster,true,&clean.sprites,true)) {
+            if(auto image=compose_impl(current,*previous,half,camera,ram,ready_raster,true,&clean.sprites,true)) {
                 clean.image=std::move(*image);backdrop=std::move(clean);
             }
         }
@@ -308,7 +423,39 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
     const TableRaster* raster,bool hide_ball,std::vector<std::uint8_t>* coverage,bool cabinet) const {
     if(table>1 || current.frame!=previous.frame+1 || (!cabinet && (camera!=0 ||
         !matches(current,table) || !matches(previous,table)))) return std::nullopt;
-    const auto& sat=previous.sat;
+    auto sat=previous.sat;
+    auto active_vram=current.vram;
+    auto active_palette=current.palette;
+    std::vector<assets::BackgroundWrite> visual_writes;
+    std::array<bool,32768> visual_addresses{};
+    if(cabinet) {
+        // Draw retained poses on the active half too. Otherwise returning to
+        // its frozen gameplay bank would visibly rewind every cosmetic clock.
+        std::array<std::byte,8192> projected;
+        std::copy(ram.begin(),ram.end(),projected.begin());
+        projected[0x16]=projected[0x17]=std::byte{};
+        projected[0x2e]=std::byte{};projected[0x2f]=std::byte{2};projected[0x50]=std::byte{10};
+        if(hide_ball) projected[0x1540]|=std::byte{0x20};
+        sat.fill(0);
+        const auto pieces=assets::assemble_table_actors(actors_,projected);
+        for(const auto& piece:pieces) std::copy(piece.words.begin(),piece.words.end(),sat.begin()+piece.slot*4);
+        const unsigned next=pieces.empty()?10:pieces.back().slot+1;
+        for(const auto& piece:assets::assemble_table_overlay(projected,next))
+            std::copy(piece.words.begin(),piece.words.end(),sat.begin()+piece.slot*4);
+        visual_writes=assets::restored_actor_backgrounds(actors_,projected);
+        for(unsigned x=4;x<64;++x) {
+            const auto type=std::to_integer<std::uint8_t>(projected[0x1500+x]);
+            if(type!=26 && type!=27) continue;
+            const auto transfer=actors_.pattern_transfer(type,std::to_integer<std::uint8_t>(projected[0x1a80+x]),0x200);
+            for(unsigned i=0;i<transfer.words.size();++i)
+                visual_writes.push_back({static_cast<std::uint16_t>(transfer.destination+i),transfer.words[i]});
+        }
+        for(const auto& write:visual_writes) {
+            active_vram[write.address]=write.value;visual_addresses[write.address]=true;
+        }
+        assets::restore_table_indicators(std::span(active_vram).first(1024),indicators_,table,ram);
+        if(matches(current,table)) animation_.apply_palette(table,active_palette);
+    }
     std::uint64_t hidden=0;
     if(hide_ball) {
         unsigned found=0;
@@ -357,9 +504,18 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         auto writes=diagnostics::display_control_schedule(raster->rows,240);
         writes.insert(writes.end(),raster->vram.begin(),raster->vram.end());
         std::stable_sort(writes.begin(),writes.end(),[](const auto& a,const auto& b){return a.row<b.row;});
-        const auto palette=diagnostics::palette_pixel_schedule(previous.palette,current.palette,raster->palette,256,240);
-        live=render::compose_palette_raster(current.vram,previous.palette,sat,{256,240,0,0,0,0xc0},writes,palette,live_sprites,active_blocks,hidden);
-    } else live=render::compose(current.vram,current.palette,sat,{256,240,0,0,0,0xc0},live_sprites,active_blocks,hidden);
+        auto palette=diagnostics::palette_pixel_schedule(previous.palette,current.palette,raster->palette,256,240);
+        auto initial_palette=previous.palette;
+        if(cabinet) {
+            for(auto& write:writes) if(write.target==RasterTarget::vram && visual_addresses[write.address])
+                write.value=active_vram[write.address];
+            if(matches(current,table)) {
+                animation_.apply_palette(table,initial_palette);
+                for(auto& write:palette) if(animation_.owns_color(table,write.address)) write.value=active_palette[write.address];
+            }
+        }
+        live=render::compose_palette_raster(active_vram,initial_palette,sat,{256,240,0,0,0,0xc0},writes,palette,live_sprites,active_blocks,hidden);
+    } else live=render::compose(active_vram,active_palette,sat,{256,240,0,0,0,0xc0},live_sprites,active_blocks,hidden);
     std::vector<std::uint8_t> inactive_blocks(coverage?256*240:0);
     std::span<const std::uint16_t> inactive_palette;
     auto animated_palette=tables_[1-table].palette;
@@ -368,11 +524,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         if(fade!=partial_fades_[table].end())
             inactive_palette=partial_fades_[1-table][static_cast<std::size_t>(fade-partial_fades_[table].begin())];
         else {
-            // Shared palette entries carry the game's live color cycles even
-            // when their artwork belongs to the dormant half. Do not transfer
-            // colors between unrelated table-specific palette entries.
-            for(unsigned i=0;i<512;++i)
-                if(tables_[table].palette[i]==animated_palette[i]) animated_palette[i]=current.palette[i];
+            animation_.apply_palette(1-table,animated_palette);
             inactive_palette=animated_palette;
         }
     }
