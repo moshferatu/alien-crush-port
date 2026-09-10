@@ -1,5 +1,21 @@
 # Progress
 
+Red-eye palette startup flash (2026-09-10):
+
+- Traced the white flash to frame 364: lower palette script 18 starts at phase
+  8 with count 8 and step -64. F2E5 advances this sentinel to frame 7 before
+  F463 reads the ROM. Cabinet palette rendering instead read frame 8, taking
+  unrelated colors from the next sequence. Exclude out-of-range running-script
+  frames from palette ownership until the first valid frame; preserve the
+  loaded colors and the existing animation timeline.
+- Regression checks the actual startup sentinel, unchanged loaded colors,
+  the next frame's exact ROM colors and rendered startup eye region. Visually
+  inspected inactive-previews/startup-eyes-fixed.bmp. Moved large pause-test
+  snapshots to heap storage to avoid exhausting the Windows test stack.
+- Logs: out/build-startup-eyes.log and out/test-startup-eyes.log.
+- All four targeted tests passed, including the unchanged 1,800-frame replay.
+  Published D:\Workspace\alien-crush-cabinet (out/publish-startup-eyes.log).
+
 Initial brain orbs with a persistent timeline (2026-09-10):
 
 - The timeline can initialize before the upper dormant bank loads. Its previous

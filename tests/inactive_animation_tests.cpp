@@ -377,6 +377,35 @@ int main(int argc,char** argv) {
             }
             const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
             const auto image=table->cabinet_frame(video,previous?&*previous:nullptr,ram,&raster,hold);
+            if(n==363) {
+                require(ram[0x1245+18]==std::byte{1} && ram[0x13c5+18]==ram[0x1405+18],
+                    "Missing red-eye palette startup sentinel");
+                palette_probe->reset();palette_probe->update(actors,ram,false);
+                auto colors=video.palette;
+                palette_probe->apply_palette(0,colors);
+                for(unsigned color=288;color<304;++color) {
+                    require(!palette_probe->owns_color(0,color),"Startup sentinel was treated as a drawable eye palette");
+                    require(colors[color]==video.palette[color],"Startup sentinel replaced the loaded eye colors");
+                }
+                palette_probe->update(actors,ram,true);
+                palette_probe->apply_palette(0,colors);
+                require(palette_probe->actors(0)[0x13c5+18]==std::byte{7},"Descending palette did not enter its last valid frame");
+                const unsigned pointer=std::to_integer<unsigned>(rom[0x1192+18])|
+                    (std::to_integer<unsigned>(rom[0x11d2+18])<<8);
+                const unsigned first=std::to_integer<unsigned>(rom[0x1212+18]);
+                const unsigned bytes=std::to_integer<unsigned>(rom[0x1252+18])-first+2;
+                for(unsigned i=0;i<bytes;i+=2) {
+                    const unsigned offset=0x36000+pointer-0xa000+7*bytes+i;
+                    const auto expected=std::to_integer<unsigned>(rom[offset])|((std::to_integer<unsigned>(rom[offset+1])&1)<<8);
+                    require(colors[288+(first+i)/2]==expected,"First valid eye colors differ from ROM");
+                }
+                require(image.has_value(),"Startup eye regression lacks cabinet image");
+                unsigned white=0;
+                for(unsigned y=260;y<310;++y) for(unsigned x=95;x<175;++x)
+                    white+=image->pixels[y*256+x]==0xffffffff;
+                require(white<30,"Red eyes flashed white on the first palette activation frame");
+                preview(*image,"startup-eyes-fixed");
+            }
             const auto repeated=table->cabinet_frame(video,previous?&*previous:nullptr,ram,&raster,hold);
             require(!image || (repeated && repeated->pixels==image->pixels),"Rendering twice advanced inactive animation");
             require(runtime->save().core_state==before.core_state,"Presentation changed runtime state");
@@ -477,7 +506,10 @@ int main(int argc,char** argv) {
                 auto paused_table=std::make_unique<render::TablePlayfield>(rom);
                 std::array<std::byte,8192> paused_ram;
                 std::copy(ram.begin(),ram.end(),paused_ram.begin());paused_ram[0xf6]|=std::byte{2};
-                auto paused_video=video,paused_previous=video;--paused_previous.frame;
+                auto paused_video_storage=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+                auto paused_previous_storage=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+                auto& paused_video=*paused_video_storage;auto& paused_previous=*paused_previous_storage;
+                --paused_previous.frame;
                 render::TableTransitionHold paused_hold;
                 std::optional<render::Image> paused_image;
                 for(unsigned i=0;i<16;++i) {
@@ -496,7 +528,8 @@ int main(int argc,char** argv) {
                 const auto checkpoint=runtime->save();
                 auto real_pause_table=std::make_unique<render::TablePlayfield>(rom);
                 render::TableTransitionHold real_pause_hold;
-                auto real_previous=video;
+                auto real_previous_storage=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+                auto& real_previous=*real_previous_storage;
                 std::optional<render::Image> frozen;
                 std::array<std::byte,8192> frozen_ram{};
                 for(unsigned tick=0;tick<40;++tick) {

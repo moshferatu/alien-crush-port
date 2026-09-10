@@ -222,13 +222,20 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
             }
             if(visual[0x1245+x]!=std::byte{1} && visual[0x1245+x]!=std::byte{6} &&
                 visual[0x1245+x]!=std::byte{8}) continue;
+            // Descending scripts may initialize at phase == count. F2E5
+            // advances that sentinel before its first F463 upload. It is not
+            // a ROM color frame: drawing it reads the next sequence's colors.
+            // Keep the loaded palette until a real frame becomes available.
+            const unsigned frame=std::to_integer<unsigned>(visual[0x13c5+x]);
+            if(visual[0x1245+x]!=std::byte{8} &&
+                frame>=std::to_integer<unsigned>(visual[0x1405+x])) continue;
             // F463 selects a packed ROM frame using F192/F1D2, F212/F252.
             const auto b=[&](unsigned p){return std::to_integer<unsigned>(palette_tables_[p]);};
             const auto first=b(128+x),last=b(192+x);
             if(first>last || last>30 || (first&1) || (last&1)) continue;
             const unsigned bytes=last-first+2;
             const unsigned pointer=b(x)|(b(64+x)<<8);
-            const unsigned offset=pointer+bytes*std::to_integer<unsigned>(visual[0x13c5+x]);
+            const unsigned offset=pointer+bytes*frame;
             if(offset<0xa000 || offset+bytes>0xe000) continue;
             for(unsigned i=0;i<bytes;i+=2) {
                 const unsigned color=(x%32)*16+(first+i)/2,p=offset-0xa000+i;
