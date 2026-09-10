@@ -1,5 +1,11 @@
 # Progress
 
+Bottom-aligned cabinet table (2026-09-09):
+
+- Anchored the stitched table to the physical bottom of the playfield window,
+  retaining its aspect ratio and horizontal centering. Placement accounts for
+  all four cabinet rotations. Other presentation views retain their layout.
+
 Cabinet pause and upper skull reset (2026-09-09):
 
 - Cabinet animation now recognizes the original pause flag (RAM F6 bit 1).

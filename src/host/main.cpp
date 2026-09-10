@@ -163,7 +163,7 @@ int main(int argc,char** argv) {
                 auto stitched=table->cabinet_frame(snapshot,previous_video?&*previous_video:nullptr,
                     runtime->work_ram(),table_raster?&raster:nullptr,transition);
                 if(stitched) display.show({frame.number,stitched->width,stitched->height,stitched->pixels,{}},
-                    render::table_aspect_width,render::table_aspect_height);
+                    render::table_aspect_width,render::table_aspect_height,true);
                 else display.show({frame.number,frame.width,frame.height,original,{}});
                 previous_video=snapshot;
             } else {display.show(frame);}
