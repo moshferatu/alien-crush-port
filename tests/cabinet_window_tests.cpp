@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "cabinet.hpp"
+#include "cabinet_settings.hpp"
 #include "window_layout.hpp"
 #include "alien_crush/core/files.hpp"
 #include <fstream>
@@ -42,6 +43,7 @@ int main(int argc,char** argv) {
         std::filesystem::create_directories(data);
         // A known fixture makes repeated test runs independent of saved geometry.
         {
+            host::write_cabinet_settings(data/"cabinet.ini",{{"input.plunger.axis","2"},{"input.buttons",""}});
             std::ofstream config(data/"cabinet-windows.txt");
             config<<"ACWINDOWS 1\nplayfield \"Test\" 0 0 320 240 0 0\n"
                   <<"backglass \"Test\" 0 0 320 240 0 0\nscore \"Test\" 0 0 320 240 0 0\n";
@@ -110,15 +112,17 @@ int main(int argc,char** argv) {
             cabinet.save();
         }
         {
-            std::ifstream config(data/"cabinet-windows.txt");
-            std::string magic;int version{};config>>magic>>version;
+            const auto settings=host::read_cabinet_settings(data/"cabinet.ini");
+            require(settings.at("input.plunger.axis")=="2" && settings.contains("input.buttons"),"Window saves preserve shared inputs");
             const std::array<int,3> expected{90,90,270};
-            for(const auto rotation:expected) {
-                std::string role,name;int x{},y{},w{},h{},fullscreen{},actual{};
-                config>>role>>std::quoted(name)>>x>>y>>w>>h>>fullscreen>>actual;
+            unsigned index=0;
+            for(const auto* role:{"playfield","backglass","score"}) {
+                const auto rotation=expected[index++];
+                std::istringstream config(settings.at(std::string("window.")+role));
+                std::string name;int x{},y{},w{},h{},fullscreen{},actual{};
+                config>>std::quoted(name)>>x>>y>>w>>h>>fullscreen>>actual;
                 require(static_cast<bool>(config) && actual==rotation && fullscreen==0,"Save each role's rotation and fullscreen");
             }
-            config.close();
             const auto rom=core::read_file(core::path_from_utf8(argv[1]));
             host::Presentation playfield("Restored playfield",320,240,true);
             host::Cabinet cabinet(playfield,data,rom);

@@ -7,7 +7,9 @@
 
 namespace alien_crush::host {
 input::PlungerBinding parse_cabinet_plunger(std::string_view);
+input::PlungerBinding parse_cabinet_plunger_ini(std::string_view);
 input::PlungerBinding load_cabinet_plunger(const std::filesystem::path&);
+int plunger_probe();
 class CabinetPlunger {
     input::PlungerBinding binding_;
     input::Plunger detector_;

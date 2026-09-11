@@ -19,9 +19,8 @@ struct PlungerCalibration {
     // out, and only the inch or two of push travel is reachable, so every shot
     // comes out at the bottom of the range.
     //
-    // These inherited endpoints are provisional. Use the host's --input-probe
-    // to measure the actual board's axis, rest and full-pull values before
-    // configuring a game-specific launcher adapter.
+    // Same PinOne defaults as Devil's Crush. Other boards can be measured
+    // with --cabinet-plunger-probe; existing Devil's Crush settings also work.
     std::int32_t rest = 0;
     std::int32_t drawn = 32767;
 

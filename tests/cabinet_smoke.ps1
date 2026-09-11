@@ -9,26 +9,33 @@ $env:SDL_VIDEODRIVER='dummy'
 $env:SDL_AUDIODRIVER='dummy'
 $directory=Join-Path $OutputRoot ([guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
-$config=Join-Path $directory 'cabinet-windows.txt'
+$config=Join-Path $directory 'cabinet.ini'
 $recording=Join-Path $directory 'session.acrec'
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory --record $recording
 if($LASTEXITCODE -ne 0) { throw 'Initial cabinet smoke run failed' }
 $lines=[IO.File]::ReadAllLines($config)
-if($lines.Count -ne 4 -or $lines[0] -ne 'ACWINDOWS 1') { throw 'Missing cabinet placements' }
+if($lines.Count -lt 10) { throw 'Missing cabinet placements' }
 foreach($role in 'playfield','backglass','score') {
-    if(-not ($lines | Where-Object { $_.StartsWith("$role ") })) { throw "Missing $role window" }
+    if(-not ($lines | Where-Object { $_.StartsWith("window.$role=") })) { throw "Missing $role window" }
+}
+foreach($oldFile in 'cabinet-windows.txt','cabinet-inputs.txt','cabinet-plunger.txt') {
+    if(Test-Path (Join-Path $directory $oldFile)) { throw 'Fresh cabinets must use only cabinet.ini' }
+}
+if(-not ($lines -contains 'input.plunger.axis=-1') -or -not ($lines -contains 'input.buttons=')) {
+    throw 'Main cabinet.ini must include button and plunger settings'
 }
 # A disconnected monitor and off-screen geometry must recover to a usable display.
-$lines[1]='playfield "Disconnected test monitor" 99000 -99000 540 720 0 90'
+$lines=@($lines | Where-Object { -not $_.StartsWith("window.playfield=") }) + 'window.playfield="Disconnected test monitor" 99000 -99000 540 720 0 90'
 [IO.File]::WriteAllLines($config,$lines)
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
 if($LASTEXITCODE -ne 0) { throw 'Cabinet restore smoke run failed' }
 $restored=[IO.File]::ReadAllLines($config)
-if($restored[1] -match 'Disconnected|99000' -or -not $restored[1].EndsWith(' 90')) {
+$restoredPlayfield=$restored | Where-Object { $_.StartsWith("window.playfield=") }
+if($restoredPlayfield -match 'Disconnected|99000' -or -not $restoredPlayfield.EndsWith(' 90')) {
     throw 'Missing-monitor recovery or rotation persistence failed'
 }
 # Invalid configuration must fail clearly and remain available for correction.
-$invalid="ACWINDOWS 999`n"
+$invalid="window.playfield=invalid`n"
 [IO.File]::WriteAllText($config,$invalid)
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
 if($LASTEXITCODE -eq 0) { throw 'Invalid cabinet configuration was accepted' }
@@ -38,28 +45,46 @@ if([IO.File]::ReadAllText($config) -ne $invalid) { throw 'Invalid configuration 
 $inputConfig=Join-Path $directory 'cabinet-inputs.txt'
 $validInput="ACINPUTS1`n`"Absent test cabinet board`"`n0 1 2 3 4 -1 -1 -1`n"
 [IO.File]::WriteAllText($inputConfig,$validInput)
+[IO.File]::WriteAllLines($config,@([IO.File]::ReadAllLines($config) | Where-Object { -not $_.StartsWith("input.buttons=") }))
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
 if($LASTEXITCODE -ne 0) { throw 'Absent configured controller must allow startup' }
 if([IO.File]::ReadAllText($inputConfig) -ne $validInput) { throw 'Input settings were overwritten' }
+if(-not ([IO.File]::ReadAllLines($config) -match '^input.buttons=ACINPUTS2 "Absent test cabinet board" 0 1 2 3 4 -1 -1 -1 -1$')) {
+    throw 'Legacy buttons were not migrated into cabinet.ini'
+}
 $invalidInput="ACINPUTS1`n`"Test board`"`n256 1 2 3 4 -1 -1 -1`n"
 [IO.File]::WriteAllText($inputConfig,$invalidInput)
+[IO.File]::WriteAllLines($config,@([IO.File]::ReadAllLines($config) | Where-Object { -not $_.StartsWith("input.buttons=") }))
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
 if($LASTEXITCODE -eq 0) { throw 'Invalid input settings were accepted' }
 if([IO.File]::ReadAllText($inputConfig) -ne $invalidInput) { throw 'Invalid input settings were overwritten' }
 [IO.File]::WriteAllText($inputConfig,$validInput)
+[IO.File]::WriteAllLines($config,@([IO.File]::ReadAllLines($config) | Where-Object { -not $_.StartsWith("input.buttons=") }))
 $plungerConfig=Join-Path $directory 'cabinet-plunger.txt'
 if(Test-Path -LiteralPath $plungerConfig) { throw 'Missing plunger config must not be created automatically' }
 $validPlunger="ACPLUNGER1`n`"Absent test cabinet board`"`n2 1000 -1000 8 25`n"
 [IO.File]::WriteAllText($plungerConfig,$validPlunger)
+[IO.File]::WriteAllLines($config,@([IO.File]::ReadAllLines($config) | Where-Object { -not $_.StartsWith("input.plunger.") }))
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
 if($LASTEXITCODE -ne 0) { throw 'Absent configured plunger must allow startup' }
 if([IO.File]::ReadAllText($plungerConfig) -ne $validPlunger) { throw 'Plunger settings were overwritten' }
+if(-not ([IO.File]::ReadAllLines($config) -contains 'input.plunger.drawn=-1000')) {
+    throw 'Legacy plunger calibration was not migrated into cabinet.ini'
+}
+# Once migrated, changes to obsolete files cannot override the shared settings.
+[IO.File]::WriteAllText($inputConfig,'obsolete invalid buttons')
+[IO.File]::WriteAllText($plungerConfig,'obsolete invalid plunger')
+& $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
+if($LASTEXITCODE -ne 0) { throw 'Shared cabinet.ini did not take precedence over old files' }
+[IO.File]::WriteAllText($inputConfig,$validInput)
 $invalidPlunger="ACPLUNGER1`n`"Test board`"`n2 0 0 8 25`n"
 [IO.File]::WriteAllText($plungerConfig,$invalidPlunger)
+[IO.File]::WriteAllLines($config,@([IO.File]::ReadAllLines($config) | Where-Object { -not $_.StartsWith("input.plunger.") }))
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
 if($LASTEXITCODE -eq 0) { throw 'Invalid plunger settings were accepted' }
 if([IO.File]::ReadAllText($plungerConfig) -ne $invalidPlunger) { throw 'Invalid plunger settings were overwritten' }
 [IO.File]::WriteAllText($inputConfig,$invalidInput)
+[IO.File]::WriteAllLines($config,@([IO.File]::ReadAllLines($config) | Where-Object { -not $_.StartsWith("input.buttons=") }))
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory --replay $recording
 if($LASTEXITCODE -ne 0) { throw 'Replay must ignore hardware configuration' }
 # Optional local artwork is read in both live and replay cabinet sessions.
@@ -70,13 +95,15 @@ $art[18]=2; $art[22]=1; $art[26]=1; $art[28]=24
 $art[56]=255; $art[58]=255
 [IO.File]::WriteAllBytes($artPath,$art)
 $placements=[IO.File]::ReadAllLines($config)
-$placements[2]=$placements[2] -replace ' 0$', ' 90'
+$placements=$placements | ForEach-Object { if($_.StartsWith("window.backglass=")){$_ -replace ' 0$', ' 90'}else{$_} }
 [IO.File]::WriteAllLines($config,$placements)
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory --replay $recording
 if($LASTEXITCODE -ne 0) { throw 'Cabinet artwork replay smoke failed' }
-if(-not ([IO.File]::ReadAllLines($config)[2]).EndsWith(' 90')) { throw 'Backglass rotation was not preserved' }
+if(-not ([IO.File]::ReadAllLines($config) | Where-Object { $_.StartsWith("window.backglass=") }).EndsWith(' 90')) { throw 'Backglass rotation was not preserved' }
 [IO.File]::WriteAllText($inputConfig,$validInput)
+[IO.File]::WriteAllLines($config,@([IO.File]::ReadAllLines($config) | Where-Object { -not $_.StartsWith("input.buttons=") }))
 [IO.File]::WriteAllText($plungerConfig,$validPlunger)
+[IO.File]::WriteAllLines($config,@([IO.File]::ReadAllLines($config) | Where-Object { -not $_.StartsWith("input.plunger.") }))
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
 if($LASTEXITCODE -ne 0) { throw 'Cabinet artwork live smoke failed' }
 if([Convert]::ToBase64String([IO.File]::ReadAllBytes($artPath)) -ne [Convert]::ToBase64String($art)) {

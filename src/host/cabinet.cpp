@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "cabinet.hpp"
 #include "window_layout.hpp"
+#include "cabinet_settings.hpp"
 #include "alien_crush/render/title_logo.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
@@ -35,8 +36,16 @@ std::vector<Monitor> monitors(bool required=true) {
 constexpr std::array<const char*,3> roles{"playfield","backglass","score"};
 struct Placement { std::string name; int x{},y{},w{},h{},fullscreen{},rotation{}; };
 std::array<Placement,3> read(const std::filesystem::path& path) {
-    const auto bytes=core::read_file(path,16384);
-    std::istringstream stream(std::string(reinterpret_cast<const char*>(bytes.data()),bytes.size()));
+    std::string text;
+    if(path.extension()==".ini") {
+        const auto settings=read_cabinet_settings(path);
+        text="ACWINDOWS 1\n";
+        for(const auto* role:roles) text+=std::string(role)+' '+settings.at(std::string("window.")+role)+'\n';
+    } else {
+        const auto bytes=core::read_file(path,16384);
+        text.assign(reinterpret_cast<const char*>(bytes.data()),bytes.size());
+    }
+    std::istringstream stream(text);
     std::string magic; int version{};
     if(!(stream>>magic>>version) || magic!="ACWINDOWS" || version!=1) throw std::runtime_error("Unsupported cabinet window configuration");
     std::array<Placement,3> placements;
@@ -54,12 +63,14 @@ std::array<Placement,3> read(const std::filesystem::path& path) {
 }
 }
 Cabinet::Cabinet(Presentation& playfield,const std::filesystem::path& data,std::span<const std::byte> rom)
-    : windows_{&playfield,&backglass_,&score_},path_(data/"cabinet-windows.txt"),score_panel_(render::ScorePanel::from_rom(rom)),
+    : windows_{&playfield,&backglass_,&score_},path_(data/"cabinet.ini"),score_panel_(render::ScorePanel::from_rom(rom)),
       backglass_image_(load_backglass(data/"backglass.bmp")) {
     if(!backglass_image_) backglass_animation_.emplace(rom);
     const auto displays=monitors();
-    const bool saved=std::filesystem::exists(path_);
-    const auto placements=saved?read(path_):std::array<Placement,3>{};
+    const auto settings=read_cabinet_settings(path_);
+    const auto source=settings.contains("window.playfield")?path_:data/"cabinet-windows.txt";
+    const bool saved=std::filesystem::exists(source);
+    const auto placements=saved?read(source):std::array<Placement,3>{};
     for(std::size_t i=0;i<windows_.size();++i) {
         auto* output=windows_[i]; auto* window=output->window();
         checked(SDL_SetWindowMinimumSize(window,64,64));
@@ -163,15 +174,16 @@ void Cabinet::show(std::span<const std::byte> ram) {
     score_.show({0,image.width,image.height,image.pixels,{}},8,3);
 }
 void Cabinet::save() const {
-    std::ostringstream stream; stream<<"ACWINDOWS 1\n";
+    auto settings=read_cabinet_settings(path_);
     for(std::size_t i=0;i<windows_.size();++i) {
+        std::ostringstream stream;
         auto* window=windows_[i]->window(); int x{},y{},w{},h{};
         checked(SDL_GetWindowPosition(window,&x,&y)); checked(SDL_GetWindowSize(window,&w,&h));
         const auto* name=SDL_GetDisplayName(SDL_GetDisplayForWindow(window));
-        stream<<roles[i]<<' '<<std::quoted(name?name:"Unnamed display")<<' '<<x<<' '<<y<<' '<<w<<' '<<h<<' '
-            <<((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)?1:0)<<' '<<windows_[i]->rotation()<<'\n';
+        stream<<std::quoted(name?name:"Unnamed display")<<' '<<x<<' '<<y<<' '<<w<<' '<<h<<' '
+            <<((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)?1:0)<<' '<<windows_[i]->rotation();
+        settings[std::string("window.")+roles[i]]=stream.str();
     }
-    const auto text=stream.str();
-    core::write_file_atomic(path_,std::as_bytes(std::span(text.data(),text.size())));
+    write_cabinet_settings(path_,settings);
 }
 }

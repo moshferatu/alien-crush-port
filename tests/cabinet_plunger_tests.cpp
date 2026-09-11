@@ -24,7 +24,11 @@ int main(int argc,char** argv) {
                 const auto id=SDL_AttachVirtualJoystick(&desc);require(id!=0,"Attach plunger");return id;
             };
             auto id=attach();auto* device=SDL_OpenJoystick(id);require(device!=nullptr,"Open plunger");
-            host::CabinetPlunger rod(host::parse_cabinet_plunger("ACPLUNGER1 \"virtual pinone\" 2 1000 -1000 0 25"));
+            host::CabinetPlunger unnamed(host::parse_cabinet_plunger_ini("input.plunger.axis=2\n"));
+            require(unnamed.id()==id,"Devil's Crush axis-only binding selects raw joystick without a name");
+            host::CabinetPlunger rod(host::parse_cabinet_plunger_ini(
+                "input.plunger.device=virtual pinone\ninput.plunger.axis=2\ninput.plunger.rest=1000\n"
+                "input.plunger.drawn=-1000\ninput.plunger.deadzone=0\ninput.plunger.release=25\n"));
             require(rod.id()==id,"Select named axis-only board");
             auto axis=[&](Sint16 value) {require(SDL_SetJoystickVirtualAxis(device,2,value),"Set plunger axis");SDL_UpdateJoysticks();};
             auto byte=[&](unsigned offset){return std::to_integer<unsigned>(runtime->work_ram()[offset]);};

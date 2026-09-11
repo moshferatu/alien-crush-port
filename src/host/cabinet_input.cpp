@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "cabinet_input.hpp"
+#include "cabinet_settings.hpp"
 #include "alien_crush/core/files.hpp"
 #include <algorithm>
 #include <iomanip>
@@ -35,6 +36,9 @@ CabinetButtons parse_cabinet_buttons(std::string_view text) {
     return result;
 }
 CabinetButtons load_cabinet_buttons(const std::filesystem::path& path) {
+    const auto settings=read_cabinet_settings(path.parent_path()/"cabinet.ini");
+    if(const auto found=settings.find("input.buttons");found!=settings.end())
+        return found->second.empty()?CabinetButtons{}:parse_cabinet_buttons(found->second);
     if(!std::filesystem::exists(path)) return {};
     const auto bytes=core::read_file(path,4096);
     return parse_cabinet_buttons({reinterpret_cast<const char*>(bytes.data()),bytes.size()});
@@ -96,7 +100,7 @@ int input_probe(std::uint64_t samples) {
         std::ostringstream report;
         report<<"Raw joystick probe - button/axis indices start at 0\n"
               <<"Press buttons; pull/release the rod. Record its axis, rest and full-pull values.\n"
-              <<"Use measured endpoints in cabinet-plunger.txt (see README).\n\n";
+              <<"Set input.plunger.* in the main cabinet.ini (see README).\n\n";
         if(devices.empty()) report<<"No joysticks detected. Connect the cabinet controller.\n";
         for(const auto& device:devices) {
             const auto* name=SDL_GetJoystickName(device.get());

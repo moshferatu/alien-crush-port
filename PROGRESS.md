@@ -1,5 +1,45 @@
 # Progress
 
+Single cabinet configuration (2026-09-10):
+
+- Consolidated window placement, raw button bindings and plunger calibration
+  into portable-data/cabinet.ini. Window saves preserve input and unknown
+  settings; input.buttons retains the existing ACINPUTS mapping syntax on one
+  line, alongside Devil's Crush-compatible input.plunger.* fields.
+- Read older cabinet-windows.txt, cabinet-inputs.txt and cabinet-plunger.txt
+  only when their corresponding INI settings are absent. Normal live exit
+  saves the combined configuration; old files remain untouched as backups.
+  Replay ignores hardware settings and does not migrate/overwrite bindings.
+- Tests cover fresh single-file setup, window reload, legacy migration,
+  retained calibration, precedence over obsolete files and invalid input
+  preservation. Updated README, help and packaged cabinet setup instructions.
+- Release build and all four targeted tests passed (cabinet input, windows,
+  plunger and smoke): out/build-shared-cabinet.log and
+  out/test-shared-cabinet-final.log. Published D:\Workspace\alien-crush-cabinet
+  (out/publish-shared-cabinet.log).
+
+Devil's Crush plunger configuration compatibility (2026-09-10):
+
+- Compared its raw-joystick reader, calibration model, cabinet.ini parser and
+  guided probe. The normalized pull/release model already matches; Alien's
+  mandatory separate ACPLUNGER1 file and device name prevented reusing setup.
+- Read input.plunger.* settings from local cabinet.ini, including defaults,
+  unnamed device selection, percent-escaped names and reversed endpoints.
+  --plunger-config can read the working Devil's Crush cabinet.ini directly.
+  Only plunger fields are used; the source file is never modified. Existing
+  cabinet-plunger.txt remains the fallback when no local INI is present.
+- Added --cabinet-plunger-probe with the same two-second rest/twelve-second
+  movement measurement and paste-ready settings. Raw --input-probe remains.
+- The workspace's Devil's Crush INI has axis=-1, so no working hardware
+  calibration was available here to migrate automatically. Reuse the cabinet
+  PC's working INI. No guessed device or axis is enabled by default.
+- All six targeted tests passed: core, cabinet input, cabinet controls,
+  controls replay, virtual plunger and cabinet smoke. Virtual launches use
+  INI settings and cover release strength, focus, reconnect, pause and restore.
+  Logs: out/build-devils-plunger.log and out/test-devils-plunger.log.
+- Host smoke also loaded the real Devil's Crush INI via --plunger-config.
+  Published D:\Workspace\alien-crush-cabinet (out/publish-devils-plunger.log).
+
 Last-chance match digits (2026-09-10):
 
 - Recovered type 43 actions 2..4: 03:831A..8342 draws three reserved SAT

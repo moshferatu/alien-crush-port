@@ -122,6 +122,9 @@ portable-data beside the executable. They stay local to each computer.
 Publishing updates packaged files and preserves this directory and other local
 files. If needed, copy cabinet-specific bindings/artwork manually once.
 See README.md for controls, monitor setup and configuration file formats.
+Window placement, raw buttons and plunger settings share portable-data/cabinet.ini.
+Older separate configuration files are imported on startup and retained as backups.
+Normal exit writes the combined settings. Edit plunger values in this main INI.
 '@
     [IO.File]::WriteAllText((Join-Path $stage 'CABINET-SETUP.txt'), $instructions + "`r`n", $utf8)
     New-Item -ItemType Directory -Path $destinationFull -Force | Out-Null

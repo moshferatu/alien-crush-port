@@ -3,6 +3,10 @@
 #include "cabinet.hpp"
 #include "cabinet_input.hpp"
 #include "cabinet_plunger.hpp"
+#include "cabinet_settings.hpp"
+#include <iomanip>
+#include <algorithm>
+#include <sstream>
 #include "game_input.hpp"
 #include "alien_crush/runtime/reference_launcher.hpp"
 #include "alien_crush/render/table_playfield.hpp"
@@ -34,9 +38,9 @@ PadInput read_input(SDL_Gamepad* pad) {
 }
 int main(int argc,char** argv) {
     try {
-        std::filesystem::path rom_path,record_path,replay_path,data_path,timing_path;
+        std::filesystem::path rom_path,record_path,replay_path,data_path,timing_path,plunger_path;
         std::uint64_t limit=0;
-        bool cabinet_mode=false,probe=false;
+        bool cabinet_mode=false,probe=false,probe_plunger=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]);};
@@ -48,19 +52,31 @@ int main(int argc,char** argv) {
             else if(arg=="--timing-log") timing_path=core::path_from_utf8(value());
             else if(arg=="--cabinet") cabinet_mode=true;
             else if(arg=="--input-probe") probe=true;
-            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper; Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nRaw cabinet buttons: configure cabinet-inputs.txt in the data directory (see README).\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
+            else if(arg=="--cabinet-plunger-probe") probe_plunger=true;
+            else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
+            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper; Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nCabinet settings: windows, input.buttons and input.plunger.* share portable-data/cabinet.ini (see README).\n--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n--plunger-config <path>: reuse a Devil's Crush cabinet.ini; otherwise local cabinet.ini, then legacy cabinet-plunger.txt.\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
             else throw std::runtime_error("Unknown option "+arg);
         }
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
         SdlLifetime sdl;
+        if(probe_plunger) return host::plunger_probe();
         if(probe) return host::input_probe(limit);
         const auto base=core::path_from_utf8(SDL_GetBasePath());
         if(rom_path.empty()) rom_path=base/"Alien Crush.pce";
         if(data_path.empty()) data_path=base/"portable-data";
-        host::CabinetInput cabinet_input(cabinet_mode && replay_path.empty()?
-            host::load_cabinet_buttons(data_path/"cabinet-inputs.txt"):host::CabinetButtons{});
-        host::CabinetPlunger cabinet_plunger(cabinet_mode && replay_path.empty()?
-            host::load_cabinet_plunger(data_path/"cabinet-plunger.txt"):input::PlungerBinding{});
+        const bool external_plunger=!plunger_path.empty();
+        if(plunger_path.empty()) {
+            const auto settings=cabinet_mode && replay_path.empty()?host::read_cabinet_settings(data_path/"cabinet.ini"):host::CabinetSettings{};
+            const bool has_plunger=std::any_of(settings.begin(),settings.end(),[](const auto& item){return item.first.starts_with("input.plunger.");});
+            plunger_path=has_plunger?data_path/"cabinet.ini":data_path/"cabinet-plunger.txt";
+        }
+        else if(!std::filesystem::exists(plunger_path)) throw std::runtime_error("Plunger configuration file does not exist");
+        const auto buttons=cabinet_mode && replay_path.empty()?
+            host::load_cabinet_buttons(data_path/"cabinet-inputs.txt"):host::CabinetButtons{};
+        const auto plunger=cabinet_mode && replay_path.empty()?
+            host::load_cabinet_plunger(plunger_path):input::PlungerBinding{};
+        host::CabinetInput cabinet_input(buttons);
+        host::CabinetPlunger cabinet_plunger(plunger);
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) playback=recording::read(replay_path);
         const auto mode=playback?((playback->initial.core_revision.find("-handoff1")!=std::string::npos || playback->initial.core_revision.find("-h1-")!=std::string::npos)?HandoffMode::continuous:HandoffMode::original):
@@ -182,6 +198,30 @@ int main(int argc,char** argv) {
         if(!record_path.empty()) recording::write(record_path,recorded);
         // Keep the last usable layout if the user exits during a display outage.
         if(cabinet && !display_layout_changed) cabinet->save();
+        if(cabinet && !playback) {
+            auto settings=host::read_cabinet_settings(data_path/"cabinet.ini");
+            std::ostringstream mapping;
+            if(!buttons.device.empty()) {
+                mapping<<"ACINPUTS2 "<<std::quoted(buttons.device);
+                for(const auto button:buttons.buttons) mapping<<' '<<button;
+            }
+            settings.try_emplace("input.buttons",mapping.str());
+            if(!external_plunger) {
+                std::string name;
+                constexpr char hex[]="0123456789ABCDEF";
+                for(const unsigned char c:plunger.device) {
+                    if(c=='%' || c=='=' || c=='\r' || c=='\n') {name+='%';name+=hex[c>>4];name+=hex[c&15];}
+                    else name+=static_cast<char>(c);
+                }
+                settings.try_emplace("input.plunger.device",name);
+                settings.try_emplace("input.plunger.axis",std::to_string(plunger.axis));
+                settings.try_emplace("input.plunger.rest",std::to_string(plunger.calibration.rest));
+                settings.try_emplace("input.plunger.drawn",std::to_string(plunger.calibration.drawn));
+                settings.try_emplace("input.plunger.deadzone",std::to_string(plunger.calibration.deadzone));
+                settings.try_emplace("input.plunger.release",std::to_string(plunger.calibration.release));
+            }
+            host::write_cabinet_settings(data_path/"cabinet.ini",settings);
+        }
         return 0;
     } catch(const std::exception& e) { std::cerr<<"Alien Crush: "<<e.what()<<'\n'; return 1; }
 }

@@ -123,7 +123,10 @@ Monitor changes center the window on the destination, fit its size to the usable
 area, and retain its rotation and fullscreen setting. F10 does nothing when only
 one monitor is connected. Keyboard repeats do not repeat setup actions.
 Placement, monitor names and rotation save on normal exit to
-`portable-data/cabinet-windows.txt` (or your `--data-dir`). Missing monitors fall
+`portable-data/cabinet.ini` (or your `--data-dir`). This single file also holds
+button mappings and plunger calibration. Older separate settings files are
+imported when the corresponding settings are absent and retained as backups;
+normal exit saves the combined configuration. Missing monitors fall
 back to connected displays with the windows clamped into view. Moving focus
 between cabinet windows keeps the game running; switching away pauses it.
 Live monitor connection, position, orientation and resolution changes also recover
@@ -199,13 +202,11 @@ and raw axis readings. Pull the plunger to identify its axis and rest/full-pull
 endpoints; these readings are diagnostic and do not control launch power yet.
 Escape closes the probe. `--frames N` limits it to N samples at 100ms intervals.
 
-Create `portable-data/cabinet-inputs.txt` beside the executable (or in your
-`--data-dir`) using the observed controller name and button numbers:
+Edit `input.buttons` in `portable-data/cabinet.ini` using the observed
+controller name and button numbers:
 
 ```text
-ACINPUTS1
-"PinOne"
-0 1 2 3 4 -1 -1 -1
+input.buttons=ACINPUTS1 "PinOne" 0 1 2 3 4 -1 -1 -1
 ```
 
 The eight numbers map, in order, to left flipper, right flipper, nudge,
@@ -218,7 +219,7 @@ verified PinOne defaults.** Use `-1` to disable a mapping; valid indices are 0â€
 The name is a nonempty case-insensitive substring; the first matching device with
 all configured buttons is selected. Choose a distinctive name when several boards
 are connected. Settings load at startup in `--cabinet` mode.
-A missing file leaves raw buttons disabled; malformed settings report an error.
+An empty `input.buttons=` leaves raw buttons disabled; malformed settings report an error.
 Keyboard controls and other gamepads remain available. The selected board's default
 gamepad mapping is suppressed to prevent duplicate actions.
 
@@ -226,13 +227,45 @@ Release all mapped buttons after startup, reconnect, quick-load or returning fro
 another application before using them. Disconnecting clears held raw input and
 reconnecting finds the board by name even if its SDL instance ID changes. Recordings
 store the resulting controller bits and accepted plunger commands; replay ignores hardware mappings.
-These buttons retain the game's original shared right-flipper/launcher and
-start/pause behavior. Separate scene-aware button actions remain pending.
+Plunger setup accepts the same settings as Devil's Crush. Copy the working
+`input.plunger.*` lines from that game's `portable-data/cabinet.ini` into Alien
+Crush's existing `portable-data/cabinet.ini`, alongside its window and button
+settings. No separate plunger configuration file is required.
+Alternatively, read the existing file directly without copying or modifying it:
 
-The reference-runtime plunger adapter now has automated tests for seated-ball
-detection, stable draw strength, original-game release, and cancellation without
-firing during active play, pause or resume. New draws are rejected while paused.
-Enable analog input by creating `cabinet-plunger.txt` in the data directory:
+```powershell
+.\alien-crush.exe --cabinet --plunger-config 'D:\Path\To\DevilsCrush\portable-data\cabinet.ini'
+```
+
+The same PinOne defaults apply, so an axis-only configuration is sufficient
+for a board using the standard center-rest, positive-pull Z axis:
+
+```text
+input.plunger.axis=2
+```
+
+Full settings use Devil's Crush's names and values:
+
+```text
+input.plunger.device=PinOne
+input.plunger.axis=2
+input.plunger.rest=0
+input.plunger.drawn=32767
+input.plunger.deadzone=8
+input.plunger.release=25
+```
+
+An omitted/empty device name selects the first joystick with the configured axis;
+a supplied name matches a case-insensitive substring. Axis -1 disables input.
+To measure a different board, run `alien-crush.exe --cabinet-plunger-probe` in a
+terminal. As in Devil's Crush, leave the rod at rest for two seconds, then fully
+pull and release it during the twelve-second measurement. The probe prints the
+settings to paste into `cabinet.ini`; it does not change existing calibration.
+`--input-probe` remains available for the live raw button/axis display.
+
+Restart after editing. Explicit `--plunger-config` takes precedence, followed by
+the data directory's `cabinet.ini`. The older `cabinet-plunger.txt` format below
+is imported only when the INI has no plunger settings:
 
 ```text
 ACPLUNGER1
@@ -244,7 +277,7 @@ The five numbers are **axis index, rest value, full-pull value, deadzone percent
 release-fall percent**. These are examples; measure your board with `--input-probe`.
 Endpoints may run in either direction and must be distinct values in -32768..32767.
 The deadzone is 0..99; release threshold is 1..100. Choose a specific device name
-substring; the first matching board with that axis is used. Buttons and the plunger
+substring in the legacy format; the first matching board with that axis is used. Buttons and the plunger
 may use different boards. Missing configuration disables analog input; invalid
 configuration reports an error without overwriting it. Restart after editing.
 

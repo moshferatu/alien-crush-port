@@ -38,6 +38,26 @@ int main() {
             const auto extended=host::parse_cabinet_buttons("ACINPUTS2 \"PinOne\" 0 1 2 3 4 5 6 7 8");
             require(extended.buttons[8]==8,"Optional separate raw launch button");
             const auto plunger=host::parse_cabinet_plunger("ACPLUNGER1 \"PinOne\" 2 -32768 32767 8 25");
+            const auto defaults=host::parse_cabinet_plunger_ini("input.plunger.axis=2\n");
+            require(defaults.enabled() && defaults.device.empty() && defaults.calibration.rest==0 &&
+                defaults.calibration.drawn==32767 && defaults.calibration.deadzone==8 && defaults.calibration.release==25,
+                "Devil's Crush axis-only PinOne configuration");
+            require(!host::parse_cabinet_plunger_ini("input.plunger.axis=-1\n").enabled(),"Explicitly disabled plunger");
+            require(host::parse_cabinet_plunger_ini("\xef\xbb\xbfinput.plunger.axis=2\r\n").axis==2,
+                "Windows UTF-8 BOM does not hide first plunger setting");
+            const auto copied=host::parse_cabinet_plunger_ini(
+                "# Full Devil's Crush configuration\nversion=1\nplayfield.rotation=90\ninput.one=A\n"
+                "input.plunger.device=PinOne%20Board%25\r\ninput.plunger.axis=2\n"
+                "input.plunger.rest=1000\ninput.plunger.drawn=-1000\ninput.plunger.deadzone=12\ninput.plunger.release=30\n");
+            require(copied.device=="PinOne Board%" && copied.axis==2 && copied.calibration.rest==1000 &&
+                copied.calibration.drawn==-1000 && copied.calibration.deadzone==12 && copied.calibration.release==30,
+                "Copied cabinet.ini preserves device escaping, reversed endpoints and thresholds");
+            for(const auto* bad:{"input.plunger.axis=no", "input.plunger.rest=0junk", "input.plunger.deadzone=101",
+                "input.plunger.release=-1", "input.plunger.device=Bad%", "input.plunger.device=Bad%GG",
+                "input.plunger.device=Bad%00", "input.plunger.axis", "input.plunger.axix=2"}) {
+                bool rejected=false;try{(void)host::parse_cabinet_plunger_ini(bad);}catch(const std::runtime_error&){rejected=true;}
+                require(rejected,"Invalid INI plunger setting rejected");
+            }
             require(plunger.axis==2 && plunger.calibration.rest==-32768 && plunger.calibration.release==25,"Plunger configuration");
             for(const auto* bad:{"", "ACPLUNGER2 \"PinOne\" 2 0 1000 8 25",
                 "ACPLUNGER1 \"\" 2 0 1000 8 25", "ACPLUNGER1 \"PinOne\" -1 0 1000 8 25",
