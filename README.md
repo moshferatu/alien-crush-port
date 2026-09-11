@@ -329,7 +329,8 @@ Live cabinet mode replaces main-table graphics decompression and actor-bank copy
 with synchronous transfers and bypasses the handoff's two display waits. Collision
 pointers, actor restoration and gameplay setup still run in their original order.
 Every game frame supplies its full audio batch; no seam frames or music samples
-are discarded. This applies to cabinet mode. Desktop mode and old reference
+are discarded. This applies to both live play and attract-mode demos in cabinet
+mode. Desktop mode and old reference
 recordings retain the cartridge's loading timeline. The default video-enabled
 backend is required for continuous handoffs.
 For timing diagnostics, `--timing-log <file.csv>` records frame start/end times,

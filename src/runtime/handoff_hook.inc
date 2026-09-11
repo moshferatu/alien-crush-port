@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Only the two ordinary-table handoff call trees. No persistent execution
+// Only the two main-table handoff call trees, from live play or attract mode. No persistent execution
 // phase exists outside the serialized CPU/RAM state; IRQs fail the stack guard.
+        {
         // Original flipper routines, after initialization and before their
         // ordinary motion/collision code. Only live, initialized flipper actors
         // in table scenes may use these masks or bypass the shooter/ball gate.
@@ -14,8 +15,13 @@
             if(PC==0x4b95) PC=0x4ba1;
             if(PC==0x4ba9) PC=0x4bae;
         }
+        // 01:409E (live) and 01:4038 (demo) both call 03:894B.
+        const bool ac_table_handoff_caller=(ac_continuous_handoff || ac_handoff_audit.enabled || ac_handoff_boundary) &&
+            (PC==0xe3f7 || PC==0xe43c || PC==0x4714 || (PC>=0x89b3 && PC<=0x8a41)) &&
+            MPR[1]==0xf8 && RdMem(0x21ff)==0x40 &&
+            RdMem(0x21fe)==(RdMem(0x2076)?0x3a:0xa0);
         if(ac_handoff_boundary && MPR[1]==0xf8 && MPR[4]==3 && MPR[2]==1 && S==0xfd &&
-            RdMem(0x21fe)==0xa0 && RdMem(0x21ff)==0x40 &&
+            ac_table_handoff_caller &&
             (PC==0x89cd || PC==0x89d0 || PC==0x89d3 || PC==0x89d6 ||
              PC==0x8a28 || PC==0x8a2b || PC==0x8a2e || PC==0x8a31)) {
             unsigned char ram[8192];
@@ -27,8 +33,8 @@
         if((ac_continuous_handoff || ac_handoff_audit.enabled) &&
             (PC==0xe3f7 || PC==0xe43c || PC==0x4714 || PC==0x89b3 || PC==0x89e9 || PC==0x8a1b || PC==0x8a41) &&
             MPR[1]==0xf8 && MPR[7]==0 &&
-            RdMem(0x21fe)==0xa0 && RdMem(0x21ff)==0x40 &&
-            RdMem(0x2079)<=1 && !RdMem(0x2076) && !RdMem(0x207c) &&
+            ac_table_handoff_caller &&
+            RdMem(0x2079)<=1 && !RdMem(0x207c) &&
             !(RdMem(0x2053)&0x80) &&
             !(RdMem(0x2054)&0x80) && RdMem(0x3500)==1) {
             if(MPR[4]==3 && MPR[2]==1 && S==0xfd &&
@@ -60,4 +66,5 @@
                     }
                 }
             }
+        }
         }

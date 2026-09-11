@@ -168,6 +168,18 @@ if(AC_BUILD_TESTS)
             add_test(NAME inactive_animation COMMAND ac_inactive_animation_tests "${AC_ROM_PATH}")
             set_tests_properties(inactive_animation PROPERTIES TIMEOUT 90 LABELS "rom_required;graphics")
             add_executable(ac_continuous_handoff_tests tests/continuous_handoff_tests.cpp)
+            add_executable(ac_demo_handoff_tests tests/demo_handoff_tests.cpp)
+            target_link_libraries(ac_demo_handoff_tests PRIVATE ac_reference)
+            ac_enable_strict_warnings(ac_demo_handoff_tests)
+            add_test(NAME demo_handoff COMMAND ac_demo_handoff_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/demo-crossing.acrec")
+            set_tests_properties(demo_handoff PROPERTIES TIMEOUT 90 FIXTURES_SETUP demo_handoff_recording)
+            if(AC_BUILD_APP)
+                add_test(NAME demo_handoff_host COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
+                    --replay "${CMAKE_BINARY_DIR}/demo-crossing.acrec" --data-dir "${CMAKE_BINARY_DIR}/demo-handoff-host"
+                    --timing-log "${CMAKE_BINARY_DIR}/demo-handoff-host.csv")
+                set_tests_properties(demo_handoff_host PROPERTIES TIMEOUT 30 FIXTURES_REQUIRED demo_handoff_recording
+                    ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            endif()
             target_link_libraries(ac_continuous_handoff_tests PRIVATE ac_reference)
             ac_enable_strict_warnings(ac_continuous_handoff_tests)
             add_test(NAME continuous_handoff COMMAND ac_continuous_handoff_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/continuous.acrec")

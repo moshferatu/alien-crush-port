@@ -1,5 +1,24 @@
 # Progress
 
+Continuous attract-demo seams (2026-09-11):
+
+- Live handoff acceleration excluded nonzero demo selector 76 and required
+  caller 40A0. Recognize the demo's 01:4038 -> 03:894B call (return 403A)
+  when that selector is active. Reuse the same guarded transfers, actor-bank
+  exchange and display-wait removal; retain practice, fade, bank and stack gates.
+  Cabinet flipper remapping still excludes demo actors.
+- New demo_handoff test audits original CPU transfer contracts, compares both
+  seam directions' collision pointers and actor banks, and rejects frames ending
+  inside the loader. A natural cabinet demo covers audio duration, title return,
+  Run exit and 400 frames of exact native-checkpoint RAM/video/audio replay.
+  Cross-backend diagnostic imports are used only for transfer comparisons.
+- Demo and cabinet-host tests passed (out/test-demo-handoff-final.log), as did
+  the existing original attract replay, live handoff, continuous recording and
+  continuous host checks (out/test-demo-handoff.log). Release build:
+  out/build-demo-handoff-final.log. Host pacing: demo-handoff-host.csv in the
+  Release build tree.
+- Published D:\Workspace\alien-crush-cabinet (out/publish-demo-handoff.log).
+
 Cabinet bonus alignment and normal-game ranking (2026-09-11):
 
 - Bottom-align the original bonus-room viewport in the cabinet playfield

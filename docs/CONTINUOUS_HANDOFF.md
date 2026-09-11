@@ -13,7 +13,8 @@ write-latch contents, update tile caches, and commit the preceding pending write
 Active DMA declines replacement until ordinary execution can complete it.
 
 The guard requires the ordinary table, ball actor, mapped ROM/RAM banks and
-the actual handoff stack. Graphics calls from actor restoration are covered too.
+the actual handoff stack: return 40A0 from live play, or 403A from the demo loop
+when the demo selector is active. Graphics calls from actor restoration are covered too.
 Camera shake is permitted: nudging can change camera RAM during a valid handoff.
 Only the JSRs at 89B3/89E9 and 8A1B/8A41 are bypassed. The complete E705 routine,
 collision pointer installation and actor scheduler remain in their original order.
@@ -32,6 +33,14 @@ returned. Ten genuine pre-handoff checkpoints compare collision pointers, flags
 and both complete actor banks at four matching instruction boundaries, in both
 directions. None ends a frame in a loading routine. Native replay checks retain
 exact audio/pixel/RAM equality after restoring a native checkpoint.
+
+Demo coverage also audits the original transfer contracts and imports genuine
+pre-crossing checkpoints in both directions to compare actor banks and collision
+pointers. Neither crossing ends a frame inside the loader. A separate native
+cabinet demo checks the full audio timeline, natural title return, Run to exit,
+and 400 frames of exact restored RAM/video/audio including a seam crossing.
+`demo_handoff_host` replays this route through the cabinet renderer and writes
+`demo-handoff-host.csv` for pacing checks.
 
 `out/captures/native-handoff` contains the first crossing. The reviewed contact
 sheet `out/native-seam-contact.png` shows continuous current-ball motion through
