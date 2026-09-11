@@ -155,6 +155,18 @@ int main() {
             }
             scene[0x7c]=std::byte{};
             require(!diagnostics::observe_alien_state(scene).high_score_menu,"Practice score call requires practice mode");
+            scene={};scene[0x7a]=std::byte{2};
+            constexpr std::array<std::byte,7> game_scores{std::byte{0xfd},std::byte{0xeb},std::byte{3},
+                std::byte{2},std::byte{1},std::byte{0x7d},std::byte{0x41}};
+            std::copy(game_scores.begin(),game_scores.end(),scene.begin()+0x1f9);
+            require(diagnostics::observe_alien_state(scene).high_score_menu,"Normal game-end ranking recognized");
+            for(unsigned i=0;i<7;++i) {
+                scene[0x1f9+i]^=std::byte{1};
+                require(!diagnostics::observe_alien_state(scene).high_score_menu,"Partial normal game-end signature rejected");
+                scene[0x1f9+i]^=std::byte{1};
+            }
+            scene[0x76]=std::byte{1};
+            require(!diagnostics::observe_alien_state(scene).high_score_menu,"Demo excludes normal game-end ranking");
             scene={};
             constexpr std::array<std::byte,9> signature{std::byte{0x0c},std::byte{0xeb},std::byte{0x18},
                 std::byte{4},std::byte{3},std::byte{2},std::byte{1},std::byte{5},std::byte{0x40}};

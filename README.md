@@ -148,7 +148,8 @@ Attract-mode demos show the same high score and prompt with a "DEMO" label;
 simulated scores and ball counts stay hidden. Run returns to the original menus.
 In a bonus room, the score remains the game's cumulative total and the lower-right
 field shows BONUS 1–4 instead of the main-table ball counter. Bonus rooms use the
-original single-screen playfield in cabinet mode.
+original single-screen playfield in cabinet mode, aligned to the bottom of the
+window like the main table.
 When the original bonus loop ends, the panel displays ROUND OVER while retaining
 the cumulative score and room number. It follows the game's timing and clears
 as the original scene advances.
@@ -171,8 +172,8 @@ pause, then **Backspace** (Select). The score window shows all five ranks while
 the playfield shows the original score-table screen. Press Backspace or Enter
 to leave that screen, then Enter to resume play. Scores currently last for the
 running session or a quick state; automatic persistence is not implemented yet.
-The cabinet also shows the ranked table during the verified bonus-practice
-name-entry sequence. Name editing remains on the original playfield screen.
+The cabinet also shows the ranked table during normal-game and bonus-practice
+name entry. Name editing remains on the original playfield screen.
 A qualifying replay checks a 1,505,700-point score, name confirmation and
 retention when starting another game in the same session.
 Put your artwork at `portable-data/backglass.bmp` (or in

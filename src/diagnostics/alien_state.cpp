@@ -33,6 +33,13 @@ AlienState observe_alien_state(std::span<const std::byte> ram) {
         std::byte{2},std::byte{1},std::byte{0x8f},std::byte{0x44},std::byte{8},std::byte{0x40}};
     result.high_score_menu|=b(0x7a)==2 && b(0x7c)==1 && !result.demo_play &&
         std::equal(practice_scores_stack.begin(),practice_scores_stack.end(),ram.begin()+0x1f7);
+    // Normal game end calls EBE6 directly at 01:417B (return 417D).
+    // Unlike practice and pause, there is no enclosing JSR: the seven-byte
+    // wrapper frame ends at 1FF. This includes ranking and initials entry.
+    constexpr std::array<std::byte,7> game_scores_stack{std::byte{0xfd},std::byte{0xeb},std::byte{3},
+        std::byte{2},std::byte{1},std::byte{0x7d},std::byte{0x41}};
+    result.high_score_menu|=b(0x7a)==2 && b(0x7c)==0 && !result.demo_play &&
+        std::equal(game_scores_stack.begin(),game_scores_stack.end(),ram.begin()+0x1f9);
     // FDE5 uses 83+2 to load room actors, then restores shared table code 2.
     if(result.table_code==2 && b(0x83)<4) result.bonus_room=static_cast<std::uint8_t>(b(0x83)+1);
     result.bonus_round_over=result.bonus_room!=0 && (b(0x78)&1)!=0;

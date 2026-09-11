@@ -39,6 +39,25 @@ int main(int argc,char** argv) {
         require(argc==3,"Expected ROM and test data directory");
         geometry_tests();
         require(SDL_Init(SDL_INIT_VIDEO),"Initialize SDL");
+        {
+            host::Presentation playfield("Bonus alignment",384,768,true);
+            const std::vector<std::uint32_t> pixels(256*240,0xff80c040);
+            for(const int rotation:{0,90,180,270}) {
+                playfield.rotation(rotation);
+                playfield.show({1,256,240,pixels,{}},4,3,true);
+                auto* capture=SDL_RenderReadPixels(SDL_GetRenderer(playfield.window()),nullptr);
+                require(capture!=nullptr,"Read bottom-aligned bonus viewport");
+                Uint8 r{},g{},b{},a{};
+                const bool bottom=SDL_ReadSurfacePixel(capture,capture->w/2,capture->h-1,&r,&g,&b,&a) && g>150;
+                const bool top=SDL_ReadSurfacePixel(capture,capture->w/2,0,&r,&g,&b,&a) && r==0 && g==0 && b==0;
+                if(!bottom || !top) {
+                    std::cerr<<"rotation="<<rotation<<" bottom="<<bottom<<" top="<<top<<'\n';
+                    SDL_SaveBMP(capture,"bonus-alignment-failure.bmp");
+                }
+                SDL_DestroySurface(capture);
+                require(bottom && top,"Bonus viewport reaches physical bottom at every cabinet rotation");
+            }
+        }
         const auto data=core::path_from_utf8(argv[2]);
         std::filesystem::create_directories(data);
         // A known fixture makes repeated test runs independent of saved geometry.

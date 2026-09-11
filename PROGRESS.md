@@ -1,5 +1,25 @@
 # Progress
 
+Cabinet bonus alignment and normal-game ranking (2026-09-11):
+
+- Bottom-align the original bonus-room viewport in the cabinet playfield
+  window, using the main table's rotation-aware placement. Menus retain their
+  centered presentation. SDL pixel checks cover all four rotations.
+- Recognize normal game end's 01:417B -> EBE6 score-screen call using its
+  seven-byte stack signature at 1F9. Previously only pause and bonus-practice
+  callers were recognized, leaving cabinet stitching active over ranking
+  graphics and hiding the initials screen. Both playfield and DMD now select
+  their existing score-menu presentation throughout that call.
+- Added a qualifying-score fixture to the ordinary game-over replay; the ROM
+  performs ranking, visible initials editing, confirmation and title return.
+  Checked its playfield capture visually. Signature tests reject partial
+  matches and demo mode. No gameplay code or ROM changes.
+- Release build and eight targeted tests passed (out/test-cabinet-ranking.log).
+  Final alignment and editable-initials checks also passed in
+  out/test-bonus-alignment.log and out/test-normal-ranking-final.log.
+- Published D:\Workspace\alien-crush-cabinet with tools/Publish-Cabinet.ps1
+  (out/publish-cabinet-ranking.log).
+
 Single cabinet configuration (2026-09-10):
 
 - Consolidated window placement, raw button bindings and plunger calibration

@@ -107,6 +107,51 @@ int main(int argc,char** argv) {
         output=prefix;output+=".ppm";std::ofstream image(output,std::ios::binary);image<<"P6\n256 96\n255\n";
         for(const auto color:preview.pixels) for(const auto shift:{16,8,0}) image.put(static_cast<char>(color>>shift));
         require(static_cast<bool>(image),"Write game-over score preview");
+        // Start the same normal-game ending with a qualifying score. Alter
+        // only the fixture's score bytes; let the ROM perform the full ranking,
+        // initials editing, confirmation and return-to-title sequence.
+        runtime->restore(ending.initial);
+        auto qualifying=ending.initial;
+        const auto initial_ram=runtime->work_ram();
+        const auto found=std::search(qualifying.core_state.begin(),qualifying.core_state.end(),initial_ram.begin(),initial_ram.end());
+        require(found!=qualifying.core_state.end(),"Locate RAM in qualification fixture");
+        require(std::search(found+8192,qualifying.core_state.end(),initial_ram.begin(),initial_ram.end())==qualifying.core_state.end(),"Unique qualification fixture RAM");
+        found[0x121e]=std::byte{0x20};found[0x1224]=std::byte{0x4e};found[0x122a]=std::byte{}; // 2,000,000
+        runtime->restore(qualifying);
+        recording::Recording ranked;ranked.initial=qualifying;
+        previous.reset();
+        unsigned ranked_frames=0,visible_frames=0;
+        bool confirmed=false,returned=false;
+        for(unsigned n=0;n<2200;++n) {
+            const auto input=PadInput{static_cast<std::uint16_t>(ranked_frames==181?Pad::right:
+                (ranked_frames>190 && n%16==0?Pad::button_i:0)),0};
+            ranked.inputs.push_back(input);
+            const auto frame=runtime->advance(input);
+            const std::vector<std::uint32_t> pixels(frame.pixels.begin(),frame.pixels.end());
+            const auto ram=runtime->work_ram();const auto state=diagnostics::observe_alien_state(ram);
+            const auto video=runtime->video_snapshot();
+            render::TableTransitionHold menu_hold;
+            if(state.high_score_menu) {
+                ++ranked_frames;
+                require(state.table_code<2 && ram[0x7c]==std::byte{},"Ranking follows ordinary main-table game end");
+                require(!table->cabinet_frame(video,previous?&*previous:nullptr,ram,nullptr,menu_hold),"Ranking uses original screen instead of stitched table");
+                if(std::count_if(pixels.begin(),pixels.end(),[](auto p){return (p&0xffffff)!=0;})>1000) {
+                    ++visible_frames;
+                    if(visible_frames==190) {
+                        auto screen=prefix;screen+=".ranking.ppm";std::ofstream shot(screen,std::ios::binary);
+                        shot<<"P6\n"<<frame.width<<' '<<frame.height<<"\n255\n";
+                        for(const auto color:pixels) for(const auto shift:{16,8,0}) shot.put(static_cast<char>(color>>shift));
+                        require(static_cast<bool>(shot),"Write normal-game ranking preview");
+                    }
+                }
+                confirmed|=ram[0x120c]==std::byte{0x80};
+                if(confirmed) require(ram[0x122b]==std::byte{0x41},"Normal-game initials can be edited and confirmed");
+            }
+            previous=video;
+            if(ranked_frames && state.title_menu) {returned=true;break;}
+        }
+        require(ranked_frames>200 && visible_frames>100 && confirmed && returned,"Visible normal-game initials entry, confirmation and title return");
+        output=prefix;output+=".ranking.acrec";recording::write(output,ranked);
         std::cout<<"Three drains, 771 game-over frames, title return; "<<stitched_frames<<" stitched frames; exact restore passed\n";
         return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
