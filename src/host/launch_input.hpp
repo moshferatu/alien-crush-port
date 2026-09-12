@@ -2,6 +2,7 @@
 #pragma once
 #include "alien_crush/runtime/game_runtime.hpp"
 #include "alien_crush/runtime/reference_launcher.hpp"
+#include "alien_crush/diagnostics/alien_state.hpp"
 namespace alien_crush::host {
 // Device-independent routing also covers raw cabinet boards. I is exclusively
 // launch/confirm; neither flipper sends it. Enter/Run launches in the shooter.
@@ -22,13 +23,20 @@ inline PadInput route_game_input(PadInput input,bool launching) {
 }
 class GameInputRouter {
     bool launch_press_{};
+    bool initials_press_{};
 public:
     PadInput route(PadInput input,std::span<const std::byte> ram) {
+        if(!(input.player_one&Pad::run)) initials_press_=false;
+        else if(ram.size()==8192 && ram[0x7a]==std::byte{2})
+            initials_press_|=diagnostics::observe_alien_state(ram).high_score_menu;
         if(!(input.player_one&Pad::run)) launch_press_=false;
         else launch_press_|=reference_launcher_active(ram);
         // One physical press cannot change from launch into pause. After
         // release, a fresh press outside the shooter can pause normally.
-        return route_game_input(input,launch_press_);
+        // Run submits the entire name in the ROM; I advances one initial.
+        // Keep a held confirmation owned until release, including after the
+        // third letter, so it cannot turn into Run as the screen exits.
+        return route_game_input(input,launch_press_ || initials_press_);
     }
 };
 }

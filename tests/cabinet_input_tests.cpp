@@ -31,6 +31,20 @@ int main() {
             keys={};keys[SDL_SCANCODE_RETURN]=true;
             require(mapped(true)==Pad::button_i,"Enter only launches in shooter");
             require(mapped(false)==(Pad::run|Pad::button_i),"Enter starts/pauses/confirms elsewhere");
+            std::array<std::byte,8192> menu_ram{};
+            constexpr std::array ranking_stack{std::byte{0xfd},std::byte{0xeb},std::byte{3},
+                std::byte{2},std::byte{1},std::byte{0x7d},std::byte{0x41}};
+            std::copy(ranking_stack.begin(),ranking_stack.end(),menu_ram.begin()+0x1f9);
+            menu_ram[0x7a]=std::byte{2};
+            host::GameInputRouter menu_router;
+            require(menu_router.route(host::device_game_input(keys,buttons),menu_ram).player_one==Pad::button_i,
+                "Keyboard Enter advances a high-score initial without Run");
+            menu_ram={};
+            require(menu_router.route({Pad::run,0},menu_ram).player_one==Pad::button_i,
+                "Held final confirmation cannot become Run after menu exit");
+            (void)menu_router.route({},menu_ram);
+            require(menu_router.route({Pad::run,0},menu_ram).player_one==(Pad::run|Pad::button_i),
+                "Fresh Enter retains Run outside name entry");
             keys={};buttons[SDL_GAMEPAD_BUTTON_SOUTH]=true;
             require(mapped(true)==Pad::button_i,"South button is independent launch/confirm");
             buttons={};buttons[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER]=true;

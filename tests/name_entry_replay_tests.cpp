@@ -3,6 +3,7 @@
 #include "alien_crush/core/recording.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include "alien_crush/render/score_panel.hpp"
+#include "../src/host/launch_input.hpp"
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -19,7 +20,7 @@ PadInput input_at(unsigned n,const diagnostics::AlienState& state) {
     }
     if(n==9800 || n==9808) input.player_one=Pad::right;
     if(n==9804) input.player_one=Pad::left;
-    if(n==9802 || n==9806 || n==9810) input.player_one=Pad::button_i;
+    if(n==9802 || n==9803 || n==9806 || n==9807 || (n>=9810 && n<9850)) input.player_one=Pad::run;
     if(n==10100 || n==10160 || n==10220) input.player_one=Pad::run;
     return input;
 }
@@ -41,8 +42,9 @@ int main(int argc,char** argv) {
     std::vector<std::int16_t> final_audio;
     bool title_seen=false,new_game=false;
     unsigned first_ranked=0,viewer_frames=0;
+    host::GameInputRouter input_router;
     for(unsigned n=5500;n<10500;++n) {
-        const auto input=input_at(n,diagnostics::observe_alien_state(runtime->work_ram()));
+        const auto input=input_router.route(input_at(n,diagnostics::observe_alien_state(runtime->work_ram())),runtime->work_ram());
         const auto frame=runtime->advance(input);
         const std::vector<std::uint32_t> pixels(frame.pixels.begin(),frame.pixels.end());
         const std::vector<std::int16_t> audio(frame.stereo.begin(),frame.stereo.end());
@@ -60,7 +62,8 @@ int main(int argc,char** argv) {
         }
         if(n>=9700 && n<9900) require(state.high_score_menu,"Ranking layout spans name editing and confirmation pause");
         viewer_frames+=state.high_score_menu;
-        if(n==9810) require(ram[0x120c]==std::byte{0x80},"Third I press confirms original name entry");
+        if(n==9803 || n==9807) require(ram[0x120c]!=std::byte{0x80},"First two held Enter presses advance without submitting");
+        if(n==9810) require(ram[0x120c]==std::byte{0x80},"Third Enter press confirms name entry");
         if(n==9899) require(state.high_score_menu,"Confirmation keeps ranked-score layout");
         if(n==9999) {require(state.title_menu && !state.high_score_menu,"Confirmed name returns to title");title_seen=true;}
         if(n>10300 && !state.title_menu && state.ball_counter==3 && state.score_points==0) new_game=true;

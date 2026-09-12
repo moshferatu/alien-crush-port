@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <fstream>
 #include "cabinet_presentation_check.hpp"
+#include "../src/host/launch_input.hpp"
 #include <iostream>
 #include <stdexcept>
 using namespace alien_crush;
@@ -122,9 +123,10 @@ int main(int argc,char** argv) {
         previous.reset();
         unsigned ranked_frames=0,visible_frames=0;
         bool confirmed=false,returned=false;
+        alien_crush::host::GameInputRouter initials_router;
         for(unsigned n=0;n<2200;++n) {
-            const auto input=PadInput{static_cast<std::uint16_t>(ranked_frames==181?Pad::right:
-                (ranked_frames>190 && n%16==0?Pad::button_i:0)),0};
+            const auto input=initials_router.route(PadInput{static_cast<std::uint16_t>(ranked_frames==181?Pad::right:
+                (ranked_frames>190 && n%16==0?Pad::run:0)),0},runtime->work_ram());
             ranked.inputs.push_back(input);
             const auto frame=runtime->advance(input);
             const std::vector<std::uint32_t> pixels(frame.pixels.begin(),frame.pixels.end());

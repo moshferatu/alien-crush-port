@@ -90,6 +90,10 @@ Both flippers remain controllable
 while the ball is seated, leaving the launcher or absent during table play.
 Pressing both flippers works; launching never operates a flipper. Flipper keys
 send directions in menus/name entry, so they cannot accidentally confirm a letter.
+On the high-score initials screen, use Left/Right or the flippers to choose a
+letter and press Enter to accept it and advance. The third press submits the
+name. Gamepad Start and a cabinet Run button follow the same behavior; the
+dedicated Launch / gamepad south button also accepts letters.
 Pause and the cartridge's tilt gates remain active. Z is no longer a flipper key.
 
 Desktop quick states live beside the executable in `portable-data/alien-crush.desktop-controls.state`.

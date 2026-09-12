@@ -1,5 +1,20 @@
 # Progress
 
+Enter confirms initials (2026-09-11):
+
+- Route Enter/Start/raw Run to I without Run during normal and practice
+  game-end ranking/name entry. Each press accepts one letter; the third
+  submits the name. Latch through release so a held final confirmation
+  cannot become Run after the menu exits. Score viewing and gameplay retain
+  their existing controls.
+- Name-entry replay verifies three Enter presses, held presses, all three
+  edited letters and submission. Normal game-over replay now uses the same
+  host router. Keyboard routing and held menu-exit coverage also pass.
+- All seven selected tests passed, including launcher/pause and score viewer
+  regressions: out/test-initials-enter.log. Release build and cabinet publish
+  succeeded (out/build-initials-enter.log, out/publish-initials-enter.log).
+  Published to D:\Workspace\alien-crush-cabinet.
+
 Continuous attract-demo seams (2026-09-11):
 
 - Live handoff acceleration excluded nonzero demo selector 76 and required
