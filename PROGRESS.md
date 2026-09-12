@@ -1,5 +1,14 @@
 # Progress
 
+Hide gameplay cursor (2026-09-11):
+
+- Hide the SDL cursor on game startup for desktop and all cabinet windows.
+  This does not capture the mouse; diagnostic input probes retain their
+  existing behavior.
+- Release build and desktop, cabinet and input-probe smoke checks passed
+  (out/build-hide-cursor.log, out/test-hide-cursor.log). Published to
+  D:\Workspace\alien-crush-cabinet (out/publish-hide-cursor.log).
+
 Enter confirms initials (2026-09-11):
 
 - Route Enter/Start/raw Run to I without Run during normal and practice

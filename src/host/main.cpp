@@ -61,6 +61,9 @@ int main(int argc,char** argv) {
         SdlLifetime sdl;
         if(probe_plunger) return host::plunger_probe();
         if(probe) return host::input_probe(limit);
+        // SDL cursor visibility applies to all game windows, including the
+        // cabinet backglass and score display, without grabbing the mouse.
+        if(!SDL_HideCursor()) throw std::runtime_error(SDL_GetError());
         const auto base=core::path_from_utf8(SDL_GetBasePath());
         if(rom_path.empty()) rom_path=base/"Alien Crush.pce";
         if(data_path.empty()) data_path=base/"portable-data";
