@@ -178,6 +178,8 @@ to leave that screen, then Enter to resume play. Scores currently last for the
 running session or a quick state; automatic persistence is not implemented yet.
 The cabinet also shows the ranked table during normal-game and bonus-practice
 name entry. Name editing remains on the original playfield screen.
+After an attract demo finishes, the original high-score table appears on the
+playfield and all five rankings appear on the DMD before returning to the title.
 A qualifying replay checks a 1,505,700-point score, name confirmation and
 retention when starting another game in the same session.
 Put your artwork at `portable-data/backglass.bmp` (or in

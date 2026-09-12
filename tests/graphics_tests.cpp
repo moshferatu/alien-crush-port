@@ -167,6 +167,15 @@ int main() {
             }
             scene[0x76]=std::byte{1};
             require(!diagnostics::observe_alien_state(scene).high_score_menu,"Demo excludes normal game-end ranking");
+            scene[0x1fe]=std::byte{0x5c};scene[0x1ff]=std::byte{0x40};
+            require(diagnostics::observe_alien_state(scene).high_score_menu,"Post-demo ranking recognized");
+            for(unsigned i=0;i<7;++i) {
+                scene[0x1f9+i]^=std::byte{1};
+                require(!diagnostics::observe_alien_state(scene).high_score_menu,"Partial demo ranking signature rejected");
+                scene[0x1f9+i]^=std::byte{1};
+            }
+            scene[0x76]=std::byte{};
+            require(!diagnostics::observe_alien_state(scene).high_score_menu,"Demo ranking requires demo selector");
             scene={};
             constexpr std::array<std::byte,9> signature{std::byte{0x0c},std::byte{0xeb},std::byte{0x18},
                 std::byte{4},std::byte{3},std::byte{2},std::byte{1},std::byte{5},std::byte{0x40}};

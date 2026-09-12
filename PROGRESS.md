@@ -1,5 +1,22 @@
 # Progress
 
+Post-demo rankings (2026-09-11):
+
+- ROM 01:405A calls the score screen after attract completion, retaining the
+  demo selector. Recognize its complete EBE6 wrapper/405C return signature
+  so cabinet presentation uses the original ranking viewport instead of the
+  stitched table. DMD rankings now take priority over the demo banner.
+- Keep Enter's initials routing restricted to non-demo name entry, preserving
+  Run during the demo ranking viewer. Devil's Crush likewise has a separate
+  attract/high-score DMD presentation path.
+- Extended the natural demo test to require visible rankings before title
+  return, original cabinet viewport selection, full DMD rankings and Run routing.
+  Visually checked out/demo-rankings.png against the captured ROM frame.
+  Signature rejection, name-entry, score-viewer and demo-host checks also pass:
+  all seven tests in out/test-demo-rankings.log. Release build and publish
+  succeeded (out/build-demo-rankings.log, out/publish-demo-rankings.log).
+  Published D:\Workspace\alien-crush-cabinet.
+
 Hide gameplay cursor (2026-09-11):
 
 - Hide the SDL cursor on game startup for desktop and all cabinet windows.

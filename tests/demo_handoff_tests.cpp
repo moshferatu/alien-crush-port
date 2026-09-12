@@ -2,6 +2,10 @@
 #include "alien_crush/core/recording.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
+#include "alien_crush/render/table_playfield.hpp"
+#include "alien_crush/render/score_panel.hpp"
+#include "../src/host/launch_input.hpp"
+#include <fstream>
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -79,6 +83,12 @@ int main(int argc,char** argv) {
         std::vector<std::string> fingerprints;
         std::uint64_t samples=0;
         unsigned frames=0;
+        unsigned ranking_frames=0,visible_ranking_frames=0;
+        const auto rom=core::read_file(path);
+        const render::TablePlayfield table(rom);
+        const auto panel=render::ScorePanel::from_rom(rom);
+        render::TableTransitionHold ranking_hold;
+        host::GameInputRouter ranking_input;
         for(;frames<6500;++frames) {
             const auto frame=runtime->advance({});
             samples+=frame.stereo.size()/2;
@@ -87,6 +97,26 @@ int main(int argc,char** argv) {
                 fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
             }
             const auto scene=diagnostics::observe_alien_state(runtime->work_ram());
+            if(scene.high_score_menu) {
+                ++ranking_frames;
+                require(scene.demo_play,"Natural attract rankings retain demo selector");
+                require(!table.cabinet_frame(runtime->video_snapshot(),nullptr,runtime->work_ram(),nullptr,ranking_hold),
+                    "Post-demo rankings use original viewport, not stitched table");
+                auto normal_rankings=scene;normal_rankings.demo_play=false;
+                require(panel.compose(scene).pixels==panel.compose(normal_rankings).pixels,"DMD displays full rankings after demo");
+                require((ranking_input.route({Pad::run,0},runtime->work_ram()).player_one&Pad::run)!=0,
+                    "Post-demo viewer retains Run instead of initials routing");
+                if(std::count_if(frame.pixels.begin(),frame.pixels.end(),[](auto p){return (p&0xffffff)!=0;})>1000) {
+                    ++visible_ranking_frames;
+                    if(visible_ranking_frames==100) {
+                        auto shot=core::path_from_utf8(argv[2]);shot+=".rankings.ppm";
+                        std::ofstream image(shot,std::ios::binary);
+                        image<<"P6\n"<<frame.width<<' '<<frame.height<<"\n255\n";
+                        for(const auto color:frame.pixels) for(const auto shift:{16,8,0}) image.put(static_cast<char>(color>>shift));
+                        require(static_cast<bool>(image),"Write post-demo ranking screenshot");
+                    }
+                }
+            }
             if(scene.demo_play && !scene.title_menu) {
                 demo_seen=true;
                 if(!demo) {demo=runtime->save();replay.initial=*demo;}
@@ -94,6 +124,7 @@ int main(int argc,char** argv) {
             if(demo_seen && scene.title_menu && !scene.demo_play) {title_returned=true;++frames;break;}
         }
         require(title_returned,"Continuous cabinet demo returns naturally to title");
+        require(ranking_frames>100 && visible_ranking_frames>100,"Visible rankings between demo and title");
         const auto expected_samples=frames*runtime->sample_rate()/runtime->frames_per_second();
         require(samples>expected_samples-2000 && samples<expected_samples+2000,"Full demo retains audio timeline");
         unsigned long long packets{},waits{};ac_handoff_counts(&packets,&waits);

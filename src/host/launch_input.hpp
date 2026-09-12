@@ -27,7 +27,7 @@ class GameInputRouter {
 public:
     PadInput route(PadInput input,std::span<const std::byte> ram) {
         if(!(input.player_one&Pad::run)) initials_press_=false;
-        else if(ram.size()==8192 && ram[0x7a]==std::byte{2})
+        else if(ram.size()==8192 && ram[0x7a]==std::byte{2} && ram[0x76]==std::byte{})
             initials_press_|=diagnostics::observe_alien_state(ram).high_score_menu;
         if(!(input.player_one&Pad::run)) launch_press_=false;
         else launch_press_|=reference_launcher_active(ram);

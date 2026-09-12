@@ -40,6 +40,12 @@ AlienState observe_alien_state(std::span<const std::byte> ram) {
         std::byte{2},std::byte{1},std::byte{0x7d},std::byte{0x41}};
     result.high_score_menu|=b(0x7a)==2 && b(0x7c)==0 && !result.demo_play &&
         std::equal(game_scores_stack.begin(),game_scores_stack.end(),ram.begin()+0x1f9);
+    // Attract completion calls the same ranking screen at 01:405A (405C).
+    // The demo selector stays set until the subsequent return to title.
+    constexpr std::array<std::byte,7> demo_scores_stack{std::byte{0xfd},std::byte{0xeb},std::byte{3},
+        std::byte{2},std::byte{1},std::byte{0x5c},std::byte{0x40}};
+    result.high_score_menu|=b(0x7a)==2 && result.demo_play &&
+        std::equal(demo_scores_stack.begin(),demo_scores_stack.end(),ram.begin()+0x1f9);
     // FDE5 uses 83+2 to load room actors, then restores shared table code 2.
     if(result.table_code==2 && b(0x83)<4) result.bonus_room=static_cast<std::uint8_t>(b(0x83)+1);
     result.bonus_round_over=result.bonus_room!=0 && (b(0x78)&1)!=0;
