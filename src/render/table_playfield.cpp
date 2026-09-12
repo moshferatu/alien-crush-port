@@ -333,7 +333,7 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
     const TableRaster* raster,TableTransitionHold& transition) const {
     const auto scene=diagnostics::observe_alien_state(ram);
     const unsigned half=scene.table_code;
-    if(half>1 || scene.title_menu || scene.high_score_menu) {
+    if(half>1 || scene.title_menu || scene.high_score_menu || scene.title_transition) {
         transition.reset();animation_half_=2;animation_.reset();return std::nullopt;
     }
     // The original pause stops actor scripts but its video/palette machinery

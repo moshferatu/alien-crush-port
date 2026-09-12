@@ -176,7 +176,7 @@ int main(int argc,char** argv) {
             const std::vector<std::int16_t> sound(frame.stereo.begin(),frame.stereo.end());
             if(cabinet_mode) {
                 // Own fallback pixels before inspecting the video snapshot.
-                const std::vector<std::uint32_t> original(frame.pixels.begin(),frame.pixels.end());
+                std::vector<std::uint32_t> original(frame.pixels.begin(),frame.pixels.end());
                 const auto snapshot=runtime->video_snapshot();
                 const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
                 auto stitched=table->cabinet_frame(snapshot,previous_video?&*previous_video:nullptr,
@@ -185,6 +185,7 @@ int main(int argc,char** argv) {
                     render::table_aspect_width,render::table_aspect_height,true);
                 else {
                     const auto scene=diagnostics::observe_alien_state(runtime->work_ram());
+                    if(scene.title_transition) std::fill(original.begin(),original.end(),0xff000000);
                     display.show({frame.number,frame.width,frame.height,original,{}},4,3,
                         scene.bonus_room!=0 && !scene.title_menu && !scene.high_score_menu);
                 }

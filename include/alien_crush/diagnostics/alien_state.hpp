@@ -11,6 +11,7 @@ struct AlienState {
     std::uint8_t table_code{},ball_counter{};
     bool score_update_pending{};
     bool title_menu{}; // Presentation only: complete saved outer title-call signature.
+    bool title_transition{}; // Score-exit graphics reload and title reset; suppress gameplay presentation.
     bool demo_play{}; // Original nonzero RAM 76 demo selector; title takes precedence.
     std::uint8_t bonus_room{}; // 1..4 for table code 2; zero outside known bonus rooms.
     bool bonus_round_over{}; // FDDF exits bonus loop on RAM 78 bit 0.

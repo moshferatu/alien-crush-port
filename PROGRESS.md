@@ -1,5 +1,22 @@
 # Progress
 
+Suppress post-ranking table flash (2026-09-12):
+
+- Traced 25 frames after demo rankings: EC0A -> E705 restores table graphics
+  while the demo caller 405C is still on the stack; E0DE then waits and clears
+  RAM/VRAM through E0E3/E121 before entering the title. These frames previously
+  fell through to stitched gameplay and, after RAM clearing, gameplay counters.
+- Recognize those title-transition return signatures, including the equivalent
+  normal game-end reload, while retaining pause-viewer behavior. Cabinet output
+  is black on both playfield and DMD during the transition. Runtime/audio timing
+  is unchanged; no history-dependent presentation latch is needed.
+- Full demo regression checks every gap frame, no stitched output and a black
+  DMD through both table reload and cleared RAM. All seven selected tests passed,
+  including game-over, score viewer and cabinet smoke (out/test-demo-exit-fix.log).
+  Diagnostic trace: out/trace-demo-exit.log. Release build and publish succeeded
+  (out/build-demo-exit-fix.log, out/publish-demo-exit-fix.log).
+  Published D:\Workspace\alien-crush-cabinet.
+
 Post-demo rankings (2026-09-11):
 
 - ROM 01:405A calls the score screen after attract completion, retaining the

@@ -83,7 +83,7 @@ int main(int argc,char** argv) {
         std::vector<std::string> fingerprints;
         std::uint64_t samples=0;
         unsigned frames=0;
-        unsigned ranking_frames=0,visible_ranking_frames=0;
+        unsigned ranking_frames=0,visible_ranking_frames=0,exit_frames=0;
         const auto rom=core::read_file(path);
         const render::TablePlayfield table(rom);
         const auto panel=render::ScorePanel::from_rom(rom);
@@ -117,6 +117,15 @@ int main(int argc,char** argv) {
                     }
                 }
             }
+            if(ranking_frames && !scene.high_score_menu && !scene.title_menu) {
+                ++exit_frames;
+                require(scene.title_transition,"Every ranking-to-title gap frame is recognized");
+                require(!table.cabinet_frame(runtime->video_snapshot(),nullptr,runtime->work_ram(),nullptr,ranking_hold),
+                    "No stitched table during ranking exit or cleared-RAM title reset");
+                const auto dmd=panel.compose(scene);
+                require(std::all_of(dmd.pixels.begin(),dmd.pixels.end(),[](auto p){return !(p&0xffffff);}),
+                    "No gameplay DMD flash during title reset");
+            }
             if(scene.demo_play && !scene.title_menu) {
                 demo_seen=true;
                 if(!demo) {demo=runtime->save();replay.initial=*demo;}
@@ -125,6 +134,7 @@ int main(int argc,char** argv) {
         }
         require(title_returned,"Continuous cabinet demo returns naturally to title");
         require(ranking_frames>100 && visible_ranking_frames>100,"Visible rankings between demo and title");
+        require(exit_frames>=25,"Regression covers table reload and cleared-RAM title reset");
         const auto expected_samples=frames*runtime->sample_rate()/runtime->frames_per_second();
         require(samples>expected_samples-2000 && samples<expected_samples+2000,"Full demo retains audio timeline");
         unsigned long long packets{},waits{};ac_handoff_counts(&packets,&waits);

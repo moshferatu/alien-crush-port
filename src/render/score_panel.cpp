@@ -61,6 +61,7 @@ Image ScorePanel::compose(const diagnostics::AlienState& state) const {
             x+=10*scale;
         }
     };
+    if(state.title_transition) return result;
     if(state.title_menu || (state.demo_play && !state.high_score_menu)) {
         label(result,"HIGH SCORE",98,6);
         number(state.high_scores[0],128,18,2);

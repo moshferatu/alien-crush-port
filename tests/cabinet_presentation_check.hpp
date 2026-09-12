@@ -16,7 +16,7 @@ struct CabinetPresentationCheck {
         using namespace alien_crush;
         const auto scene=diagnostics::observe_alien_state(ram);
         const auto image=table.cabinet_frame(video,previous,ram,raster,hold);
-        const bool main=scene.table_code<2 && !scene.title_menu && !scene.high_score_menu;
+        const bool main=scene.table_code<2 && !scene.title_menu && !scene.high_score_menu && !scene.title_transition;
         if(image.has_value()!=main || (image && (image->width!=256 || image->height!=456 || image->pixels.size()!=256*456)))
             throw std::runtime_error("Cabinet changed projection at frame "+std::to_string(video.frame));
         if(image && scene.match_visible) {

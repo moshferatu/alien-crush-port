@@ -46,6 +46,17 @@ AlienState observe_alien_state(std::span<const std::byte> ram) {
         std::byte{2},std::byte{1},std::byte{0x5c},std::byte{0x40}};
     result.high_score_menu|=b(0x7a)==2 && result.demo_play &&
         std::equal(demo_scores_stack.begin(),demo_scores_stack.end(),ram.begin()+0x1f9);
+    // EBE6 restores table graphics through EC0A -> E705 after rankings close.
+    // Game-end callers immediately reset to title; only the pause viewer
+    // (mode 1) actually resumes play. Preserve the original blank transition.
+    const bool ending_caller=(b(0x1fe)==0x5c && b(0x1ff)==0x40 && result.demo_play) ||
+        (b(0x1fe)==0x7d && b(0x1ff)==0x41 && !result.demo_play);
+    result.title_transition=b(0x7a)==2 && ending_caller && b(0x1fc)==0x0c && b(0x1fd)==0xec;
+    // E0DE waits one frame (E0E3), clears RAM and VRAM (E121), then
+    // enters 01:4000. These outer returns survive the zero-page/stack clear
+    // and identify the gap even after the demo and table selectors are zero.
+    result.title_transition|=(b(0x1fe)==0xe3 && b(0x1ff)==0xe0) ||
+        (b(0x1fe)==0x21 && b(0x1ff)==0xe1);
     // FDE5 uses 83+2 to load room actors, then restores shared table code 2.
     if(result.table_code==2 && b(0x83)<4) result.bonus_room=static_cast<std::uint8_t>(b(0x83)+1);
     result.bonus_round_over=result.bonus_room!=0 && (b(0x78)&1)!=0;
