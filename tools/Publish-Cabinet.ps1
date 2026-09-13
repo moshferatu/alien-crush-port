@@ -84,7 +84,7 @@ try {
     $utf8 = New-Object Text.UTF8Encoding $false
     [IO.File]::WriteAllText((Join-Path $stage 'Launch-Cabinet.cmd'), "@echo off`r`n`"%~dp0alien-crush.exe`" --cabinet %*`r`nexit /b %errorlevel%`r`n", $utf8)
     $patterns = @'
-// Machine-local layout, input/plunger bindings, artwork and quick states.
+// Machine-local layout, input/plunger bindings, artwork, high scores and quick states.
 /portable-data
 /logs
 /captures
@@ -117,8 +117,9 @@ Syncthing setup (do this on BOTH computers before the first sync):
 The publish script configures it on the workstation. Configure the cabinet too.
 Reference: https://docs.syncthing.net/users/ignoring.html
 
-Layout, button/plunger bindings, custom backglass.bmp and quick states live in
+Layout, button/plunger bindings, custom backglass.bmp, high scores and quick states live in
 portable-data beside the executable. They stay local to each computer.
+High scores and initials automatically save to portable-data/alien-crush.hiscore.
 Publishing updates packaged files and preserves this directory and other local
 files. If needed, copy cabinet-specific bindings/artwork manually once.
 See README.md for controls, monitor setup and configuration file formats.

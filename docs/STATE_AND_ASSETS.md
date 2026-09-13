@@ -24,7 +24,7 @@ replaying through 1200 reproduces RAM/video/audio and the frame-800 score panel
 exactly. The 600-frame recording runs in the three-window host. Both the original
 viewer and the cabinet panel were visually inspected.
 
-High-score storage research, not yet a persistence implementation: boot
+High-score storage (automatic host persistence added 2026-09-13): boot
 00:E0B5..E0DC copies five six-byte records from ROM 0018F into the six RAM
 columns at 1219/121F/1225 (score / 100) and 122B/1231/1237 (name bytes).
 The sixth column in each row belongs to the current candidate and must not be

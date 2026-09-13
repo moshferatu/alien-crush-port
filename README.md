@@ -174,8 +174,14 @@ award. Digit uploads never switch the main table to a single viewport.
 To view the five high scores during ordinary play, press **Enter** (Run) to
 pause, then **Backspace** (Select). The score window shows all five ranks while
 the playfield shows the original score-table screen. Press Backspace or Enter
-to leave that screen, then Enter to resume play. Scores currently last for the
-running session or a quick state; automatic persistence is not implemented yet.
+to leave that screen, then Enter to resume play. The five ranked scores and
+initials automatically save to `portable-data/alien-crush.hiscore` and restore
+at the next launch, in both desktop and cabinet modes. Changes save after about
+one second of stability, with a final flush on normal exit. No manual save or
+configuration is needed. `--data-dir` also selects the high-score location.
+Replays use their recorded scores and never read or overwrite this file.
+Loading a quick state restores its score table; subsequent autosaves preserve
+that table, matching the Devil's Crush behavior.
 The cabinet also shows the ranked table during normal-game and bonus-practice
 name entry. Name editing remains on the original playfield screen.
 After an attract demo finishes, the original high-score table appears on the

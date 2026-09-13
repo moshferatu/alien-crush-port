@@ -30,7 +30,7 @@ class Reference final : public ReferenceRuntime {
     ControlMode controls;
     inline static std::atomic<Reference*> active{};
     std::thread::id owner = std::this_thread::get_id();
-    bool initialized{}, loaded{}, failed{};
+    bool initialized{}, loaded{}, failed{}, core_started{};
     std::string rom_path, directory;
     retro_system_av_info av{};
     PadInput input{};
@@ -180,7 +180,7 @@ public:
         close();
         rom_path.assign(reinterpret_cast<const char*>(encoded.data()),encoded.size());
         directory.assign(reinterpret_cast<const char*>(parent.data()),parent.size());
-        input={}; frame_number=0; width=height=0; pixels.clear(); audio.clear(); failed=false;
+        input={}; frame_number=0; width=height=0; pixels.clear(); audio.clear(); failed=false;core_started=false;
         if(retro_api_version()!=RETRO_API_VERSION) throw std::runtime_error("Incompatible libretro ABI");
         retro_set_environment(environment); retro_set_video_refresh(video);
         retro_set_audio_sample(sample); retro_set_audio_sample_batch(samples);
@@ -201,7 +201,7 @@ public:
     void reset() override { check_loaded(); retro_reset(); input={}; frame_number=0; pixels.clear(); audio.clear(); width=height=0; failed=false; observed_count=0; palette_count=0; observation_failed=false; }
     Frame advance(PadInput buttons) override {
         check_loaded(); input=buttons; audio.clear(); failed=false;
-        observed_count=0; palette_count=0; observation_failed=false; retro_run(); ++frame_number;
+        observed_count=0; palette_count=0; observation_failed=false; retro_run(); core_started=true; ++frame_number;
         if(failed) throw std::runtime_error("Invalid video/audio received from reference core");
         return {frame_number,width,height,pixels,audio};
     }
@@ -233,6 +233,12 @@ public:
         auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
         if(!memory || size<8192) return false;
         return apply_reference_launcher_draw({memory,8192},percent);
+    }
+    bool restore_high_scores(const core::HighScores& table) override {
+        check_loaded();
+        auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
+        if(!memory || retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM)<8192) return false;
+        return core::write_high_scores({memory,8192},table);
     }
     bool cancel_plunger_draw() override {
         check_loaded();
@@ -302,6 +308,10 @@ public:
         check_loaded();
         if(saved.format_version!=state::kSaveStateFormatVersion || saved.rom_sha256!=rom::kSupportedSha256 || saved.core_revision!=revision()) throw std::runtime_error("Incompatible quick state ROM, backend, or version");
         if(saved.core_state.empty() || saved.core_state.size()>64U*1024U*1024U) throw std::runtime_error("Incompatible quick state payload size");
+        // Libretro configures its resampler on the first retro_run. Do that
+        // before loading an in-progress state, otherwise SoundFormatChanged
+        // discards the restored audio history on the first playback frame.
+        if(!core_started && saved.frame_number) advance({});
         const auto rollback=save();
         if(!retro_unserialize(saved.core_state.data(),saved.core_state.size())) {
             if(!retro_unserialize(rollback.core_state.data(),rollback.core_state.size())) { close(); throw std::runtime_error("Quick state and rollback failed; runtime closed"); }

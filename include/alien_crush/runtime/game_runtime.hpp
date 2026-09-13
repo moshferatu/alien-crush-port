@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include "alien_crush/core/save_state.hpp"
+#include "alien_crush/core/high_scores.hpp"
 #include "alien_crush/diagnostics/display_trace.hpp"
 #include "alien_crush/diagnostics/reference_snapshot.hpp"
 #include <cstdint>
@@ -57,6 +58,8 @@ public:
 };
 class ReferenceRuntime : public GameRuntime, public ReferenceDiagnostics {
 public:
+    // Host persistence restores only the five ranked score/name columns.
+    virtual bool restore_high_scores(const core::HighScores&) = 0;
     // Read-only current video/CPU state without serializing audio or the machine.
     virtual diagnostics::ReferenceSnapshot video_snapshot() const {return diagnostics::decode_reference_snapshot(save());}
     // Explicit optional cabinet bridge; never used by canonical pad replays.

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <sstream>
 #include "game_input.hpp"
+#include "high_score_autosave.hpp"
 #include "alien_crush/runtime/reference_launcher.hpp"
 #include "alien_crush/render/table_playfield.hpp"
 #include "alien_crush/core/files.hpp"
@@ -86,6 +87,8 @@ int main(int argc,char** argv) {
             (cabinet_mode?HandoffMode::continuous:HandoffMode::original);
         const auto controls=playback && !playback->initial.core_revision.ends_with("-controls1")?ControlMode::original:ControlMode::cabinet;
         auto runtime=make_reference_runtime(mode,controls); runtime->load(rom_path);
+        std::optional<host::HighScoreAutosave> high_scores;
+        if(!playback) high_scores.emplace(*runtime,data_path/"alien-crush.hiscore");
         const bool table_raster=cabinet_mode && runtime->supports_display_observation();
         if(table_raster) runtime->observe_display(true);
         if(playback) runtime->restore(playback->initial);
@@ -196,6 +199,7 @@ int main(int argc,char** argv) {
             // A stalled output device must not accumulate minutes of queued sound.
             if(SDL_GetAudioStreamQueued(audio.stream)>runtime->sample_rate()*4/4) SDL_ClearAudioStream(audio.stream);
             if(cabinet) cabinet->show(runtime->work_ram());
+            if(high_scores) high_scores->poll(runtime->work_ram());
             if(timing.is_open()) timing<<frame.number<<','<<frame_started<<','<<SDL_GetTicksNS()<<','
                 <<sound.size()<<','<<SDL_GetAudioStreamQueued(audio.stream)<<'\n';
             deadline+=frame_ns;
@@ -203,6 +207,7 @@ int main(int argc,char** argv) {
             if(deadline>now) SDL_DelayPrecise(deadline-now);
             else if(now-deadline>frame_ns*4) deadline=now;
         }
+        if(high_scores) high_scores->poll(runtime->work_ram(),true);
         if(!record_path.empty()) recording::write(record_path,recorded);
         // Keep the last usable layout if the user exits during a display outage.
         if(cabinet && !display_layout_changed) cabinet->save();

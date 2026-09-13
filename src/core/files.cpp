@@ -15,7 +15,7 @@ std::vector<std::byte> read_file(const std::filesystem::path& path, std::size_t 
         throw std::runtime_error("Could not read " + path.string());
     return bytes;
 }
-void write_file_atomic(const std::filesystem::path& path, std::span<const std::byte> bytes) {
+void write_file_atomic(const std::filesystem::path& path, std::span<const std::byte> bytes,int commit_budget_ms) {
     if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path());
     static std::atomic<unsigned> sequence{};
     auto temp = path;
@@ -26,7 +26,7 @@ void write_file_atomic(const std::filesystem::path& path, std::span<const std::b
         file.flush();
         if (!file) throw std::runtime_error("Could not write " + temp.string());
         file.close();
-        if (!commit_replacement(temp, path).committed) throw std::runtime_error("Could not commit " + path.string());
+        if (!commit_replacement(temp, path,commit_budget_ms).committed) throw std::runtime_error("Could not commit " + path.string());
     } catch (...) {
         std::error_code ignored;
         std::filesystem::remove(temp, ignored);

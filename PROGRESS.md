@@ -1,5 +1,27 @@
 # Progress
 
+Automatic high-score persistence (2026-09-13):
+
+- Followed Devil's Crush's ranked-column autosave: five scores plus initials,
+  startup restoration, 30-frame polling, two stable samples before atomic writes,
+  zero retry wait during play and a final normal-exit flush/retry. Alien Crush
+  uses portable-data/alien-crush.hiscore (or --data-dir) in both host modes.
+  The file has an ACHS version/count header and checksum. Invalid files log a
+  warning and retain defaults without overwriting the file just by launching.
+- Read boot's complete initialized table before title loading; restore only
+  the thirty ranked bytes. Current candidate columns and gameplay RAM stay
+  untouched. Recordings start after restoration; playback bypasses persistence.
+  Quick-state score changes participate in autosave, as in Devil's Crush.
+- Fresh-core replay of the early boot checkpoint exposed libretro's first-run
+  SoundFormatChanged clearing restored resampler history. Initialize the core's
+  output before restoring a nonzero-frame checkpoint. No serialized schema or
+  gameplay revision change; exact fresh-runtime RAM/video/audio replay passes.
+- Seven checks passed in out/test-high-score-save-final.log: persistence,
+  demo handoffs/host, continuous handoffs/recording, desktop and cabinet smoke.
+  Additional corrupt-file fallback/preservation check passed in
+  out/test-high-score-save-corrupt.log. Build: out/build-high-score-save-final.log.
+- Published D:\Workspace\alien-crush-cabinet (out/publish-high-score-save.log).
+
 Swallowing mouth ball layering (2026-09-13):
 
 - Restrict cabinet ball occlusion to foreground sprite pieces of mouth actors
