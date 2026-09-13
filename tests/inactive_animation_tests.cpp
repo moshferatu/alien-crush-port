@@ -251,7 +251,7 @@ int main(int argc,char** argv) {
         std::array<std::byte,8192> last_ram{};
         std::array<unsigned,2> animated{};
         render::TableTransitionHold hold;
-        unsigned ball_pixels=0,orb_frames=0,brain_frames=0,palette_frames=0,flesh_frames=0;
+        unsigned ball_pixels=0,mouth_pixels=0,orb_frames=0,brain_frames=0,palette_frames=0,flesh_frames=0;
         for(unsigned n=0;n<1800;++n) {
             const auto frame=runtime->advance(recording::canonical_input(n));
             fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
@@ -412,11 +412,32 @@ int main(int argc,char** argv) {
             if(image && hold.ball_updated()) {
                 const auto ball=table->transition_ball(std::to_integer<unsigned>(ram[0x79]),ram);
                 require(ball.has_value(),"Updated ball is missing");
+                auto mouth_ram=std::array<std::byte,8192>{};
+                std::copy(ram.begin(),ram.end(),mouth_ram.begin());
+                mouth_ram[0x16]=mouth_ram[0x17]=std::byte{};
+                mouth_ram[0x2e]=std::byte{};mouth_ram[0x2f]=std::byte{2};mouth_ram[0x50]=std::byte{10};
+                std::array<std::uint16_t,256> mouth_sat{};
+                for(const auto& piece:assets::assemble_table_actors(actors,mouth_ram)) {
+                    const auto type=mouth_ram[0x1500+piece.actor];
+                    if(type==std::byte{11} || type==std::byte{12} || type==std::byte{13} || type==std::byte{34})
+                        std::copy(piece.words.begin(),piece.words.end(),mouth_sat.begin()+piece.slot*4);
+                }
+                const auto mouths=render::sprites(video.vram,video.palette,mouth_sat,0);
                 for(int y=0;y<16;++y) for(int x=0;x<16;++x) {
                     const int dx=ball->x+x,dy=ball->y+y;
                     const auto color=ball->image.pixels[y*16+x];
                     if(!(color>>24) || dx<0 || dx>=256 || dy<0 || dy>=456) continue;
-                    require(image->pixels[dy*256+dx]==color,"Cabinet decoration or sprite fetch limit obscured the ball");
+                    if(image->pixels[dy*256+dx]!=color) {
+                        const int local_y=dy-(ram[0x79]==std::byte{}?render::table_half_offset:0);
+                        const bool mouth=std::any_of(mouths.begin(),mouths.end(),[&](const auto& sprite){
+                            const int mx=dx-sprite.x,my=local_y-sprite.y;
+                            return mx>=0 && my>=0 && mx<sprite.width && my<sprite.height &&
+                                (sprite.image.pixels[my*sprite.width+mx]>>24);
+                        });
+                        require(mouth,"Only original mouth artwork may obscure the ball");
+                        if(!mouth_pixels) preview(*image,"mouth-occlusion-fixed");
+                        ++mouth_pixels;
+                    }
                     ++ball_pixels;
                 }
             }
@@ -578,6 +599,7 @@ int main(int argc,char** argv) {
         }
         require(animated[0]>50 && animated[1]>50,"Both dormant halves must animate while their game-state bank stays frozen");
         require(ball_pixels>10000 && orb_frames>100 && brain_frames>100,"Insufficient ball layering or original orb-motion coverage");
+        require(mouth_pixels>0,"Natural replay must exercise mouth occlusion");
         require(palette_frames>100,"Insufficient original tentacle palette comparisons");
         require(flesh_frames>200,"Insufficient original fleshy-border palette comparisons");
         runtime->restore(initial);runtime->observe_display(false);

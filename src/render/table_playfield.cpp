@@ -456,6 +456,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
     auto sat=previous.sat;
     auto active_vram=current.vram;
     auto active_palette=current.palette;
+    std::uint64_t mouth_slots=0;
     std::vector<assets::BackgroundWrite> visual_writes;
     std::array<bool,32768> visual_addresses{};
     if(cabinet) {
@@ -468,7 +469,16 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         if(hide_ball) projected[0x1540]|=std::byte{0x20};
         sat.fill(0);
         const auto pieces=assets::assemble_table_actors(actors_,projected);
-        for(const auto& piece:pieces) std::copy(piece.words.begin(),piece.words.end(),sat.begin()+piece.slot*4);
+        for(const auto& piece:pieces) {
+            std::copy(piece.words.begin(),piece.words.end(),sat.begin()+piece.slot*4);
+            const auto type=std::to_integer<unsigned>(projected[0x1500+piece.actor]);
+            // Upper-table swallow/return mouths: 02:684B, 6A0C, 6B8C,
+            // and the tentacled mouth at 6D3C. Keep their ROM foreground
+            // pieces in front of the ball, without restoring decorative occlusion.
+            if((type==11 || type==12 || type==13 || type==34) &&
+                (std::to_integer<unsigned>(projected[0x1540+piece.actor])&0x0c))
+                mouth_slots|=std::uint64_t{1}<<piece.slot;
+        }
         const unsigned next=pieces.empty()?10:pieces.back().slot+1;
         for(const auto& piece:assets::assemble_table_overlay(projected,next))
             std::copy(piece.words.begin(),piece.words.end(),sat.begin()+piece.slot*4);
@@ -566,9 +576,24 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         std::copy(lower.begin(),lower.end(),coverage->begin()+256*table_half_offset);
         for(unsigned p=0;p<upper.size();++p) (*coverage)[p]|=upper[p];
         // Cabinet ball readability takes precedence over decorative sprites,
-        // point labels and the PCE's per-row sprite fetch limit. Keep the exact
-        // diagnostic mask unchanged for reference comparisons.
-        if(cabinet) std::fill(coverage->begin(),coverage->end(),std::uint8_t{0});
+        // point labels and the PCE's per-row sprite fetch limit. Only swallowing
+        // mouths retain occlusion. Keep the exact diagnostic mask unchanged.
+        if(cabinet) {
+            std::fill(coverage->begin(),coverage->end(),std::uint8_t{0});
+            if(mouth_slots) {
+                const auto mouths=render::sprites(active_vram,active_palette,sat,0);
+                for(unsigned slot=0;slot<mouths.size();++slot) {
+                    if(!(mouth_slots&(std::uint64_t{1}<<slot))) continue;
+                    const auto& mouth=mouths[slot];
+                    for(int y=0;y<mouth.height;++y) for(int x=0;x<mouth.width;++x) {
+                        const int dx=mouth.x+x,dy=mouth.y+y;
+                        if(dx<0 || dx>=256 || dy<0 || dy>=240 ||
+                            !(mouth.image.pixels[static_cast<std::size_t>(y)*mouth.width+x]>>24)) continue;
+                        (*coverage)[static_cast<std::size_t>(dy+(table==0?table_half_offset:0))*256+dx]=1;
+                    }
+                }
+            }
+        }
     }
     return table==0?stitch_table_views(live,inactive,0,live_sprites,inactive_sprites):
         stitch_table_views(inactive,live,1,inactive_sprites,live_sprites);

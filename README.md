@@ -321,7 +321,9 @@ cabinet image; real actor positions, collisions and scoring follow the original
 game. Other idle collision-triggered objects stay at rest. Animation pauses with
 the game and reseeds after a table change, scene change or quick load. The cabinet
 draws the current ball above table artwork, sprites and point labels so it remains
-visible through overlaps. Persistent indicator colors and each half's
+visible through overlaps, except for the swallowing mouths: their opaque sprite
+pixels cover the ball as it enters and leaves, matching the original layering.
+Persistent indicator colors and each half's
 table overlay are restored from game state, as is the lower table's seven-variant
 counter graphic and the two large background actors that redraw when a table
 is restored. Other inactive background changes

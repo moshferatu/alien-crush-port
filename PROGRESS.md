@@ -1,5 +1,23 @@
 # Progress
 
+Swallowing mouth ball layering (2026-09-13):
+
+- Restrict cabinet ball occlusion to foreground sprite pieces of mouth actors
+  11/12/13/34 (02:684B/6A0C/6B8C/6D3C). These routines draw the ball into the
+  mouth, hide it and release it. Preserve opaque mouth pixels in the clean
+  backdrop mask, while all decorative sprites and points retain the existing
+  ball-on-top behavior. Transparent gaps and hidden actors do not block it.
+- Added mouth_layer tests using ROM sprite forms for all four mouths, sweeping
+  ball positions across opaque/transparent pixels and checking hidden mouths
+  and identical artwork assigned to a decorative actor. Passed in
+  out/test-mouth-layer.log; reference table_replay passed in the same run.
+- Updated the natural replay's old unconditional ball-visibility assertion to
+  allow only mouth sprite pixels. The full inactive-animation/replay test passed
+  (out/test-mouth-replay.log), including 1,800 exact RAM/video/audio frames.
+  Visually reviewed inactive-previews/mouth-occlusion-fixed.bmp in the build tree.
+- Release build and cabinet publish succeeded (out/build-mouth-layer.log,
+  out/publish-mouth-layer.log). Published D:\Workspace\alien-crush-cabinet.
+
 Suppress post-ranking table flash (2026-09-12):
 
 - Traced 25 frames after demo rankings: EC0A -> E705 restores table graphics
