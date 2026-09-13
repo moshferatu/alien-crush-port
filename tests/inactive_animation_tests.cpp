@@ -59,6 +59,13 @@ void seam_continuity(std::span<const std::byte> rom,const diagnostics::Reference
     seam_ram[0x2c4]=std::byte{228};seam_ram[0x384]=std::byte{168};
     seam_ram[0x504]=std::byte{143};seam_ram[0x544]=std::byte{1};
     seam_ram[0x744]=std::byte{6};seam_ram[0x884]=std::byte{0x20};
+    // Lower green alien, including a complete movement cycle across swaps.
+    seam_ram[0x205]=std::byte{21};seam_ram[0x245]=std::byte{0xc0};
+    seam_ram[0x2c5]=std::byte{48};seam_ram[0x385]=std::byte{152};
+    seam_ram[0x505]=std::byte{96};seam_ram[0x585]=std::byte{1};
+    seam_ram[0x705]=std::byte{0x21};seam_ram[0x745]=std::byte{4};
+    seam_ram[0x785]=std::byte{3};
+    seam_ram[0x885]=std::byte{0x10};
     for(unsigned field=0;field<8;++field)
         seam_ram[0x1245+field*64+51]=ram[0x1245+field*64+51];
     for(unsigned slot:{34u,35u}) for(unsigned field=0;field<8;++field)
@@ -69,8 +76,8 @@ void seam_continuity(std::span<const std::byte> rom,const diagnostics::Reference
     auto& fixed_video=fixture->fixed_video;auto& crossing_video=fixture->crossing_video;
     auto& fixed_previous=fixture->fixed_previous;auto& crossing_previous=fixture->crossing_previous;
     std::optional<render::Image> first_tentacles;
-    unsigned changed_tentacles=0,changed_flesh=0;
-    for(unsigned tick=0;tick<160;++tick) {
+    unsigned changed_tentacles=0,changed_flesh=0,changed_green=0;
+    for(unsigned tick=0;tick<640;++tick) {
         auto swapped=seam_ram;
         const unsigned half=(tick/17)%2;
         if(!half) for(unsigned field=0;field<32;++field) for(unsigned x=4;x<64;++x)
@@ -100,12 +107,20 @@ void seam_continuity(std::span<const std::byte> rom,const diagnostics::Reference
                 changed|=first_tentacles->pixels[y*256+x]!=moving->pixels[y*256+x];
             changed_flesh+=changed;
         }
+        if(half && tick) {
+            bool changed=false;
+            for(unsigned y=264;y<328;++y) for(unsigned x=0;x<32;++x)
+                changed|=first_tentacles->pixels[y*256+x]!=moving->pixels[y*256+x];
+            changed_green+=changed;
+        }
+        if(tick==48) preview(*moving,"green-raised-offscreen");
         if(tick==8) preview(*moving,"flesh-offscreen-later");
         if(tick==24) preview(*moving,"tentacles-later");
         fixed_previous=fixed_video;crossing_previous=crossing_video;
     }
     require(changed_tentacles>100,"Tentacle geometry/palette froze during bank swaps");
     require(changed_flesh>40,"Upper-left fleshy border froze while upper table was inactive");
+    require(changed_green>100,"Green alien pixels froze while lower table was inactive");
     auto timeline=std::make_unique<render::TableAnimation>(rom);
     assets::ActorAssets actor_assets(rom);
     timeline->update(actor_assets,seam_ram,false);
@@ -128,6 +143,44 @@ int main(int argc,char** argv) {
         const auto path=core::path_from_utf8(argv[1]);
         const auto rom=core::read_file(path);
         assets::ActorAssets actors(rom);
+        // ROM green-alien rise/wait/lower cycle: exactly 24 pixels each way,
+        // randomized waits in the ROM ranges, no accumulated position drift.
+        for(unsigned green_type:{21u,22u}) {
+            std::array<std::byte,8192> green{};
+            green[0x1504]=static_cast<std::byte>(green_type);
+            green[0x1544]=std::byte{0xc0};green[0x1684]=std::byte{152};
+            green[0x1804]=std::byte{96};green[0x1a44]=std::byte{4};
+            green[0x1b84]=std::byte{0x10};green[0x1884]=std::byte{1};
+            if(green_type==22) {
+                green[0x1884]=std::byte{48};green[0x1784]=std::byte{0x80};green[0x17c4]=std::byte{0xff};
+            } else actors.advance_animation(green);
+            for(unsigned i=0;i<48;++i) actors.advance_animation(green);
+            require(green[0x1684]==std::byte{128} && green[0x1644]==std::byte{} &&
+                green[0x1544]==std::byte{0x80},"Green alien did not rise 24 pixels");
+            if(green_type==22) {
+                for(unsigned i=0;i<600;++i) actors.advance_animation(green);
+                require(green[0x1684]==std::byte{128} && green[0x1844]==std::byte{1},
+                    "Rise-and-stay green alien incorrectly lowered");
+            } else {
+                for(unsigned cycle=0;cycle<5;++cycle) {
+                    const auto wait=std::to_integer<unsigned>(green[0x1884]);
+                    require(wait>=120 && wait<240,"Green raised wait outside ROM distribution");
+                    const auto descriptor=green[0x1804];bool changed=false;
+                    for(unsigned i=0;i<wait;++i) {actors.advance_animation(green);changed|=green[0x1804]!=descriptor;}
+                    require(changed,"Raised green alien sprite froze");
+                    for(unsigned i=0;i<48;++i) actors.advance_animation(green);
+                    require(green[0x1684]==std::byte{152} && green[0x1644]==std::byte{} &&
+                        green[0x1844]==std::byte{},"Green alien cycle drifted or failed to lower");
+                    auto idle_wait=std::to_integer<unsigned>(green[0x1884]);
+                    if(!idle_wait) idle_wait=256; // DEC wraps zero, as in the ROM.
+                    for(unsigned i=0;i<idle_wait+48;++i) actors.advance_animation(green);
+                    require(green[0x1684]==std::byte{128},"Green alien failed to repeat its rise");
+                }
+            }
+            green[0x1544]=std::byte{};const auto uninitialized=green;
+            actors.advance_animation(green);
+            require(green==uninitialized,"Uninitialized green actor advanced");
+        }
         // Type 33 initializes six frames at +$0020 (01:5B15..5B25).
         // Validate both FD35 reflection endpoints and the recovered sequence.
         std::array<std::byte,8192> projected{};
@@ -251,12 +304,31 @@ int main(int argc,char** argv) {
         std::array<std::byte,8192> last_ram{};
         std::array<unsigned,2> animated{};
         render::TableTransitionHold hold;
-        unsigned ball_pixels=0,mouth_pixels=0,orb_frames=0,brain_frames=0,palette_frames=0,flesh_frames=0;
+        unsigned ball_pixels=0,mouth_pixels=0,orb_frames=0,brain_frames=0,palette_frames=0,flesh_frames=0,green_frames=0;
         for(unsigned n=0;n<1800;++n) {
             const auto frame=runtime->advance(recording::canonical_input(n));
             fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
             const auto video=runtime->video_snapshot();const auto ram=runtime->work_ram();
             const auto before=runtime->save();
+            if(n && ram[0x79]==std::byte{} && last_ram[0x79]==std::byte{}) {
+                auto predicted=last_ram;actors.advance_animation(predicted);
+                for(unsigned x=4;x<64;++x) {
+                    if(last_ram[0x1500+x]!=std::byte{21} || ram[0x1500+x]!=std::byte{21} ||
+                        (last_ram[0x1540+x]&std::byte{0x80})==std::byte{} ||
+                        (last_ram[0x1840+x]!=std::byte{1} && last_ram[0x1840+x]!=std::byte{3})) continue;
+                    // Render frames can run without dispatching actors (e.g.
+                    // transition waits). Compare actual movement updates only.
+                    if(ram[0x1880+x]==last_ram[0x1880+x]) continue;
+                    for(unsigned p:{0x1640u,0x1680u,0x16c0u,0x1840u})
+                        if(predicted[p+x]!=ram[p+x]) throw std::runtime_error("Green ROM mismatch frame "+
+                            std::to_string(n+1)+" slot "+std::to_string(x)+" field "+std::to_string(p)+
+                            " expected "+std::to_string(std::to_integer<unsigned>(predicted[p+x]))+
+                            " actual "+std::to_string(std::to_integer<unsigned>(ram[p+x])));
+                    if(last_ram[0x1880+x]!=std::byte{1})
+                        require(predicted[0x1880+x]==ram[0x1880+x],"Green movement timer differs from ROM");
+                    ++green_frames;
+                }
+            }
             if(n && ram[0x79]==std::byte{1} && last_ram[0x79]==std::byte{1}) {
                 for(unsigned palette_slot:{34u,35u}) {
                     if(ram[0x1245+palette_slot]!=std::byte{6} || last_ram[0x1245+palette_slot]!=std::byte{6} ||
@@ -602,6 +674,7 @@ int main(int argc,char** argv) {
         require(mouth_pixels>0,"Natural replay must exercise mouth occlusion");
         require(palette_frames>100,"Insufficient original tentacle palette comparisons");
         require(flesh_frames>200,"Insufficient original fleshy-border palette comparisons");
+        require(green_frames>100,"Insufficient original green-alien movement comparisons");
         runtime->restore(initial);runtime->observe_display(false);
         for(unsigned n=0;n<1800;++n) {
             const auto frame=runtime->advance(recording::canonical_input(n));
@@ -609,7 +682,8 @@ int main(int argc,char** argv) {
         }
         std::cout<<"PASS: inactive lower/upper changed on "<<animated[0]<<'/'<<animated[1]
             <<" frozen-bank frames; "<<ball_pixels<<" unobscured ball pixels; "<<orb_frames
-            <<" original orb-motion comparisons; "<<brain_frames<<" brain orb comparisons; 1800 exact RAM/video/audio frames; repeated rendering is idempotent\n";
+            <<" original orb-motion comparisons; "<<brain_frames<<" brain orb comparisons; "<<green_frames
+            <<" green movement comparisons; 1800 exact RAM/video/audio frames; repeated rendering is idempotent\n";
         return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

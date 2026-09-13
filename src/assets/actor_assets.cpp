@@ -282,6 +282,41 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
             } else {put(0x1840+x,1);put(0x1880+x,16);}
             continue;
         }
+        // Green side aliens: 02:61FE..6286. Only the raised wait calls
+        // FD2B; rising/lowering use 48 half-pixel Y steps. Type 22 is the
+        // related rise-and-stay variant (02:635E..6380). Use private RNG
+        // for idle waits, never process collisions or group/sound writes.
+        if((type==21 || type==22) && (b(0x1540+x)&0x80)) {
+            const auto action=b(0x1840+x);
+            if(action>(type==21?3u:1u)) continue;
+            const bool moving=type==21?(action==1 || action==3):action==0;
+            const bool raised=type==21?action==2:action==1;
+            if(moving) {
+                const unsigned velocity=b(0x1780+x)|(b(0x17c0+x)<<8);
+                const int delta=velocity<0x8000?static_cast<int>(velocity):static_cast<int>(velocity)-65536;
+                const unsigned y=b(0x1640+x)|(b(0x1680+x)<<8)|(b(0x16c0+x)<<16);
+                const unsigned next=(y+static_cast<unsigned>(delta))&0xffffff;
+                put(0x1640+x,next);put(0x1680+x,next>>8);put(0x16c0+x,next>>16);
+            }
+            if(type==21 || !raised) {
+                put(0x1880+x,b(0x1880+x)-1);
+                if(!b(0x1880+x)) {
+                    if(type==22 || action==1) {
+                        put(0x1840+x,type==21?2:1);
+                        if(type==21) put(0x1880+x,120+(visual_random(ram)*120>>8));
+                        put(0x1ac0+x,0);put(0x1540+x,b(0x1540+x)&0xbf);
+                    } else if(action==0 || action==2) {
+                        put(0x1840+x,action+1);put(0x1780+x,0x80);
+                        put(0x17c0+x,action==0?0xff:0);put(0x1880+x,48);
+                        if(action==2) put(0x1540+x,b(0x1540+x)|0x40);
+                    } else {
+                        put(0x1840+x,0);put(0x1880+x,visual_random(ram)+16);
+                    }
+                    continue;
+                }
+            }
+            if(!raised) continue;
+        }
         // The little bouncing orbs (02:7892/7988) do not use FD35.
         // Continue their respawn timer and vertical bob in the private bank,
         // without replaying collision, score, explosion-spawn or sound calls.

@@ -1,5 +1,24 @@
 # Progress
 
+Green alien movement and actor audit (2026-09-13):
+
+- Added the private type-21 wait/rise/raised-animation/lower cycle, preserving
+  the ROM's 48 half-pixel movement steps and randomized wait distributions.
+  Added type 22's related rise-and-stay behavior. Type 25 bases remain static.
+  No gameplay collisions, scores, sounds or RNG are advanced by presentation.
+- Tests exercise repeated complete cycles without drift, the rise-and-stay
+  variant, actual ROM movement updates, inactive green pixels, and 640 frames
+  of identical composition with/without repeated table-bank swaps. Existing
+  pause, actor lifecycle and 1,800-frame exact RAM/video/audio checks pass.
+- Audit findings and remaining finite-reaction/movement gaps are documented
+  in docs/ACTOR_ANIMATION_AUDIT.md. This change does not claim to fix all
+  triggered effects or simulate offscreen gameplay.
+- Build: out/build-green-animation.log. Tests: out/test-green-animation.log
+  (mouth layering, inactive animation, continuous handoff, reference table
+  replay); expanded final animation checks: out/test-green-animation-final.log.
+- Visually inspected lowered/raised inactive previews; published to
+  D:\Workspace\alien-crush-cabinet (out/publish-green-animation.log).
+
 Automatic high-score persistence (2026-09-13):
 
 - Followed Devil's Crush's ranked-column autosave: five scores plus initials,
