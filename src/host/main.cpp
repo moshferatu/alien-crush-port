@@ -207,7 +207,7 @@ int main(int argc,char** argv) {
                     const auto scene=diagnostics::observe_alien_state(runtime->work_ram());
                     if(scene.title_transition) std::fill(original.begin(),original.end(),0xff000000);
                     display.show({frame.number,frame.width,frame.height,original,{}},4,3,
-                        scene.bonus_room!=0 && !scene.title_menu && !scene.high_score_menu);
+                        scene.bonus_room!=0 || scene.title_menu || scene.high_score_menu);
                 }
                 previous_video=snapshot;
             } else {display.show(frame);}
