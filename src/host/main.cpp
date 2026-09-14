@@ -41,7 +41,7 @@ int main(int argc,char** argv) {
     try {
         std::filesystem::path rom_path,record_path,replay_path,data_path,timing_path,plunger_path;
         std::uint64_t limit=0;
-        bool cabinet_mode=false,probe=false,probe_plunger=false;
+        bool cabinet_mode=false,probe=false,probe_plunger=false,no_vsync=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]);};
@@ -52,6 +52,7 @@ int main(int argc,char** argv) {
             else if(arg=="--data-dir") data_path=core::path_from_utf8(value());
             else if(arg=="--timing-log") timing_path=core::path_from_utf8(value());
             else if(arg=="--cabinet") cabinet_mode=true;
+            else if(arg=="--no-vsync") no_vsync=true;
             else if(arg=="--input-probe") probe=true;
             else if(arg=="--cabinet-plunger-probe") probe_plunger=true;
             else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
@@ -96,9 +97,11 @@ int main(int argc,char** argv) {
         std::ofstream timing;
         if(!timing_path.empty()) {
             timing.exceptions(std::ios::failbit|std::ios::badbit);timing.open(timing_path);
-            timing<<"frame,start_ns,end_ns,audio_samples,queued_bytes\n";
+            timing<<"frame,start_ns,end_ns,audio_samples,queued_bytes,runtime_end_ns,compose_end_ns,playfield_end_ns,cabinet_end_ns,table_half\n";
         }
         host::Presentation display(cabinet_mode?"Alien Crush - Playfield":"Alien Crush",cabinet_mode?540:960,720,cabinet_mode);
+        const bool vsync=!no_vsync && display.enable_vsync();
+        if(!no_vsync && !vsync) std::cerr<<"Playfield VSync unavailable; using timer pacing: "<<SDL_GetError()<<'\n';
         std::unique_ptr<host::Cabinet> cabinet;
         if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,data_path,core::read_file(rom_path));
         std::unique_ptr<render::TablePlayfield> table;
@@ -116,6 +119,7 @@ int main(int argc,char** argv) {
         const auto frame_ns=static_cast<std::uint64_t>(1e9/runtime->frames_per_second());
         auto deadline=SDL_GetTicksNS();
         std::uint64_t count=0;
+        unsigned catch_up=0;
         while(running && (!limit || count<limit) && (!playback || count<playback->inputs.size())) {
             SDL_Event event;
             while(SDL_PollEvent(&event)) {
@@ -159,6 +163,12 @@ int main(int argc,char** argv) {
             focused=now_focused;
             if(!running) break;
             if(!focused && !limit) { SDL_Delay(10); continue; }
+            // Present at the playfield's refresh rate while the game keeps its
+            // own 59.826 Hz clock. Extra refreshes reuse the completed texture;
+            // they must not advance actors, inputs, or audio.
+            if(vsync && count && SDL_GetTicksNS()<deadline) {
+                display.repeat();catch_up=0;continue;
+            }
             // A mapped raw cabinet board must not also trigger SDL's default gamepad buttons.
             auto* standard_pad=gamepad.pad && SDL_GetGamepadID(gamepad.pad)!=cabinet_input.id() &&
                 SDL_GetGamepadID(gamepad.pad)!=cabinet_plunger.id()?gamepad.pad:nullptr;
@@ -169,6 +179,12 @@ int main(int argc,char** argv) {
             const auto frame_started=SDL_GetTicksNS();
             if(table_raster) runtime->observe_display(true);
             const auto frame=playback?recording::advance(*runtime,input,command):runtime->advance(input);
+            const auto runtime_ended=timing.is_open()?SDL_GetTicksNS():0;
+            auto compose_ended=runtime_ended;
+            // A slow refresh or isolated stall can leave multiple game frames
+            // due. Catch up without waiting for VSync on each intermediate one.
+            const bool present_frame=!vsync || SDL_GetTicksNS()<deadline+frame_ns || ++catch_up>=4;
+            display.defer(!present_frame);
             if(!record_path.empty()) {
                 if(command && recorded.plunger.empty()) recorded.plunger.resize(recorded.inputs.size(),0);
                 recorded.inputs.push_back(input);
@@ -184,6 +200,7 @@ int main(int argc,char** argv) {
                 const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
                 auto stitched=table->cabinet_frame(snapshot,previous_video?&*previous_video:nullptr,
                     runtime->work_ram(),table_raster?&raster:nullptr,transition);
+                if(timing.is_open()) compose_ended=SDL_GetTicksNS();
                 if(stitched) display.show({frame.number,stitched->width,stitched->height,stitched->pixels,{}},
                     render::table_aspect_width,render::table_aspect_height,true);
                 else {
@@ -194,18 +211,22 @@ int main(int argc,char** argv) {
                 }
                 previous_video=snapshot;
             } else {display.show(frame);}
+            const auto playfield_ended=timing.is_open()?SDL_GetTicksNS():0;
             ++count;
             if(!SDL_PutAudioStreamData(audio.stream,sound.data(),static_cast<int>(sound.size()*sizeof(std::int16_t)))) throw std::runtime_error(SDL_GetError());
             // A stalled output device must not accumulate minutes of queued sound.
             if(SDL_GetAudioStreamQueued(audio.stream)>runtime->sample_rate()*4/4) SDL_ClearAudioStream(audio.stream);
             if(cabinet) cabinet->show(runtime->work_ram());
+            if(present_frame) catch_up=0;
+            const auto cabinet_ended=timing.is_open()?SDL_GetTicksNS():0;
             if(high_scores) high_scores->poll(runtime->work_ram());
             if(timing.is_open()) timing<<frame.number<<','<<frame_started<<','<<SDL_GetTicksNS()<<','
-                <<sound.size()<<','<<SDL_GetAudioStreamQueued(audio.stream)<<'\n';
+                <<sound.size()<<','<<SDL_GetAudioStreamQueued(audio.stream)<<','<<runtime_ended<<','<<compose_ended<<','
+                <<playfield_ended<<','<<cabinet_ended<<','<<std::to_integer<unsigned>(runtime->work_ram()[0x79])<<'\n';
             deadline+=frame_ns;
             const auto now=SDL_GetTicksNS();
-            if(deadline>now) SDL_DelayPrecise(deadline-now);
-            else if(now-deadline>frame_ns*4) deadline=now;
+            if(deadline>now && !vsync) SDL_DelayPrecise(deadline-now);
+            else if(now>deadline && now-deadline>frame_ns*4) deadline=now;
         }
         if(high_scores) high_scores->poll(runtime->work_ram(),true);
         if(!record_path.empty()) recording::write(record_path,recorded);

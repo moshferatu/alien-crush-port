@@ -5,6 +5,15 @@ The development baseline runs the original game in an independent, pinned Beetle
 reference runtime. Native gameplay and full-table cabinet presentation are being developed.
 See [PLAN.md](PLAN.md) for the target and [PROGRESS.md](PROGRESS.md) for verified status.
 
+For frame-rate measurements and cabinet timing diagnostics, see
+[Frame pacing investigation](docs/FRAME_PACING_INVESTIGATION.md).
+
+The playfield uses VSync by default while the game retains its original
+59.826 Hz clock. Backglass and DMD windows do not wait on their monitors.
+To compare with timer pacing, run `alien-crush.exe --cabinet --no-vsync`
+(or `Launch-Cabinet.cmd --no-vsync`). Both modes use the optimized stitched
+renderer. If VSync is unavailable, timer pacing is selected automatically.
+
 ## ROM
 
 Supply your own `Alien Crush.pce`: 262,144 bytes, SHA-256

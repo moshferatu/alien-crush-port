@@ -7,7 +7,7 @@ namespace alien_crush::host {
 namespace { void checked(bool ok) { if(!ok) throw std::runtime_error(SDL_GetError()); } }
 Presentation::Presentation(const char* title,int width,int height,bool hidden) {
     checked(SDL_CreateWindowAndRenderer(title,width,height,SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|(hidden?SDL_WINDOW_HIDDEN:0),&window_,&renderer_));
-    SDL_SetRenderVSync(renderer_,0); // A single game clock, independent of display refresh.
+    SDL_SetRenderVSync(renderer_,0); // Auxiliary windows never wait on another monitor.
 }
 Presentation::~Presentation() { SDL_DestroyTexture(stage_); SDL_DestroyTexture(source_); SDL_DestroyRenderer(renderer_); SDL_DestroyWindow(window_); }
 void Presentation::show(const Frame& frame,std::uint32_t aspect_width,std::uint32_t aspect_height,bool bottom_aligned) {
@@ -30,12 +30,18 @@ void Presentation::show(const Frame& frame,std::uint32_t aspect_width,std::uint3
     }
     checked(SDL_UpdateTexture(source_,nullptr,frame.pixels.data(),frame.width*4));
     checked(SDL_SetRenderTarget(renderer_,stage_)); checked(SDL_RenderTexture(renderer_,source_,nullptr,nullptr));
-    checked(SDL_SetRenderTarget(renderer_,nullptr)); checked(SDL_SetRenderDrawColor(renderer_,0,0,0,255)); checked(SDL_RenderClear(renderer_));
+    checked(SDL_SetRenderTarget(renderer_,nullptr));
     SDL_FRect dest{static_cast<float>(width-layout.destination.width)/2,static_cast<float>(height-layout.destination.height)/2,static_cast<float>(layout.destination.width),static_cast<float>(layout.destination.height)};
     // Rotation is around the destination center. Shift by the unused physical
     // window height so even sideways tables meet the bottom edge after rotation.
     if(bottom_aligned) dest.y+=static_cast<float>(height-(sideways?layout.destination.width:layout.destination.height))/2;
-    checked(SDL_RenderTextureRotated(renderer_,stage_,nullptr,&dest,rotation_,nullptr,SDL_FLIP_NONE)); checked(SDL_RenderPresent(renderer_));
+    destination_=dest;
+    if(!deferred_) repeat();
+}
+void Presentation::repeat() {
+    checked(SDL_SetRenderDrawColor(renderer_,0,0,0,255)); checked(SDL_RenderClear(renderer_));
+    if(stage_) checked(SDL_RenderTextureRotated(renderer_,stage_,nullptr,&destination_,rotation_,nullptr,SDL_FLIP_NONE));
+    checked(SDL_RenderPresent(renderer_));
 }
 void Presentation::panel(const char* text) {
     int width{},height{}; checked(SDL_GetRenderOutputSize(renderer_,&width,&height));

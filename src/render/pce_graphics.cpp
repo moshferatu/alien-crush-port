@@ -42,7 +42,7 @@ std::uint32_t output_color(std::span<const std::uint16_t> palette,unsigned index
     return indexed?0xff000000U|index:pce_color(palette[index]);
 }
 std::array<Sprite,64> sprite_layer(std::span<const std::uint16_t> vram,std::span<const std::uint16_t> palette,
-    std::span<const std::uint16_t> sat,std::uint16_t memory_width,bool indexed) {
+    std::span<const std::uint16_t> sat,std::uint16_t memory_width,bool indexed,int first=-1024,int end=2048) {
     if(vram.size()!=32768 || palette.size()!=512 || sat.size()!=256) throw std::runtime_error("Invalid PCE sprite memory");
     std::array<Sprite,64> result;
     constexpr int heights[]{16,32,64,64};
@@ -54,7 +54,10 @@ std::array<Sprite,64> sprite_layer(std::span<const std::uint16_t> vram,std::span
         sprite.pattern=(sat[i*4+2]>>1)&1023; sprite.flags=flags; sprite.foreground=(flags&0x80)!=0;
         sprite.image={sprite.width,sprite.height,{}};
         sprite.image.pixels.resize(static_cast<std::size_t>(sprite.width)*sprite.height);
-        for(int y=0;y<sprite.height;++y) for(int x=0;x<sprite.width;++x) {
+        // A raster band only consumes its own rows. Decoding every sprite's
+        // entire image for every VRAM-write band multiplied work during uploads.
+        // Keep SAT order and dimensions intact for the hardware fetch limit.
+        for(int y=std::max(0,first-sprite.y);y<std::min(sprite.height,end-sprite.y);++y) for(int x=0;x<sprite.width;++x) {
             const auto sx=static_cast<unsigned>((flags&0x800)?sprite.width-1-x:x);
             const auto sy=static_cast<unsigned>((flags&0x8000)?sprite.height-1-y:y);
             auto pattern=static_cast<unsigned>(sprite.pattern)&masks[(flags>>12)&3];
@@ -126,7 +129,7 @@ Image compose_rows(std::span<const std::uint16_t> vram,std::span<const std::uint
     }
     std::vector<unsigned> fetched(static_cast<std::size_t>(end-first));
     unsigned slot=0;
-    if(sprites_enabled) for(const auto& sprite:sprite_layer(vram,palette,sat,viewport.memory_width,indexed)) {
+    if(sprites_enabled) for(const auto& sprite:sprite_layer(vram,palette,sat,viewport.memory_width,indexed,first,end)) {
         const bool suppress=(hidden&(std::uint64_t{1}<<slot++))!=0;
         for(int y=0;y<sprite.height;++y) {
             const int row=sprite.y+y;

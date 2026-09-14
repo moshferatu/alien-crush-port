@@ -1,5 +1,33 @@
 # Progress
 
+Stitched rendering optimization and playfield VSync (2026-09-14):
+
+- Decode only sprite rows consumed by each raster band, retaining original
+  SAT order, fetch limits, transparency, flips, and mid-frame VRAM behavior.
+  The repeatable frame-1687 composition fell from 56.67 to 6.30 ms.
+- Playfield VSync is now the default. Extra refreshes redraw the completed
+  texture without advancing simulation/audio; overdue game frames can update
+  without an intermediate VSync wait, with bounded catch-up. Auxiliary windows
+  remain unsynchronized. `--no-vsync` retains timer pacing for comparison.
+- Graphics, table replay, inactive animation, mouth layering, and ordinary
+  bonus replay checks passed (5/5). Both 1,800-frame host pacing runs retained
+  all baseline frame numbers, audio batch sizes, and table-half transitions.
+  Timer mode's longest gameplay gap fell from ~66 to 18.24 ms; VSync measured
+  59.82 FPS with one 28.58 ms gap. Physical cabinet smoothness remains to be
+  evaluated on its monitors; see the investigation document for details.
+
+Frame pacing investigation (2026-09-14):
+
+- Same 1,800-frame replay in desktop and two cabinet runs maintained
+  59.8261 FPS after startup, matching Devil's Crush's configured game rate.
+  Cabinet runs reproduced three >25 ms gaps, with a worst gap near 66 ms;
+  the measured seam windows remained within budget.
+- Optional `--timing-log` now appends runtime/composition/presentation stage
+  timestamps and table half. A diagnostic repeat localized the worst hitch
+  to 56.67 ms of stitched composition, rather than window presentation.
+- Documented methodology, limitations, VSync differences, and next profiling
+  targets in `docs/FRAME_PACING_INVESTIGATION.md`. No pacing behavior changed.
+
 Actor-bank loading continuity (2026-09-14):
 
 - A longer 12,000-frame gameplay route exposed remaining resets that the
