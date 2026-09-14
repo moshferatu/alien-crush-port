@@ -174,7 +174,7 @@ void ActorAssets::mirror_flippers(std::span<std::byte> projected,std::span<const
         }
     }
 }
-void ActorAssets::advance_animation(std::span<std::byte> ram) const {
+void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) const {
     if(ram.size()!=8192) throw std::runtime_error("Animation requires private 8192-byte actor RAM");
     auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
     auto put=[&](unsigned p,unsigned v){ram[p]=static_cast<std::byte>(v&255);};
@@ -190,7 +190,39 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
         put(p+x,next);put(p+64+x,next>>8);put(p+128+x,next>>16);
     };
     for(unsigned x=4;x<64;++x) {
-        const auto type=b(0x1500+x),count=b(0x1a40+x);
+        const auto type=b(0x1500+x);
+        const bool emerging=type==40 || type==41;
+        const bool slingshot=type==52 || type==53;
+        // 01:5667/571A: the spawned alien unfolds before becoming a flyer.
+        // Finish that already-triggered sequence even in the dormant bank.
+        if(emerging) {
+            if(!(b(0x1540+x)&0x80)) {
+                put(0x1540+x,b(0x1540+x)|0xc4);put(0x1a00+x,0);put(0x1a40+x,4);
+                put(0x1b80+x,32);put(0x1bc0+x,0);put(0x1c00+x,0);put(0x1c40+x,0);
+                put(0x1800+x,type==40?75:76);
+            }
+            if(b(0x1bc0+x)&0x80) {
+                put(0x1500+x,type==40?52:53);put(0x1840+x,0);continue;
+            }
+        }
+        // 01:56B6/5769: deterministic launch, an eightfold position offset
+        // followed by half-speed flight, using the original direction table.
+        if(slingshot && (b(0x1540+x)&0x80) && !b(0x1840+x)) {
+            put(0x1540+x,b(0x1540+x)&0xbf);put(0x1a00+x,3);put(0x1a40+x,3);
+            put(0x1b80+x,32);put(0x1bc0+x,0);put(0x1c00+x,0);put(0x1c40+x,0);
+            const unsigned direction=type==52?20:28;
+            for(unsigned axis=0;axis<2;++axis) {
+                const unsigned p=(axis?0x1c0e:0x1c4e)+direction*2,v=axis?0x1780:0x1700;
+                const unsigned raw=std::to_integer<unsigned>(sequences_[p])|
+                    (std::to_integer<unsigned>(sequences_[p+1])<<8);
+                put(v+x,raw*8);put(v+64+x,(raw*8)>>8);move(x,!axis);
+                const int signed_velocity=raw<0x8000?static_cast<int>(raw):static_cast<int>(raw)-65536;
+                const unsigned velocity=static_cast<unsigned>(signed_velocity/2);
+                put(v+x,velocity);put(v+64+x,velocity>>8);
+            }
+            put(0x1840+x,1);
+        }
+        const auto count=b(0x1a40+x);
         if(type==43) continue; // Last-chance spin/result belongs to live gameplay.
         if(type==51 && (b(0x1540+x)&0x80)) {
             const auto action=b(0x1840+x);
@@ -230,7 +262,10 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
                 const unsigned value=b(p+x)|(b(p+64+x)<<8);
                 return value>=limit && value<0xffc0;
             };
-            if(outside(0x1680,320) || outside(0x15c0,288)) {remove(x);continue;}
+            const unsigned y=b(0x1680+x)|(b(0x16c0+x)<<8);
+            const bool beyond_y=full_table && slingshot && !b(0x79)?
+                (y>=320 && y<0xffc0-216):outside(0x1680,320);
+            if(beyond_y || outside(0x15c0,288)) {remove(x);continue;}
         }
         // 02:63DB/64A3: finish a guard's saved rise/retract; only the runtime
         // starts a new guard. Live release bits may end an already raised hold.
@@ -452,7 +487,7 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
         }
         // Continue an animation already in progress. Collision-triggered actors
         // at rest stay at rest; the ball and launcher never enter this path.
-        if(type<7 || type>90 || (!b(0x1840+x) && type!=60 && !flying) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
+        if(type<7 || type>90 || (!b(0x1840+x) && type!=60 && !flying && !emerging) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
         unsigned step=b(0x1b80+x)|(b(0x1bc0+x)<<8);
         unsigned phase=b(0x1c00+x)|(b(0x1c40+x)<<8);
         if(!(type==9 && !step) && (!step || (phase>>8)>count || ((phase>>8)==count && !(step&0x8000)))) continue;
@@ -468,7 +503,7 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
         // Accept only a sequence containing the actual saved visual selection.
         const bool patterns=type==26 || type==27;
         const unsigned output=(patterns?0x1a80:0x1800)+x;
-        if(!target && std::find(sequence.begin(),sequence.end(),ram[output])==sequence.end()) continue;
+        if(!target && !slingshot && !emerging && std::find(sequence.begin(),sequence.end(),ram[output])==sequence.end()) continue;
         bool valid=true;
         for(const auto entry:sequence) {
             const auto id=std::to_integer<std::uint8_t>(entry);

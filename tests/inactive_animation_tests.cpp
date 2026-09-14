@@ -160,6 +160,66 @@ void seam_continuity(std::span<const std::byte> rom,const diagnostics::Reference
     timeline->update(actor_assets,hit,true);
     require(timeline->actors(1)[0x1500+tentacle]==std::byte{},"Retained actor survived authoritative removal");
 }
+void slingshot_rendering(std::span<const std::byte> rom,const diagnostics::ReferenceSnapshot& video,
+    std::span<const std::byte> ram) {
+    struct Artwork {
+        std::array<assets::TableBackground,2> backgrounds;
+        std::array<assets::TableSprites,2> patterns;
+        explicit Artwork(std::span<const std::byte> image)
+            :backgrounds(assets::decode_table_backgrounds(image)),patterns(assets::decode_table_sprites(image)) {}
+    };
+    const auto artwork=std::make_unique<Artwork>(rom);
+    for(unsigned type:{52u,53u}) {
+        auto fixed=std::make_unique<render::TablePlayfield>(rom),crossing=std::make_unique<render::TablePlayfield>(rom);
+        render::TableTransitionHold fixed_hold,crossing_hold;
+        auto a=std::make_unique<diagnostics::ReferenceSnapshot>(video),b=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+        auto previous_a=std::make_unique<diagnostics::ReferenceSnapshot>(video),previous_b=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+        std::array<std::byte,8192> source{};
+        std::copy(ram.begin(),ram.end(),source.begin());
+        std::fill(source.begin()+0x1500,source.begin()+0x1d00,std::byte{});
+        std::fill(source.begin()+0x200,source.begin()+0xa00,std::byte{});
+        std::fill(source.begin()+0x1245,source.begin()+0x1445,std::byte{});
+        source[0x79]=source[0x53]=source[0x54]=source[0xf6]=std::byte{};
+        source[0x1504]=static_cast<std::byte>(type);source[0x1544]=std::byte{0x84};
+        source[0x15c4]=std::byte{160};source[0x1684]=std::byte{80};source[0x17c4]=std::byte{255};
+        source[0x1844]=std::byte{1};source[0x1a44]=std::byte{3};source[0x1b84]=std::byte{32};
+        const unsigned pointer=std::to_integer<unsigned>(rom[0x9df7+type-1])|
+            (std::to_integer<unsigned>(rom[0x9e51+type-1])<<8);
+        source[0x1804]=rom[pointer-0x2000];
+        unsigned visible_above=0;
+        for(unsigned tick=0;tick<180;++tick) {
+            auto swapped=source;
+            const unsigned half=(tick/13)%2;
+            if(half) for(unsigned field=0;field<32;++field) for(unsigned x=4;x<64;++x)
+                std::swap(swapped[0x1500+field*64+x],swapped[0x200+field*64+x]);
+            swapped[0x79]=static_cast<std::byte>(half);
+            const auto prepare=[&](auto& snapshot,unsigned h) {
+                snapshot.frame=4000+tick;snapshot.vram=artwork->backgrounds[h].vram;
+                std::copy(artwork->patterns[h].vram.begin()+0x4000,artwork->patterns[h].vram.end(),snapshot.vram.begin()+0x4000);
+                snapshot.palette=artwork->backgrounds[h].palette;snapshot.sat.fill(0);snapshot.control=0xc0;
+                snapshot.memory_width=0;snapshot.scroll_x=snapshot.scroll_y=0;
+            };
+            prepare(*a,0);prepare(*b,half);
+            const auto stationary=fixed->cabinet_frame(*a,tick?previous_a.get():nullptr,source,nullptr,fixed_hold);
+            const auto moving=crossing->cabinet_frame(*b,tick?previous_b.get():nullptr,swapped,nullptr,crossing_hold);
+            require(stationary && moving && stationary->pixels==moving->pixels,
+                "Slingshot rendered flight changed when ball crossed seam");
+            if(tick==80 || tick==140) {
+                auto empty=source;empty[0x1504]=empty[0x1544]=std::byte{};
+                auto blank=std::make_unique<render::TablePlayfield>(rom);render::TableTransitionHold blank_hold;
+                const auto background=blank->cabinet_frame(*a,nullptr,empty,nullptr,blank_hold);
+                require(background.has_value(),"Missing slingshot background");
+                unsigned changed=0;
+                for(unsigned p=0;p<256*render::table_half_offset;++p)
+                    changed+=stationary->pixels[p]!=background->pixels[p];
+                require(changed>20,"Flying alien disappeared above seam");++visible_above;
+                if(type==52 && tick==140) preview(*stationary,"slingshot-above-seam");
+            }
+            *previous_a=*a;*previous_b=*b;
+        }
+        require(visible_above==2,"Missing slingshot visibility checks");
+    }
+}
 }
 int main(int argc,char** argv) {
     try {
@@ -563,6 +623,7 @@ int main(int argc,char** argv) {
             }
             if(n==999) {
                 seam_continuity(rom,video,ram);
+                slingshot_rendering(rom,video,ram);
                 require(ram[0x79]==std::byte{1} && image,"Eye seam fixture requires active upper table");
                 auto eyes=assets::inactive_table_actor_ram(ram);
                 auto eye_ram=last_ram;std::copy(ram.begin(),ram.end(),eye_ram.begin());

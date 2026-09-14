@@ -29,7 +29,9 @@ public:
     // orb bob/respawn/explosion, orange alien emerge/retreat and indicator
     // open/hold/close routines. Indicators read live group state from the copy.
     // Input uses the active actor layout but must be a private presentation copy.
-    void advance_animation(std::span<std::byte> ram) const;
+    // Full-table mode extends lower slingshot flight bounds above the seam;
+    // default mode retains ROM bounds for authoritative-change prediction.
+    void advance_animation(std::span<std::byte> ram,bool full_table=false) const;
     // Populate the pending first brain-orb group in a private inactive bank.
     void seed_brain_orbs(std::span<std::byte> ram,unsigned half) const;
     void mirror_flippers(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half) const;

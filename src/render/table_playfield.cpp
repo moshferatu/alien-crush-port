@@ -225,7 +225,7 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
             // Prediction follows observed runtime changes even when the
             // cosmetic clock is held (e.g. end-of-ball scripts still run).
             assets.advance_animation(expected);
-            if(advance) assets.advance_animation(visual);
+            if(advance) assets.advance_animation(visual,true);
             for(unsigned x=4;x<64;++x) {
                 bool unchanged=true,predicted=true;
                 const auto b=[&](const auto& bank,unsigned p){return std::to_integer<unsigned>(bank[p+x]);};
@@ -690,7 +690,48 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
             }
         }
     }
-    return table==0?stitch_table_views(live,inactive,0,live_sprites,inactive_sprites):
+    auto result=table==0?stitch_table_views(live,inactive,0,live_sprites,inactive_sprites):
         stitch_table_views(inactive,live,1,inactive_sprites,live_sprites);
+    if(cabinet) for(unsigned half=0;half<2;++half) {
+        auto projected=half==table?std::array<std::byte,8192>{}:assets::inactive_table_actor_ram(ram);
+        if(half==table) std::copy(ram.begin(),ram.end(),projected.begin());
+        projected[0x1540]=std::byte{0x20};projected[0x50]=std::byte{};
+        projected[0x16]=projected[0x17]=projected[0x2e]=std::byte{};projected[0x2f]=std::byte{2};
+        bool any=false;
+        for(unsigned x=4;x<64;++x) {
+            const auto type=std::to_integer<unsigned>(projected[0x1500+x]);
+            if(type!=52 && type!=53) {projected[0x1540+x]|=std::byte{0x20};continue;}
+            any=true;
+            // Translate BEFORE the SAT's ten-bit Y wrap. Negative local Y
+            // belongs above the seam, not at the bottom of a wrapped viewport.
+            if(!half) {
+                const unsigned y=std::to_integer<unsigned>(projected[0x1680+x])|
+                    (std::to_integer<unsigned>(projected[0x16c0+x])<<8);
+                projected[0x1680+x]=static_cast<std::byte>((y+table_half_offset)&255);
+                projected[0x16c0+x]=static_cast<std::byte>(((y+table_half_offset)>>8)&255);
+            }
+        }
+        if(!any) continue;
+        std::array<std::uint16_t,256> flight_sat{};
+        const auto pieces=assets::assemble_table_actors(actors_,projected);
+        for(const auto& piece:pieces)
+            std::copy(piece.words.begin(),piece.words.end(),flight_sat.begin()+piece.slot*4);
+        const std::span<const std::uint16_t> palette=half==table?active_palette:
+            inactive_palette.empty()?std::span<const std::uint16_t>(tables_[half].palette):inactive_palette;
+        const auto flight=render::sprites(sprites_[half].vram,palette,flight_sat,0);
+        // The ordinary half composition already draws the local portion with
+        // its correct ordering. Add only pixels clipped by that old viewport.
+        for(auto it=pieces.rbegin();it!=pieces.rend();++it) {
+            const auto& sprite=flight[it->slot];
+            for(int y=0;y<sprite.height;++y) for(int x=0;x<sprite.width;++x) {
+                const int dx=sprite.x+x,dy=sprite.y+y;
+                if(dx<0 || dx>=256 || dy<0 || dy>=table_playfield_height ||
+                    (!half?dy>=table_half_offset:dy<240)) continue;
+                const auto color=sprite.image.pixels[y*sprite.width+x];
+                if(color>>24) result.pixels[dy*256+dx]=color;
+            }
+        }
+    }
+    return result;
 }
 }

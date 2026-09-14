@@ -1,5 +1,21 @@
 # Progress
 
+Slingshot alien flight across the cabinet seam (2026-09-14):
+
+- Continue spawned types 40/41 through emergence and deterministic launch to
+  flying types 52/53. Accept the first flight descriptor instead of rejecting
+  it because the saved sprite still belongs to emergence.
+- Extend private lower-table flight bounds across the complete stitched table;
+  retain native bounds for predicting the original actor's normal removal.
+  Draw the clipped portion above the seam with its originating artwork and
+  palette, preserving ball layering and the ordinary viewport renderer.
+- Add fixtures for both launch directions, wing animation, repeated active-bank
+  changes, native removal before visual expiration, and rendered visibility
+  above the seam. Gameplay RAM, collisions, scoring, and audio remain runtime-owned.
+- Verified the rendered upper-playfield preview and passed inactive animation,
+  green continuity, graphics, mouth layering, table replay, and ordinary bonus
+  replay checks. Published to `D:\Workspace\alien-crush-cabinet`.
+
 Stitched rendering optimization and playfield VSync (2026-09-14):
 
 - Decode only sprite rows consumed by each raster band, retaining original

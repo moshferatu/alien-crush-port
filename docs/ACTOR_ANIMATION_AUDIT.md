@@ -46,6 +46,21 @@ signal expire them. Spawning, flight initialization, hits and score changes
 remain runtime-owned. Synthetic fixtures cover these rare saved states;
 the ordinary replay is not evidence that every rare effect crossed a seam.
 
+Slingshot follow-up (2026-09-14): types 40/41 finish their four-pose emergence
+(`01:5667/571A`) and become 52/53. Their deterministic launch (`56B6/5769`)
+uses direction 20/28 from the ROM velocity tables, applies the eightfold
+launch offset, and then flies at half speed. The first flight sprite is
+allowed to replace the emergence descriptor. This closes both action-zero
+gaps in the earlier animation helper.
+
+Cabinet flight continues beyond the lower viewport using full-table bounds.
+The ordinary prediction still uses ROM bounds, allowing an expected native
+offscreen removal without deleting the remaining cabinet flight. Hits and
+slot reuse still replace the visual actor. Composition projects the clipped
+portion into the upper half using the originating sprite patterns and palette.
+Tests cover both flyers, emergence/launch, repeated bank switches with native
+dispatch and removal, expiration, and visible pixels above the seam.
+
 ## Existing coverage and audit limits
 
 Dedicated presentation behavior already covers orange aliens (15), brain-side

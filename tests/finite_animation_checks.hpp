@@ -62,6 +62,43 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
         run(r,10);require(r[0x15c4]==std::byte{110} && r[0x1684]==std::byte{110},"Flying effect froze");
         run(r,200);require(r[0x1504]==std::byte{},"Flying effect failed to expire at bounds");
     }
+    for(unsigned type:{40u,41u}) {
+        auto r=fixture(type,4,0,0,32);r[0x1544]=std::byte{};
+        r[0x15c4]=std::byte{160};r[0x1684]=std::byte{120};
+        run(r,33);
+        require(r[0x1504]==static_cast<std::byte>(type+12),"Slingshot emergence froze before flight");
+        const auto y=r[0x1684];run(r,1);
+        require(r[0x1844]==std::byte{1} && r[0x1684]!=y,"Slingshot launch did not initialize movement");
+        require(r[0x1744]==static_cast<std::byte>(type==40?255:0) && r[0x17c4]==std::byte{255},
+            "Slingshot ROM launch direction changed");
+        const auto descriptor=r[0x1804];run(r,8);
+        require(r[0x1804]!=descriptor,"Slingshot flight retained emergence artwork");
+    }
+    for(unsigned type:{52u,53u}) {
+        auto source=fixture(type,3,1,0,32);source[0x1544]=std::byte{0x84};
+        source[0x15c4]=std::byte{160};source[0x1684]=std::byte{65};
+        source[0x17c4]=std::byte{255}; // one pixel upward per tick
+        auto expected=source;
+        auto timeline=std::make_unique<render::TableAnimation>(rom);
+        timeline->update(actors,source,false);
+        for(unsigned tick=1;tick<=360;++tick) {
+            // Native lower-bank dispatch is suspended while upper is active.
+            if((tick/17)%2==0) actors.advance_animation(source);
+            auto swapped=source;
+            if((tick/17)%2) {
+                swapped[0x79]=std::byte{1};
+                for(unsigned field=0;field<32;++field) for(unsigned x=4;x<64;++x)
+                    std::swap(swapped[0x1500+field*64+x],swapped[0x200+field*64+x]);
+            }
+            actors.advance_animation(expected,true);timeline->update(actors,swapped,true);
+            for(unsigned field=0;field<32;++field)
+                require(timeline->actors(0)[0x1504+field*64]==expected[0x1504+field*64],
+                    "Slingshot seam or native offscreen removal reset cabinet flight");
+            if(tick==140) require(expected[0x1504]==static_cast<std::byte>(type),
+                "Slingshot expired at original viewport bounds");
+        }
+        require(expected[0x1504]==std::byte{},"Slingshot survived full-table flight bounds");
+    }
     auto travel=fixture(51,3,0,0,0);travel[0x1884]=std::byte{1};
     travel[0x15c4]=travel[0x1684]=std::byte{100};
     run(travel,17);require(travel[0x15c4]==rom[0x326b] && travel[0x1684]==rom[0x326c] &&
