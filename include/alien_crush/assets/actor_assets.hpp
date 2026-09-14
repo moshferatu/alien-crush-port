@@ -37,6 +37,7 @@ private:
     std::array<std::byte,16384> banks_{};
     std::array<std::byte,8192> sequences_{};
     std::array<std::byte,20> brain_orb_positions_{};
+    std::array<std::byte,54> target_positions_{};
 };
 struct ActorSprite {
     std::uint8_t actor{},descriptor{},slot{};

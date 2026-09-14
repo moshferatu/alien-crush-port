@@ -2,8 +2,23 @@
 #include "alien_crush/render/table_playfield.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include <algorithm>
+#include <memory>
 #include <stdexcept>
 namespace alien_crush::render {
+namespace {
+// Ordinary bonus entry: 40B4 -> FDC1 -> FDE5 -> FE92 (fade out).
+// Return: FF04 -> FFB5 (fade in). Require the enclosing ordinary-play
+// return, not a stale scratch byte or a palette that happens to look faded.
+int bonus_table_fade(std::span<const std::byte> ram) {
+    const auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+    if(b(0x1fe)!=0xb6 || b(0x1ff)!=0x40 || b(0x79)>1) return 0;
+    if(b(0x1fc)==0xc3 && b(0x1fd)==0xfd && b(0x1fb)==0xfe &&
+        (b(0x1fa)==6 || b(0x1fa)==9)) return -1;
+    if(b(0x1fa)==0xb7 && b(0x1fb)==0xff &&
+        ((b(0x1fc)==0x18 && b(0x1fd)==4) || (b(0x1fc)==0xc0 && b(0x1fd)==0xff))) return 1;
+    return 0;
+}
+}
 bool TableTransitionClock::omit(const diagnostics::ReferenceSnapshot& video,std::span<const std::byte> ram,bool table_available) {
     if(ram.size()!=8192) throw std::runtime_error("Table clock requires 8192-byte work RAM");
     const auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
@@ -163,33 +178,74 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
     if(ram.size()!=8192 || std::to_integer<unsigned>(ram[0x79])>1)
         throw std::runtime_error("Invalid table animation state");
     const unsigned active=std::to_integer<unsigned>(ram[0x79]);
+    const auto byte=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+    // 89CA / 8A21 change the viewport selector BEFORE E705 and 46FD
+    // exchange the actor banks. During these calls, the banks still belong
+    // to the old halves (or contain a partial field-by-field exchange).
+    const unsigned caller=byte(0x1fc)|(byte(0x1fd)<<8);
+    const bool exchanging=byte(0x1ff)==0x40 && byte(0x1fe)==(byte(0x76)?0x3a:0xa0) &&
+        (caller==0x89cf || caller==0x89d2 || caller==0x8a2a || caller==0x8a2d);
+    if(exchanging && !valid_) {
+        // A cold restore has no reliable bank history yet.
+        for(auto& bank:actors_) bank.fill(std::byte{});
+        for(auto& colors:color_owned_) colors.fill(false);
+        return;
+    }
     for(unsigned half=0;half<2;++half) {
         std::array<std::byte,8192> incoming;
-        std::copy(ram.begin(),ram.end(),incoming.begin());
-        if(half!=active) for(unsigned field=0;field<32;++field)
+        if(exchanging) incoming=source_[half];
+        else std::copy(ram.begin(),ram.end(),incoming.begin());
+        if(!exchanging && half!=active) for(unsigned field=0;field<32;++field)
             std::copy_n(ram.begin()+0x204+field*64,60,incoming.begin()+0x1504+field*64);
         incoming[0x79]=static_cast<std::byte>(half);
         incoming[0x2e]=std::byte{};incoming[0x2f]=std::byte{2};incoming[0x50]=std::byte{10};
         auto& visual=actors_[half];
         // Read signals without consuming hit queues, release flags or RNG.
-        for(unsigned address:{0x4au,0x4cu,0x4du,0x4eu,0x57u,0x59u,0x5du,0x5eu,0x60u,0x61u,0x63u,0x64u})
+        for(unsigned address:{0x4au,0x4cu,0x4du,0x4eu,0x53u,0x54u,0x57u,0x59u,0x5du,0x5eu,0x60u,0x61u,0x63u,0x64u,0x6du,0x70u})
             visual[address]=ram[address];
         if(!valid_) {
             visual=incoming;
         } else {
             auto expected=source_[half];
+            // Group enables can force a waiting green/orange alien to rise
+            // before its timer expires. Predict that ordinary transition
+            // without restarting the independently running cosmetic cycle.
+            for(unsigned x=4;x<64;++x) {
+                const auto type=std::to_integer<unsigned>(expected[0x1500+x]);
+                const auto action=std::to_integer<unsigned>(expected[0x1840+x]);
+                const unsigned trigger=type==21?0x40:type==15?0x80:0;
+                if(trigger && (std::to_integer<unsigned>(ram[0xb0]|source_[half][0xb0])&trigger) &&
+                    std::to_integer<unsigned>(incoming[0x1840+x])==(type==21?1u:2u) &&
+                    (action==0 || (type==15 && action==1))) expected[0x1880+x]=std::byte{1};
+            }
             // Predict ordinary local animation to distinguish it from a hit,
             // spawn, drain or other authoritative gameplay change.
-            if(advance && active_==half && active==half) assets.advance_animation(expected);
+            // Either bank can receive its last/first actor dispatch on the
+            // seam frame. Unchanged still accepts a bank that did not run.
+            // Prediction follows observed runtime changes even when the
+            // cosmetic clock is held (e.g. end-of-ball scripts still run).
+            assets.advance_animation(expected);
             if(advance) assets.advance_animation(visual);
             for(unsigned x=4;x<64;++x) {
                 bool unchanged=true,predicted=true;
+                const auto b=[&](const auto& bank,unsigned p){return std::to_integer<unsigned>(bank[p+x]);};
+                const auto type=b(source_[half],0x1500),from=b(source_[half],0x1840),to=b(expected,0x1840);
+                const auto wait=b(incoming,0x1880);
+                // Cosmetic RNG deliberately runs independently. A normal
+                // randomized wait is not a hit, spawn or position correction.
+                // Ignore only that timer, only at a known state transition;
+                // all other fields (including collision and type) still match.
+                const bool random_wait=(b(source_[half],0x1540)&0x80) &&
+                    !(b(source_[half],0x1ac0)&0x80) && !(b(incoming,0x1ac0)&0x80) &&
+                    ((type==21 && ((from==1 && to==2 && wait>=120 && wait<240) || (from==3 && to==0))) ||
+                     (type==15 && ((from==2 && to==3 && wait>=120 && wait<240) || (from==4 && to==1))) ||
+                     (type==19 && ((from==0 && to==1 && wait>=1 && wait<=4) || (from==1 && to==0 && wait<128))));
                 for(unsigned field=0;field<32;++field) {
                     const unsigned p=0x1500+field*64+x;
                     // One-shot VRAM upload flags are not actor lifecycle events.
                     const auto mask=field==1?std::byte{0xef}:std::byte{0xff};
                     unchanged&=(incoming[p]&mask)==(source_[half][p]&mask);
-                    predicted&=(incoming[p]&mask)==(expected[p]&mask);
+                    if(field!=14 || !random_wait) predicted&=(incoming[p]&mask)==(expected[p]&mask);
                 }
                 if(!unchanged && !predicted) for(unsigned field=0;field<32;++field) {
                     const unsigned p=0x1500+field*64+x;visual[p]=incoming[p];
@@ -208,7 +264,7 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
         // F292 dispatch only visits the active half's 32 slots. Continue the
         // retained palette scripts and use their ROM ranges, never RGB equality.
         auto expected_palette=source_[half];
-        if(valid_ && advance && active_==half && active==half) palette_step(expected_palette,half);
+        if(valid_) palette_step(expected_palette,half);
         if(valid_ && advance) palette_step(visual,half);
         color_owned_[half].fill(false);
         for(unsigned x=half*32;x<(half+1)*32;++x) {
@@ -246,7 +302,7 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
         }
         source_[half]=incoming;
     }
-    valid_=true;active_=active;
+    valid_=true;
 }
 void TableAnimation::apply_palette(unsigned half,std::span<std::uint16_t> palette) const {
     for(unsigned i=0;i<512;++i) if(color_owned_[half][i]) palette[i]=colors_[half][i];
@@ -262,6 +318,19 @@ TablePlayfield::TablePlayfield(std::span<const std::byte> rom)
         partial_fades_[table].push_back(palette);
         for(unsigned threshold=21;threshold>1;--threshold) {
             palette=assets::advance_palette_fade(palette,tables_[table].palette,threshold);
+            partial_fades_[table].push_back(palette);
+        }
+        // E5EC subtracts one from every nonzero RGB channel per pass.
+        palette=tables_[table].palette;
+        for(unsigned step=0;step<7;++step) {
+            for(auto& color:palette) {
+                unsigned next=0;
+                for(unsigned shift:{0u,3u,6u}) {
+                    const unsigned channel=(color>>shift)&7;
+                    next|=(channel?channel-1:0)<<shift;
+                }
+                color=static_cast<std::uint16_t>(next);
+            }
             partial_fades_[table].push_back(palette);
         }
     }
@@ -335,6 +404,31 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
     const unsigned half=scene.table_code;
     if(half>1 || scene.title_menu || scene.high_score_menu || scene.title_transition) {
         transition.reset();animation_half_=2;animation_.reset();return std::nullopt;
+    }
+    if(const auto fade=bonus_table_fade(ram)) {
+        transition.reset();
+        if((current.control&0xc0)!=0xc0)
+            return Image{256,table_playfield_height,std::vector<std::uint32_t>(256*table_playfield_height,0xff000000)};
+        // Palette uploads can straddle video frames. Select a complete ROM
+        // fade step from the static background colors, then apply that same
+        // step to both halves. Never reapply animated full-bright colors here.
+        // Snapshots contain large VRAM arrays; keep this optional path off
+        // the host's stack, including callers that already own snapshots.
+        auto fade_current=std::make_unique<diagnostics::ReferenceSnapshot>(current);
+        auto& active=*fade_current;
+        unsigned best_error=~0u;
+        const auto consider=[&](const auto& palette) {
+            unsigned error=0;
+            for(unsigned i=0;i<256;++i) for(unsigned shift:{0u,3u,6u}) {
+                const int a=(palette[i]>>shift)&7,c=(current.palette[i]>>shift)&7;
+                error+=static_cast<unsigned>(a>c?a-c:c-a);
+            }
+            if(error<best_error) {best_error=error;active.palette=palette;}
+        };
+        consider(tables_[half].palette);
+        for(unsigned i=fade<0?21:0;i<(fade<0?28u:21u);++i) consider(partial_fades_[half][i]);
+        auto latched=std::make_unique<diagnostics::ReferenceSnapshot>(active);latched->frame=active.frame-1;
+        return compose_impl(active,*latched,half,0,ram,nullptr,false,nullptr,true);
     }
     // The original pause stops actor scripts but its video/palette machinery
     // still runs. Freeze the complete cabinet image, including palette pulses.
@@ -456,6 +550,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
     auto sat=previous.sat;
     auto active_vram=current.vram;
     auto active_palette=current.palette;
+    const bool fading=cabinet && bonus_table_fade(ram)!=0;
     std::uint64_t mouth_slots=0;
     std::vector<assets::BackgroundWrite> visual_writes;
     std::array<bool,32768> visual_addresses{};
@@ -494,7 +589,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
             active_vram[write.address]=write.value;visual_addresses[write.address]=true;
         }
         assets::restore_table_indicators(std::span(active_vram).first(1024),indicators_,table,ram);
-        if(matches(current,table)) animation_.apply_palette(table,active_palette);
+        if(!fading && matches(current,table)) animation_.apply_palette(table,active_palette);
     }
     std::uint64_t hidden=0;
     if(hide_ball) {
@@ -549,7 +644,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         if(cabinet) {
             for(auto& write:writes) if(write.target==RasterTarget::vram && visual_addresses[write.address])
                 write.value=active_vram[write.address];
-            if(matches(current,table)) {
+            if(!fading && matches(current,table)) {
                 animation_.apply_palette(table,initial_palette);
                 for(auto& write:palette) if(animation_.owns_color(table,write.address)) write.value=active_palette[write.address];
             }
@@ -564,7 +659,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         if(fade!=partial_fades_[table].end())
             inactive_palette=partial_fades_[1-table][static_cast<std::size_t>(fade-partial_fades_[table].begin())];
         else {
-            animation_.apply_palette(1-table,animated_palette);
+            if(!fading) animation_.apply_palette(1-table,animated_palette);
             inactive_palette=animated_palette;
         }
     }

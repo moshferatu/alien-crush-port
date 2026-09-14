@@ -1,5 +1,96 @@
 # Progress
 
+Actor-bank loading continuity (2026-09-14):
+
+- A longer 12,000-frame gameplay route exposed remaining resets that the
+  short replay missed. At frame 3842 the original handoff was still inside
+  E705 after changing RAM 79, before exchanging the actor banks. Presentation
+  interpreted upper actors as replacements for the retained lower aliens.
+- Recognize both live/demo handoff loader and exchange call frames
+  (89CF/89D2/8A2A/8A2D). Retain coherent source banks and continue private
+  animation until the exchange is finished; never reconcile a partial bank.
+  A cold restore waits for coherent banks instead of retaining stale actors.
+- The same route exposed a forced rise at frame 3843: RAM B0 enables can
+  bypass green/orange wait timers. Predict that transition from live/source
+  signals without restarting the cosmetic cycle. Real hits and removals
+  still replace the actor. Runtime prediction is independent of whether the
+  cosmetic clock advances, avoiding resets during end-of-ball clock holds.
+- Added green_continuity with 12,000 runtime frames and checks during and
+  immediately after real transfers in both directions. Added deliberately
+  mixed-bank fixtures covering four loader/exchange calls and finite actors.
+- All five checks passed in out/test-green-bank-final.log: long green
+  continuity, inactive animation, ordinary bonus, continuous handoff and
+  reference table replay. Final group-enable timing edge cases and animation
+  checks passed in out/test-green-bank-edge.log. The real route verifies
+  12 lower / 4 upper green-actor transfer checks. Release build passed;
+  published D:\Workspace\alien-crush-cabinet (out/publish-green-bank.log).
+
+Seam dispatch and randomized-wait continuity (2026-09-14):
+
+- Reproduced a green-alien reset with a test that actually advances the
+  returning actor on the seam frame. Earlier swap tests left source banks
+  frozen and therefore missed this case (out/test-seam-resume-before.log).
+- Predict a possible ordinary update in either bank on every advancing
+  frame; still accept an unchanged bank when the runtime did not dispatch it.
+  This fixes both first/last actor updates at a seam, and applies to palette
+  scheduler slots as well. Removed the obsolete previous-active-half field.
+- Random waits for green/orange aliens and brain orbs use independent visual
+  RNG. At their known wait transitions, permit only the wait-byte difference
+  while requiring all other actor fields to match the predicted update.
+  Hits, spawns, type changes and position corrections remain authoritative.
+- Corrected orange rise/retreat collision-enable flags and raised collision
+  reset to match 02:605A..6062 / 6092..6097; these ordinary changes must not
+  look like unrelated gameplay events to reconciliation.
+- Added departing/resuming dispatch checks across 11 actor types, independent
+  random-wait and real-hit/type-change cases, and real tentacle/fleshy-border
+  palette scripts with a resumed update. Existing frozen-bank/rendered seam,
+  pause, finite-effect and exact RAM/video/audio checks remain in place.
+- Release build passed (out/build-seam-resume.log). Ordinary bonus, continuous
+  handoff and reference table replay passed in out/test-seam-resume-final.log.
+  The expanded test fixture initially exceeded Windows stack space; reuse
+  actor assets and heap-allocate its extra banks. Final animation suite passed
+  in out/test-seam-resume-animation-final.log. Published
+  D:\Workspace\alien-crush-cabinet (out/publish-seam-resume.log).
+
+Bonus transition flashing (2026-09-13):
+
+- Identified ordinary bonus entry's FE92/E5EC fade-out and FF04/FFB5
+  return fade-in by their enclosing ROM call frames. Palette uploads can
+  straddle frames, defeating whole-palette fade recognition and allowing
+  the cabinet's animated colors to reappear at full brightness.
+- During those transitions, select the nearest complete ROM fade step from
+  static background colors and apply the corresponding step to both table
+  halves. Suppress animated palette overrides and the seam hold during the
+  fade. Preserve original runtime timing, gameplay, audio and bonus viewport.
+- Added 19 entry and 30 return frame checks: stitched projection stays full
+  size, entry brightness never increases and reaches black, and return
+  brightness never decreases and restores a visible table.
+- Visually inspected return fade previews at frames 2220 and 2230. Large
+  temporary fade snapshots use heap storage to preserve Windows stack space.
+- Release build passed (out/build-bonus-flash.log). Final checks passed 4/4:
+  ordinary bonus replay, inactive animation, reference table replay and bonus
+  cabinet host smoke (out/test-bonus-flash-final.log). Bonus-practice replay
+  also passed in out/test-bonus-flash.log. Published D:\Workspace\alien-crush-cabinet
+  (out/publish-bonus-flash.log).
+
+Finite actor movement and reactions (2026-09-13):
+
+- Completed the confirmed animation audit fixes: guards 14/30 rise, hold,
+  release, retract and hide; rebound 9 damps to idle; target 10 settles;
+  targets 8/37/38/39 select the ROM sequence and stop opening/closing;
+  defeat effects 72/73 wait, fly and expire, protecting reused paired slots.
+- Continue initialized travel/flight for 51/52/53/55/56. Type 51 uses recovered
+  ROM destination coordinates and returns to the settled type-10 reaction.
+  Spawns, collisions, scores and sounds remain runtime-owned.
+- Added ROM-derived finite endpoint/lifecycle fixtures and 640 ticks of bank
+  swaps verifying no restarts or resurrection. Existing rendered seam, pause,
+  mouth layering and exact RAM/video/audio replay checks remain covered.
+- Updated docs/ACTOR_ANIMATION_AUDIT.md with implemented behavior and limits.
+- Release build passed (out/build-finite-animation.log); all four checks
+  passed in out/test-finite-animation-final.log: inactive/finite animation,
+  mouth layering, continuous handoff and reference table replay. Published
+  D:\Workspace\alien-crush-cabinet (out/publish-finite-animation.log).
+
 Green alien movement and actor audit (2026-09-13):
 
 - Added the private type-21 wait/rise/raised-animation/lower cycle, preserving

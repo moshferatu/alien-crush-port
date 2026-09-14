@@ -10,6 +10,7 @@
 using namespace alien_crush;
 namespace {
 void require(bool ok,const char* message) {if(!ok) throw std::runtime_error(message);}
+#include "finite_animation_checks.hpp"
 void preview(const render::Image& image,const std::string& name) {
     std::filesystem::create_directories("inactive-previews");
     std::ofstream out("inactive-previews/"+name+".bmp",std::ios::binary);
@@ -121,8 +122,31 @@ void seam_continuity(std::span<const std::byte> rom,const diagnostics::Reference
     require(changed_tentacles>100,"Tentacle geometry/palette froze during bank swaps");
     require(changed_flesh>40,"Upper-left fleshy border froze while upper table was inactive");
     require(changed_green>100,"Green alien pixels froze while lower table was inactive");
-    auto timeline=std::make_unique<render::TableAnimation>(rom);
     assets::ActorAssets actor_assets(rom);
+    // Palette scripts can also execute on the first frame after a bank swap.
+    // Exercise real tentacle/flesh scripts with a resumed runtime update,
+    // rather than only swapping two permanently frozen source banks.
+    {
+        auto held_storage=std::make_unique<std::array<std::byte,8192>>(seam_ram);
+        auto& held=*held_storage;held[0x79]=std::byte{};
+        auto retained=std::make_unique<render::TableAnimation>(rom);
+        auto control=std::make_unique<render::TableAnimation>(rom);
+        auto original_tick=std::make_unique<render::TableAnimation>(rom);
+        retained->update(actor_assets,held,false);control->update(actor_assets,held,false);
+        for(unsigned i=0;i<17;++i) {retained->update(actor_assets,held,true);control->update(actor_assets,held,true);}
+        original_tick->update(actor_assets,seam_ram,false);original_tick->update(actor_assets,seam_ram,true);
+        auto resumed_storage=std::make_unique<std::array<std::byte,8192>>(held);
+        auto& resumed=*resumed_storage;resumed[0x79]=std::byte{1};
+        for(unsigned slot:{34u,35u,51u}) for(unsigned field=0;field<8;++field) {
+            const unsigned p=0x1245+field*64+slot;resumed[p]=original_tick->actors(1)[p];
+        }
+        retained->update(actor_assets,resumed,true);control->update(actor_assets,held,true);
+        for(unsigned slot:{34u,35u,51u}) for(unsigned field=0;field<8;++field) {
+            const unsigned p=0x1245+field*64+slot;
+            require(retained->actors(1)[p]==control->actors(1)[p],"Resuming palette dispatch at seam reset its phase");
+        }
+    }
+    auto timeline=std::make_unique<render::TableAnimation>(rom);
     timeline->update(actor_assets,seam_ram,false);
     for(unsigned i=0;i<11;++i) timeline->update(actor_assets,seam_ram,true);
     auto expected_lower=timeline->actors(0);actor_assets.advance_animation(expected_lower);
@@ -143,6 +167,7 @@ int main(int argc,char** argv) {
         const auto path=core::path_from_utf8(argv[1]);
         const auto rom=core::read_file(path);
         assets::ActorAssets actors(rom);
+        finite_animation_checks(actors,rom);
         // ROM green-alien rise/wait/lower cycle: exactly 24 pixels each way,
         // randomized waits in the ROM ranges, no accumulated position drift.
         for(unsigned green_type:{21u,22u}) {

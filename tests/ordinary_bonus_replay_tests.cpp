@@ -45,6 +45,8 @@ int main(int argc,char** argv) {
         unsigned dormant_frames=0;
         bool lower_resumed=false;
         bool was_bonus=false;
+        std::uint64_t fade_out_energy=~std::uint64_t{0},fade_in_energy=0;
+        unsigned fade_out_frames=0,fade_in_frames=0;
         for(unsigned n=0;n<2800;++n) {
             const auto frame=runtime->advance(input_at(n));
             if(n>=2150 && n<2243) return_fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
@@ -65,6 +67,22 @@ int main(int argc,char** argv) {
             const auto video=diagnostics::decode_reference_snapshot(saved);
             const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
             cabinet_check.check(*table,video,previous?&*previous:nullptr,ram,timed?&raster:nullptr);
+            // Verified ordinary-bonus ROM fade windows. Neither half may
+            // flash brighter on entry or darker during the return fade.
+            if((n+1>=835 && n+1<=853) || (n+1>=2213 && n+1<=2242)) {
+                const auto image=table->cabinet_frame(video,previous?&*previous:nullptr,ram,
+                    timed?&raster:nullptr,cabinet_check.hold);
+                require(image.has_value(),"Bonus fade lost stitched projection");
+                std::uint64_t energy=0;
+                for(const auto pixel:image->pixels) energy+=(pixel&255)+((pixel>>8)&255)+((pixel>>16)&255);
+                if(n+1<854) {
+                    require(energy<=fade_out_energy,"Bonus entry fade flashed brighter");
+                    fade_out_energy=energy;++fade_out_frames;
+                } else {
+                    require(energy>=fade_in_energy,"Bonus return fade flashed darker");
+                    fade_in_energy=energy;++fade_in_frames;
+                }
+            }
             const unsigned camera=b(0x16)|(b(0x17)<<8);
             const auto output=previous?table->compose(video,*previous,observed.table_code,camera,ram,timed?&raster:nullptr):std::nullopt;
             const auto presented=hold.present(output,video.frame,observed.table_code,camera,ram);
@@ -109,6 +127,8 @@ int main(int argc,char** argv) {
             previous=video;
         }
         require(first_bonus==854 && first_main==2199,"Original ordinary bonus entry and return boundaries");
+        require(fade_out_frames==19 && fade_in_frames==30 && fade_out_energy==0 && fade_in_energy>1000000,
+            "Bonus fade coverage must reach black and restore a visible full table");
         require(first_ready==2243 && dormant_frames>1 && lower_resumed,"Stitching resumes after the complete return fade, with a dormant lower actor bank");
         require(first_return.has_value() && ready[0] && ready[1],"Both main-table halves resume stitched play after the bonus");
         runtime->restore(checkpoint);previous.reset();hold.reset();

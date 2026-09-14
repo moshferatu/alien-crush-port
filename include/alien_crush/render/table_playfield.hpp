@@ -63,7 +63,6 @@ class TableAnimation {
     std::array<std::byte,16384> palette_rom_{};
     std::array<std::byte,256> palette_tables_{};
     bool valid_{};
-    unsigned active_{2};
     void palette_step(std::span<std::byte> ram,unsigned half) const;
 public:
     explicit TableAnimation(std::span<const std::byte> rom);

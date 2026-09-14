@@ -122,6 +122,7 @@ ActorAssets::ActorAssets(std::span<const std::byte> image) {
     std::copy_n(image.begin()+0x2c000,banks_.size(),banks_.begin());
     std::copy_n(image.begin()+0x8000,sequences_.size(),sequences_.begin());
     std::copy_n(image.begin()+0x56b6,brain_orb_positions_.size(),brain_orb_positions_.begin());
+    std::copy_n(image.begin()+0x326b,target_positions_.size(),target_positions_.begin());
 }
 void ActorAssets::seed_brain_orbs(std::span<std::byte> ram,unsigned half) const {
     if(ram.size()!=8192 || half>1) throw std::runtime_error("Invalid initial brain-orb projection");
@@ -177,9 +178,104 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
     if(ram.size()!=8192) throw std::runtime_error("Animation requires private 8192-byte actor RAM");
     auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
     auto put=[&](unsigned p,unsigned v){ram[p]=static_cast<std::byte>(v&255);};
+    const auto remove=[&](unsigned x) {
+        for(unsigned field=0;field<32;++field) put(0x1500+field*64+x,0);
+    };
+    const auto move=[&](unsigned x,bool horizontal) {
+        const unsigned p=horizontal?0x1580:0x1640,v=horizontal?0x1700:0x1780;
+        const unsigned velocity=b(v+x)|(b(v+64+x)<<8);
+        const int delta=velocity<0x8000?static_cast<int>(velocity):static_cast<int>(velocity)-65536;
+        const unsigned position=b(p+x)|(b(p+64+x)<<8)|(b(p+128+x)<<16);
+        const unsigned next=(position+static_cast<unsigned>(delta))&0xffffff;
+        put(p+x,next);put(p+64+x,next>>8);put(p+128+x,next>>16);
+    };
     for(unsigned x=4;x<64;++x) {
         const auto type=b(0x1500+x),count=b(0x1a40+x);
         if(type==43) continue; // Last-chance spin/result belongs to live gameplay.
+        if(type==51 && (b(0x1540+x)&0x80)) {
+            const auto action=b(0x1840+x);
+            if(action>1) continue;
+            move(x,false);move(x,true);put(0x1880+x,b(0x1880+x)-1);
+            if(!b(0x1880+x)) {
+                if(action==0 && b(0xa8)<9 && b(0xa9)<3) {
+                    const unsigned offset=b(0xa8)*6+b(0xa9)*2;
+                    for(unsigned axis=0;axis<2;++axis) {
+                        const unsigned p=axis?0x1680:0x15c0,v=axis?0x1780:0x1700;
+                        const unsigned target=std::to_integer<unsigned>(target_positions_[offset+axis]);
+                        const unsigned velocity=(target-(b(p+x)|(b(p+64+x)<<8)))*16;
+                        put(v+x,velocity);put(v+64+x,velocity>>8);
+                    }
+                    put(0xa9,(b(0xa9)+1)%3);put(0x1840+x,1);put(0x1880+x,16);
+                } else if(action==1) {
+                    // 51F5 followed by 5129 initialization on the next tick.
+                    put(0x1500+x,10);put(0x1540+x,0);
+                }
+            }
+            continue;
+        }
+        if(type==10 && !(b(0x1540+x)&0x80)) {
+            put(0x1540+x,b(0x1540+x)|0x80);put(0x1a00+x,0x20);put(0x1a40+x,3);
+            put(0x1b80+x,0xc0);put(0x1bc0+x,0xff);put(0x1c00+x,0);put(0x1c40+x,2);
+            constexpr unsigned colors[]{6,8,13};
+            put(0x1a80+x,colors[b(0xa9)%3]);put(0xa9,(b(0xa9)+1)%3);
+        }
+        const bool flying=type==52 || type==53 || type==55 || type==56;
+        if(flying && (b(0x1540+x)&0x80)) {
+            // Continue initialized flight only; launch velocities and hits
+            // belong to the runtime (01:56AA/575D/559C/5600).
+            if((type==52 || type==53) && !b(0x1840+x)) continue;
+            if(b(type==55?0x54:0x53)&0x80) {remove(x);continue;}
+            move(x,false);move(x,true);
+            const auto outside=[&](unsigned p,unsigned limit) {
+                const unsigned value=b(p+x)|(b(p+64+x)<<8);
+                return value>=limit && value<0xffc0;
+            };
+            if(outside(0x1680,320) || outside(0x15c0,288)) {remove(x);continue;}
+        }
+        // 02:63DB/64A3: finish a guard's saved rise/retract; only the runtime
+        // starts a new guard. Live release bits may end an already raised hold.
+        if((type==14 || type==30) && (b(0x1540+x)&0x80)) {
+            const auto action=b(0x1840+x);
+            if(action==2 && !(b(type==14?0x70:0x6d)&(type==14?8:4))) {
+                put(0x1540+x,b(0x1540+x)|0x40);put(0x1780+x,0x80);
+                put(0x17c0+x,0);put(0x1880+x,32);put(0x1840+x,3);
+            } else if(action==1 || action==3) {
+                move(x,false);put(0x1880+x,b(0x1880+x)-1);
+                if(!b(0x1880+x)) {
+                    put(0x1840+x,action==1?2:0);
+                    put(0x1540+x,action==1?b(0x1540+x)&0xbf:b(0x1540+x)|0x60);
+                    if(type==14 && action==3) put(0x1ac0+x,0);
+                }
+            }
+            continue;
+        }
+        // 02:6552/65AB: defeated green actors wait, fly away, then expire.
+        // Only remove a saved type-25 base, never an unrelated reused slot.
+        if(type==72 || type==73) {
+            if(!(b(0x1540+x)&0x80)) {
+                put(0x1540+x,b(0x1540+x)|0xc0);put(0x1a00+x,type==72?0x23:0x21);
+                put(0x1880+x,14);put(0x1840+x,0);
+            }
+            const auto action=b(0x1840+x);
+            if(action>1) continue;
+            if(action==1) {if(type==72) move(x,true);move(x,false);}
+            put(0x1880+x,b(0x1880+x)-1);
+            if(!b(0x1880+x)) {
+                if(action==0) {
+                    if(type==72) {
+                        put(0x1700+x,0);put(0x1740+x,1);put(0x1580+x,0);
+                        put(0x1640+x,0xc0);
+                    }
+                    put(0x1780+x,0);put(0x17c0+x,type==72?0xff:2);
+                    put(0x1880+x,12);put(0x1840+x,1);
+                } else {
+                    const auto pair=b(0x18c0+x);
+                    if(type==73 && pair>=4 && pair<64 && b(0x1500+pair)==25) remove(pair);
+                    remove(x);
+                }
+            }
+            continue;
+        }
         // 02:6FA3..700A / 70C5..7225: indicators open once, hold while their group
         // is enabled, then close once. They are not continuous oscillators.
         if(type==42 || (type>=45 && type<=47)) {
@@ -275,10 +371,12 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
                 put(0x1640+x,0);put(0x1880+x,action==0?48:32);
             } else if(action==2) {
                 put(0x1840+x,3);put(0x1880+x,180);
+                put(0x1ac0+x,0);put(0x1540+x,b(0x1540+x)&0xbf);
             } else if(action==3) {
                 put(0x1840+x,4);put(0x1700+x,0x40);put(0x1740+x,0);
                 put(0x1580+x,0);put(0x1780+x,0xc0);put(0x17c0+x,0xff);
                 put(0x1640+x,0xc0);put(0x1880+x,32);
+                put(0x1540+x,b(0x1540+x)|0x40);
             } else {put(0x1840+x,1);put(0x1880+x,16);}
             continue;
         }
@@ -354,13 +452,14 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
         }
         // Continue an animation already in progress. Collision-triggered actors
         // at rest stay at rest; the ball and launcher never enter this path.
-        if(type<7 || type>90 || (!b(0x1840+x) && type!=60) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
+        if(type<7 || type>90 || (!b(0x1840+x) && type!=60 && !flying) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
         unsigned step=b(0x1b80+x)|(b(0x1bc0+x)<<8);
         unsigned phase=b(0x1c00+x)|(b(0x1c40+x)<<8);
-        if(!step || (phase>>8)>count || ((phase>>8)==count && !(step&0x8000))) continue;
+        if(!(type==9 && !step) && (!step || (phase>>8)>count || ((phase>>8)==count && !(step&0x8000)))) continue;
         // Type 47 calls FD30 with BF56 + (slot-55)*3, not the common FD2B
         // type table. Each of the nine red eyes has its own sprite shapes.
-        const auto pointer=type==47?0xbf56+(x-55)*3:
+        const bool target=type==8 || (type>=37 && type<=39);
+        const auto pointer=target?(b(0x1880+x)<2?0xbecf:0xbf38):type==47?0xbf56+(x-55)*3:
             std::to_integer<unsigned>(sequences_[0x1df7+type-1])|
             (std::to_integer<unsigned>(sequences_[0x1e51+type-1])<<8);
         if(pointer<0xa000 || pointer+count>0xc000) continue;
@@ -369,7 +468,7 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
         // Accept only a sequence containing the actual saved visual selection.
         const bool patterns=type==26 || type==27;
         const unsigned output=(patterns?0x1a80:0x1800)+x;
-        if(std::find(sequence.begin(),sequence.end(),ram[output])==sequence.end()) continue;
+        if(!target && std::find(sequence.begin(),sequence.end(),ram[output])==sequence.end()) continue;
         bool valid=true;
         for(const auto entry:sequence) {
             const auto id=std::to_integer<std::uint8_t>(entry);
@@ -380,6 +479,10 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
             }
         }
         if(!valid) continue;
+        if(type==9 && !step) {
+            put(0x1840+x,0);put(0x1540+x,b(0x1540+x)&0xbf);put(0x1ac0+x,0);
+            put(0x1c00+x,0);put(0x1c40+x,0);ram[output]=sequence[0];continue;
+        }
         // Exact fixed-point reflection from 00:FD35..FD8E, including its
         // asymmetric endpoints and byte wrapping. Only visual fields change.
         phase=(phase+step)&65535;
@@ -390,6 +493,28 @@ void ActorAssets::advance_animation(std::span<std::byte> ram) const {
         put(0x1b80+x,step);put(0x1bc0+x,step>>8);
         put(0x1c00+x,phase);put(0x1c40+x,phase>>8);
         ram[output]=sequence[phase>>8];
+        // 01:51A3 / 591F..5999: finite target reactions stop at their
+        // designated reflection endpoint, preserving the final sprite.
+        const auto action=b(0x1840+x);
+        if(type==10 && action==1 && (phase>>8)==2) put(0x1840+x,0);
+        if(target && ((action==1 && (step&0x8000)) || (action==2 && !(step&0x8000)))) {
+            put(0x1840+x,0);put(0x1540+x,b(0x1540+x)&0xbf);
+            if(action==2) put(0x1c00+x,0);
+        }
+        // 02:669D..6761: the rebound loses speed each time it reflects at
+        // its far endpoint. Its phase reset does not redraw until next tick.
+        if(type==9 && (action==1 || action==2) &&
+            ((action==1 && (step&0x8000)) || (action==2 && !(step&0x8000)))) {
+            step=(65536-step+b(0x1b00+x)+(action==1?0xff00:0))&65535;
+            put(0x1b80+x,step);put(0x1bc0+x,step>>8);
+            put(0x1c00+x,0);
+            const bool done=!step || (action==1?bool(step&0x8000):!(step&0x8000));
+            put(0x1c40+x,done || action==1?0:count);
+            if(done) {
+                put(0x1840+x,0);put(0x1540+x,b(0x1540+x)&0xbf);
+                put(0x1ac0+x,0);ram[output]=sequence[0];
+            }
+        }
         // Orb explosions run in action zero and expire after one oscillator
         // cycle (02:7880..788F); do not freeze or loop a saved explosion forever.
         if(type==60 && !phase) {put(0x1500+x,0);put(0x1540+x,0);}
