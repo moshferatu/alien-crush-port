@@ -215,7 +215,7 @@ int main(int argc,char** argv) {
                             {96,96,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,
                                 static_cast<std::uint16_t>(snapshot.control & 0x80)});
                     display.show({frame.number,frame.width,frame.height,original,{}},4,3,
-                        !scene.title_menu && (scene.bonus_room!=0 || scene.high_score_menu),
+                        !scene.title_menu && !scene.high_score_menu && scene.bonus_room!=0,
                         {frame.number,title_background.width,title_background.height,title_background.pixels,{}});
                 }
                 previous_video=snapshot;

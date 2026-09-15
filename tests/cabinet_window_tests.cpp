@@ -4,6 +4,7 @@
 #include "window_layout.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/render/pce_graphics.hpp"
+#include "alien_crush/core/recording.hpp"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -96,6 +97,48 @@ int main(int argc,char** argv) {
             Uint8 r{},g{},b{},a{};
             require(SDL_ReadSurfacePixel(capture,0,0,&r,&g,&b,&a) && r==0 && g==0 && b==0,
                 "Title background clears when the next scene does not request tiling");
+            SDL_DestroySurface(capture);
+        }
+        {
+            auto runtime=make_reference_runtime();runtime->load(core::path_from_utf8(argv[1]));
+            Frame frame;
+            for(unsigned n=0;n<800;++n) frame=runtime->advance(n<600?recording::canonical_input(n):
+                (n==600?PadInput{Pad::run,0}:(n==650?PadInput{Pad::select,0}:PadInput{})));
+            const std::vector<std::uint32_t> pixels(frame.pixels.begin(),frame.pixels.end());frame.pixels=pixels;
+            host::Presentation preview("High scores",384,768,true);
+            preview.show(frame);
+            auto* capture=SDL_RenderReadPixels(SDL_GetRenderer(preview.window()),nullptr);
+            require(capture!=nullptr,"Read centered high-score artwork");
+            require(SDL_SaveBMP(capture,(data/"centered-high-scores.bmp").string().c_str()),"Save high-score preview");
+            SDL_DestroySurface(capture);
+            // Verify centered artwork and plain black margins at exact pixel scale.
+            host::Presentation exact("High-score edges",256,480,true);
+            for(int rotation:{0,180}) {
+                exact.rotation(rotation);
+                exact.show(frame,256,240);
+                auto* image=SDL_RenderReadPixels(SDL_GetRenderer(exact.window()),nullptr);
+                require(image!=nullptr,"Read centered high-score screen");
+                require(image->w==256 && image->h==480 && frame.width==256 && frame.height==240,"Exact high-score test dimensions");
+                for(int y=0;y<480;++y) for(int x=0;x<256;++x) {
+                    const int upright_y=rotation==0?y:479-y;
+                    const int source_x=rotation==0?x:255-x;
+                    const int source_y=upright_y-120;
+                    const auto expected=source_y>=0 && source_y<240?pixels[source_y*256+source_x]&0xffffff:0;
+                    Uint8 r{},g{},b{},a{};
+                    require(SDL_ReadSurfacePixel(image,x,y,&r,&g,&b,&a),"Read high-score pixel");
+                    require(((static_cast<unsigned>(r)<<16)|(static_cast<unsigned>(g)<<8)|b)==
+                        expected,"Centered scores remain pixel-exact with black margins above and below");
+                }
+                SDL_DestroySurface(image);
+            }
+            require(SDL_SetWindowSize(exact.window(),640,240),"Resize to landscape");
+            exact.rotation(0);
+            exact.show(frame,256,240);
+            capture=SDL_RenderReadPixels(SDL_GetRenderer(exact.window()),nullptr);
+            require(capture!=nullptr,"Read landscape high-score view");
+            Uint8 r{},g{},b{},a{};
+            require(SDL_ReadSurfacePixel(capture,0,capture->h/2,&r,&g,&b,&a) && r==0 && g==0 && b==0,
+                "High-score decoration never tiles horizontally");
             SDL_DestroySurface(capture);
         }
         // A known fixture makes repeated test runs independent of saved geometry.
