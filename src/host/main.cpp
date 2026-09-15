@@ -206,8 +206,17 @@ int main(int argc,char** argv) {
                 else {
                     const auto scene=diagnostics::observe_alien_state(runtime->work_ram());
                     if(scene.title_transition) std::fill(original.begin(),original.end(),0xff000000);
+                    // The title's scrolling BAT pattern repeats every 96 pixels.
+                    // Its top-left repeat contains no menu lettering; omit sprites
+                    // so only the background extends outside the original image.
+                    render::Image title_background;
+                    if(scene.title_menu && !scene.title_transition)
+                        title_background=render::compose(snapshot.vram,snapshot.palette,snapshot.sat,
+                            {96,96,snapshot.scroll_x,snapshot.scroll_y,snapshot.memory_width,
+                                static_cast<std::uint16_t>(snapshot.control & 0x80)});
                     display.show({frame.number,frame.width,frame.height,original,{}},4,3,
-                        scene.bonus_room!=0 || scene.title_menu || scene.high_score_menu);
+                        !scene.title_menu && (scene.bonus_room!=0 || scene.high_score_menu),
+                        {frame.number,title_background.width,title_background.height,title_background.pixels,{}});
                 }
                 previous_video=snapshot;
             } else {display.show(frame);}

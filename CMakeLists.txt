@@ -258,7 +258,7 @@ if(AC_BUILD_TESTS)
                 FIXTURES_REQUIRED bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
             add_executable(ac_cabinet_window_tests tests/cabinet_window_tests.cpp src/host/cabinet.cpp src/host/presentation.cpp src/host/backglass.cpp)
             target_include_directories(ac_cabinet_window_tests PRIVATE src/host)
-            target_link_libraries(ac_cabinet_window_tests PRIVATE ac_core SDL3::SDL3)
+            target_link_libraries(ac_cabinet_window_tests PRIVATE ac_reference SDL3::SDL3)
             ac_enable_strict_warnings(ac_cabinet_window_tests)
             add_test(NAME cabinet_windows COMMAND ac_cabinet_window_tests "${AC_ROM_PATH}" "${CMAKE_BINARY_DIR}/cabinet-window-test")
             set_tests_properties(cabinet_windows PROPERTIES LABELS "rom_required;host" TIMEOUT 30

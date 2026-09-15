@@ -10,12 +10,35 @@ Presentation::Presentation(const char* title,int width,int height,bool hidden) {
     SDL_SetRenderVSync(renderer_,0); // Auxiliary windows never wait on another monitor.
 }
 Presentation::~Presentation() { SDL_DestroyTexture(stage_); SDL_DestroyTexture(source_); SDL_DestroyRenderer(renderer_); SDL_DestroyWindow(window_); }
-void Presentation::show(const Frame& frame,std::uint32_t aspect_width,std::uint32_t aspect_height,bool bottom_aligned) {
+void Presentation::show(const Frame& input,std::uint32_t aspect_width,std::uint32_t aspect_height,bool bottom_aligned,const Frame& background_tile) {
+    auto frame=input;
     if(frame.pixels.empty()) return;
     int width{},height{}; checked(SDL_GetRenderOutputSize(renderer_,&width,&height));
     const bool sideways=rotation_==90 || rotation_==270;
-    const auto layout=render::calculate_scale_layout(sideways?height:width,sideways?width:height,frame.width,frame.height,aspect_width,aspect_height);
+    auto layout=render::calculate_scale_layout(sideways?height:width,sideways?width:height,frame.width,frame.height,aspect_width,aspect_height);
     if(!layout.valid()) return;
+    std::vector<std::uint32_t> extended;
+    if(!background_tile.pixels.empty() && background_tile.width>0 && background_tile.height>0) {
+        // Extend in source pixels before sharp scaling and rotation, preserving
+        // the pattern phase at both edges of the centered original viewport.
+        const int available_width=sideways?height:width,available_height=sideways?width:height;
+        const int extra_x=((available_width-layout.destination.width)*frame.width+2*layout.destination.width-1)/(2*layout.destination.width);
+        const int extra_y=((available_height-layout.destination.height)*frame.height+2*layout.destination.height-1)/(2*layout.destination.height);
+        const int padded_width=frame.width+2*extra_x,padded_height=frame.height+2*extra_y;
+        extended.resize(static_cast<std::size_t>(padded_width)*padded_height);
+        for(int y=0;y<padded_height;++y) for(int x=0;x<padded_width;++x) {
+            const int tx=((x-extra_x)%background_tile.width+background_tile.width)%background_tile.width;
+            const int ty=((y-extra_y)%background_tile.height+background_tile.height)%background_tile.height;
+            extended[static_cast<std::size_t>(y)*padded_width+x]=background_tile.pixels[static_cast<std::size_t>(ty)*background_tile.width+tx];
+        }
+        for(int y=0;y<frame.height;++y)
+            std::copy_n(frame.pixels.begin()+y*frame.width,frame.width,extended.begin()+(y+extra_y)*padded_width+extra_x);
+        layout.destination.width=(layout.destination.width*padded_width+frame.width/2)/frame.width;
+        layout.destination.height=(layout.destination.height*padded_height+frame.height/2)/frame.height;
+        layout.stage_width=padded_width*layout.prescale_x;
+        layout.stage_height=padded_height*layout.prescale_y;
+        frame.width=padded_width;frame.height=padded_height;frame.pixels=extended;
+    }
     if(sw!=frame.width || sh!=frame.height) {
         SDL_DestroyTexture(source_); source_=nullptr;
         source_=SDL_CreateTexture(renderer_,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,frame.width,frame.height);

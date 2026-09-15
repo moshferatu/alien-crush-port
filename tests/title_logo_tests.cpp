@@ -39,12 +39,20 @@ int main(int argc,char** argv) {
         render::Image menu_preview;
         unsigned pattern_matches=0,palette_matches=0,logo_matches=0;
         for(unsigned n=0;n<360;++n) {
-            (void)runtime->advance(recording::canonical_input(n));
+            const auto live=runtime->advance(recording::canonical_input(n));
+            const std::vector<std::uint32_t> live_pixels(live.pixels.begin(),live.pixels.end());
             const auto observed=diagnostics::observe_alien_state(runtime->work_ram());
             require(observed.title_menu==(n>=14 && n<318),"Canonical title entry and exit boundaries");
             if(n==239) {menu_preview=panel.compose(observed);menu_save=runtime->save();}
             if(n>=300) continue;
             const auto video=diagnostics::decode_reference_snapshot(runtime->save());
+            if(n==239) {
+                const auto tile=render::compose(video.vram,video.palette,video.sat,
+                    {96,96,video.scroll_x,video.scroll_y,video.memory_width,0x80});
+                for(int y=0;y<live.height;++y) for(int x=0;x<16;++x)
+                    require(live_pixels[y*live.width+x]==tile.pixels[(y%96)*96+x],
+                        "Title background repeat matches live scrolling phase and palette");
+            }
             if(std::equal(patterns.words.begin(),patterns.words.end(),video.vram.begin()+0x4000)) ++pattern_matches;
             if(std::equal(palette.begin()+256,palette.begin()+272,video.palette.begin()+256)) ++palette_matches;
             // Original SAT/VRAM, recolored with the original initial palette:

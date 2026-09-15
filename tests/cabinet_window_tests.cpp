@@ -3,6 +3,7 @@
 #include "cabinet_settings.hpp"
 #include "window_layout.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/render/pce_graphics.hpp"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -60,6 +61,43 @@ int main(int argc,char** argv) {
         }
         const auto data=core::path_from_utf8(argv[2]);
         std::filesystem::create_directories(data);
+        {
+            auto runtime=make_reference_runtime();runtime->load(core::path_from_utf8(argv[1]));
+            Frame frame;
+            for(int i=0;i<240;++i) frame=runtime->advance({});
+            const std::vector<std::uint32_t> pixels(frame.pixels.begin(),frame.pixels.end());
+            frame.pixels=pixels;
+            const auto video=runtime->video_snapshot();
+            const auto tile=render::compose(video.vram,video.palette,video.sat,
+                {96,96,video.scroll_x,video.scroll_y,video.memory_width,0x80});
+            host::Presentation title("Centered tiled title",384,768,true);
+            for(const int rotation:{0,90,180,270}) {
+                title.rotation(rotation);
+                title.show(frame,4,3,false,{frame.number,96,96,tile.pixels,{}});
+                auto* capture=SDL_RenderReadPixels(SDL_GetRenderer(title.window()),nullptr);
+                require(capture!=nullptr,"Read tiled title viewport");
+                for(const int y:{0,capture->h-1}) {
+                    int colored=0;
+                    for(int x=0;x<capture->w;++x) {
+                        Uint8 r{},g{},b{},a{};
+                        require(SDL_ReadSurfacePixel(capture,x,y,&r,&g,&b,&a),"Read title edge pixel");
+                        if(r || g || b) ++colored;
+                    }
+                    require(colored>capture->w/4,"Scrolling title background fills both physical window edges at every rotation");
+                }
+                if(rotation==0) SDL_SaveBMP(capture,(data/"centered-title.bmp").string().c_str());
+                SDL_DestroySurface(capture);
+                title.repeat();
+            }
+            title.rotation(0);
+            title.show(frame);
+            auto* capture=SDL_RenderReadPixels(SDL_GetRenderer(title.window()),nullptr);
+            require(capture!=nullptr,"Read title exit viewport");
+            Uint8 r{},g{},b{},a{};
+            require(SDL_ReadSurfacePixel(capture,0,0,&r,&g,&b,&a) && r==0 && g==0 && b==0,
+                "Title background clears when the next scene does not request tiling");
+            SDL_DestroySurface(capture);
+        }
         // A known fixture makes repeated test runs independent of saved geometry.
         {
             host::write_cabinet_settings(data/"cabinet.ini",{{"input.plunger.axis","2"},{"input.buttons",""}});

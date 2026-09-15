@@ -21,7 +21,8 @@ public:
     bool enable_vsync() { return SDL_SetRenderVSync(renderer_,1); }
     void defer(bool value) { deferred_=value; }
     void repeat();
-    void show(const Frame&,std::uint32_t aspect_width=4,std::uint32_t aspect_height=3,bool bottom_aligned=false);
+    void show(const Frame&,std::uint32_t aspect_width=4,std::uint32_t aspect_height=3,bool bottom_aligned=false,
+        const Frame& background_tile={});
     void panel(const char* text);
     int rotation() const { return rotation_; }
     void rotation(int degrees) { rotation_=degrees; }
