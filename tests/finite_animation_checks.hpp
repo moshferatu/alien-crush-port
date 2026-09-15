@@ -20,6 +20,55 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
     const auto settled=[&](Bank& r) {
         const auto before=r;run(r,120);require(r==before,"Finite reaction restarted after settling");
     };
+    for(unsigned type:{50u,59u,60u}) {
+        const unsigned count=type==50?8:type==59?4:3;
+        auto effect=fixture(type,count,0,0,64);effect[0x1544]=std::byte{};
+        const unsigned lifetime=8*count-7;
+        run(effect,1);
+        require(effect[0x1544]==std::byte{0xc4} && effect[0x1a44]==static_cast<std::byte>(count) &&
+            effect[0x1c04]==std::byte{64},"Explosion must initialize and animate with action zero");
+        const auto first=effect[0x1804];run(effect,3);
+        require(effect[0x1804]!=first,"Explosion must advance beyond its initial sprite");
+        run(effect,lifetime-5);require(effect[0x1504]==static_cast<std::byte>(type),"Explosion removed before its original endpoint");
+        run(effect,1);
+        for(unsigned field=0;field<32;++field) require(effect[0x1504+64*field]==std::byte{},"Explosion must clear its entire actor slot");
+        settled(effect);
+        auto source=fixture(type,count,0,0,64);
+        auto timeline=std::make_unique<render::TableAnimation>(rom);
+        timeline->update(actors,source,false);
+        for(unsigned tick=0;tick<lifetime+20;++tick) {
+            auto incoming=source;
+            if((tick/5)%2) {
+                for(unsigned field=0;field<32;++field) for(unsigned x=4;x<64;++x)
+                    std::swap(incoming[0x1500+field*64+x],incoming[0x200+field*64+x]);
+                incoming[0x79]=std::byte{1};
+            }
+            timeline->update(actors,incoming,true);
+            require((timeline->actors(0)[0x1504]==std::byte{})==(tick+1>=lifetime),
+                "Seam crossing must neither freeze nor resurrect a finished explosion");
+        }
+    }
+    // 01:52A1..53F2: the lower central mouth opens, holds for 600 ticks,
+    // then closes once. Its hold does not call the sprite oscillator.
+    auto mouth=fixture(20,3,2,0x200,-64);
+    mouth[0x1884]=std::byte{0x58};mouth[0x18c4]=std::byte{2};
+    const auto mouth_pose=mouth[0x1804];
+    run(mouth,599);
+    require(mouth[0x1804]==mouth_pose && mouth[0x1c44]==std::byte{2} && mouth[0x1844]==std::byte{2},
+        "Lower central mouth must hold its pose after releasing flyers");
+    run(mouth,1);require(mouth[0x1844]==std::byte{4},"Mouth hold must expire after 600 ticks");
+    run(mouth,20);require(mouth[0x1844]==std::byte{},"Mouth must finish closing");settled(mouth);
+    mouth=fixture(20,3,1,0,64);
+    run(mouth,12);require(mouth[0x1bc4]==std::byte{255},"Mouth opening must reach its original reflection endpoint");
+    run(mouth,1);require(mouth[0x1844]==std::byte{2} && mouth[0x1884]==std::byte{0x58} &&
+        mouth[0x18c4]==std::byte{2},"Mouth opening must enter the original 600-tick hold");
+    run(mouth,620);require(mouth[0x1844]==std::byte{},"Full mouth cycle must settle");settled(mouth);
+    mouth=fixture(20,3,3,0x200,-64);mouth[0x1884]=std::byte{16};
+    run(mouth,16);require(mouth[0x1844]==std::byte{4},"Mouth capture animation must stop after its saved timer");
+    run(mouth,32);require(mouth[0x1844]==std::byte{},"Mouth capture closing must settle");settled(mouth);
+    mouth=fixture(20,3,5,0,64);mouth[0x1884]=std::byte{8};
+    const auto cooldown_pose=mouth[0x1804];run(mouth,8);
+    require(mouth[0x1844]==std::byte{} && mouth[0x1804]==cooldown_pose,"Mouth cooldown must not animate");settled(mouth);
     for(unsigned type:{14u,30u}) {
         auto r=fixture(type,1,1,0,0);r[0x1684]=std::byte{100};
         r[0x1784]=std::byte{0x80};r[0x17c4]=std::byte{0xff};r[0x1884]=std::byte{32};
@@ -107,8 +156,8 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
     run(travel,14);require(travel[0x1844]==std::byte{},"Travelling target did not settle after arrival");
     // Unlike frozen-bank swap tests, the ROM may dispatch an actor on the
     // very frame the viewport changes. Retain the independently advanced pose.
-    for(unsigned type:{21u,22u,15u,19u,33u,9u,10u,8u,14u,70u,71u}) {
-        const unsigned count=type==33?6:type==10 || type==8?3:type==19 || type>=70?2:type==14?1:4;
+    for(unsigned type:{21u,22u,15u,19u,20u,33u,9u,10u,8u,14u,70u,71u}) {
+        const unsigned count=type==33?6:type==10 || type==8 || type==20?3:type==19 || type>=70?2:type==14?1:4;
         auto source_actor=fixture(type,count,1,0,32);
         source_actor[0x1684]=source_actor[0x15c4]=std::byte{120};
         source_actor[0x1784]=std::byte{0x80};source_actor[0x17c4]=std::byte{0xff};

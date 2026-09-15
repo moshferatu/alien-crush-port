@@ -191,6 +191,18 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
     };
     for(unsigned x=4;x<64;++x) {
         const auto type=b(0x1500+x);
+        const bool explosion=type==50 || type==59 || type==60;
+        // 02:77E4/7826/7854: explosions use action zero and expire after one
+        // complete FD2B reflection. Finish effects already spawned by gameplay.
+        if(explosion) {
+            if(!(b(0x1540+x)&0x80)) {
+                put(0x1540+x,b(0x1540+x)|0xc4);put(0x1a00+x,0);
+                put(0x1a40+x,type==50?8:type==59?4:3);
+                put(0x1b80+x,64);put(0x1bc0+x,0);put(0x1c00+x,0);put(0x1c40+x,0);
+                put(0x1800+x,158);
+            }
+            if(b(0x68)&2) {remove(x);continue;}
+        }
         const bool emerging=type==40 || type==41;
         const bool slingshot=type==52 || type==53;
         // 01:5667/571A: the spawned alien unfolds before becoming a flyer.
@@ -485,9 +497,37 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
             }
             continue;
         }
+        // Lower central mouth, 01:52F7..53F2: finish an existing open/hold/close
+        // cycle. The 600-tick hold and cooldown never call FD2B. Do not start
+        // a new cycle, spawn flyers, capture a ball, award points or play sound.
+        if(type==20) {
+            if(!(b(0x1540+x)&0x80) || count!=3) continue;
+            const auto action=b(0x1840+x);
+            if(action==1 && (b(0x1bc0+x)&0x80)) {
+                put(0x1880+x,0x58);put(0x18c0+x,2);put(0x1840+x,2);
+                put(0x1540+x,b(0x1540+x)&0xbf);continue;
+            }
+            if(action==2) {
+                // The private renderer never acts on a ball collision.
+                put(0x1ac0+x,0);
+                const unsigned timer=(b(0x1880+x)|(b(0x18c0+x)<<8))-1;
+                put(0x1880+x,timer);put(0x18c0+x,timer>>8);
+                if(!(timer&65535)) {put(0x1840+x,4);put(0x1540+x,b(0x1540+x)|0x40);}
+                continue;
+            }
+            if(action==4 && !b(0x1c40+x)) {
+                put(0x1540+x,b(0x1540+x)&0xef);put(0x1ac0+x,0);put(0x1840+x,0);continue;
+            }
+            if(action==5) {
+                put(0x1880+x,b(0x1880+x)-1);
+                if(!b(0x1880+x)) put(0x1840+x,0);
+                continue;
+            }
+            if(action!=1 && action!=3 && action!=4) continue;
+        }
         // Continue an animation already in progress. Collision-triggered actors
         // at rest stay at rest; the ball and launcher never enter this path.
-        if(type<7 || type>90 || (!b(0x1840+x) && type!=60 && !flying && !emerging) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
+        if(type<7 || type>90 || (!b(0x1840+x) && !explosion && !flying && !emerging) || !(b(0x1540+x)&0x80) || count<2 || count>32) continue;
         unsigned step=b(0x1b80+x)|(b(0x1bc0+x)<<8);
         unsigned phase=b(0x1c00+x)|(b(0x1c40+x)<<8);
         if(!(type==9 && !step) && (!step || (phase>>8)>count || ((phase>>8)==count && !(step&0x8000)))) continue;
@@ -528,9 +568,17 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
         put(0x1b80+x,step);put(0x1bc0+x,step>>8);
         put(0x1c00+x,phase);put(0x1c40+x,phase>>8);
         ram[output]=sequence[phase>>8];
+        if(explosion && !phase) {remove(x);continue;}
         // 01:51A3 / 591F..5999: finite target reactions stop at their
         // designated reflection endpoint, preserving the final sprite.
         const auto action=b(0x1840+x);
+        if(type==20) {
+            put(0x1540+x,b(0x1540+x)|0x10);
+            if(action==3) {
+                put(0x1880+x,b(0x1880+x)-1);
+                if(!b(0x1880+x)) put(0x1840+x,4);
+            }
+        }
         if(type==10 && action==1 && (phase>>8)==2) put(0x1840+x,0);
         if(target && ((action==1 && (step&0x8000)) || (action==2 && !(step&0x8000)))) {
             put(0x1840+x,0);put(0x1540+x,b(0x1540+x)&0xbf);

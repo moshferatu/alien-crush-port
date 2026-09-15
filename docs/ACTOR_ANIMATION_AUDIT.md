@@ -1,5 +1,29 @@
 # Cabinet actor animation audit
 
+## Flying-alien explosions (2026-09-15)
+
+Mouth flyers (type 56) become type 59 on a hit (`01:5650..5666`).
+Types 50, 59 and 60 share the finite explosion handler at `02:7880`:
+initialize an 8-, 4- or 3-frame sequence, run FD2B with action zero,
+then clear all 32 actor fields when the phase returns to zero. The former
+inactive animation skipped types 50/59 at action zero and looped type 60.
+All three now initialize, animate and expire privately without replaying
+their sound effects. RAM 68's scene-clear signal is refreshed from live RAM.
+Fixtures cover exact lifetimes and repeated seam crossings after expiration.
+
+## Lower central mouth hold (2026-09-15)
+
+Type 20 (`01:52A1..53F2`) is the large lower-table mouth that releases three
+type-56 flyers. Its open pose lasts 600 ticks without calling FD2B, followed
+by a single close. The former generic inactive oscillator incorrectly kept
+opening and closing it while the ball was in the upper half. Private animation
+now follows its opening endpoint, 16-bit hold timer, timed capture reaction,
+closing endpoint and nonanimated cooldown. Idle actors cannot start a new
+cycle; spawning, ball capture, scoring and sound remain runtime-owned.
+
+Regression fixtures reproduce the former hold failure, check complete and
+capture/cooldown cycles, and include type 20 in resumed/departing seam checks.
+
 Audited 2026-09-13 against the supported ROM's actor dispatch tables at
 file offsets `9C8E`/`9CE8`, the actors present in the 1,800-frame main-table
 capture, and `ActorAssets::advance_animation`. Addresses below are bank:PC.
