@@ -154,6 +154,62 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
         travel[0x1504]==std::byte{10},"Travelling target did not reach ROM destination");
     travel[0x1804]=fixture(10,3,1,0,0)[0x1804]; // Type 51 retains its type-10 sprite.
     run(travel,14);require(travel[0x1844]==std::byte{},"Travelling target did not settle after arrival");
+    // Layout selection is shared state, not an actor field. A perfectly
+    // predicted travel step must still use the newly selected destinations.
+    for(unsigned layout=0;layout<8;++layout) {
+        Bank source{};
+        source[0x79]=std::byte{1};source[0x50]=std::byte{10};
+        for(unsigned i=0;i<3;++i) {
+            const auto bumper=fixture(10,3,0,0x200,-64);
+            for(unsigned field=0;field<32;++field) source[0x1504+i+field*64]=bumper[0x1504+field*64];
+            source[0x15c4+i]=rom[0x326b+i*2];source[0x1684+i]=rom[0x326c+i*2];
+        }
+        source[0xa8]=static_cast<std::byte>((layout+1)%8);
+        auto timeline=std::make_unique<render::TableAnimation>(rom);
+        auto crossing=std::make_unique<render::TableAnimation>(rom);
+        timeline->update(actors,source,false);
+        crossing->update(actors,source,false);
+        source[0xa8]=static_cast<std::byte>(layout);
+        for(unsigned i=0;i<3;++i) {
+            source[0x1504+i]=std::byte{51};source[0x1a04+i]=std::byte{0x23};
+            source[0x1884+i]=std::byte{16};
+            for(unsigned axis=0;axis<2;++axis) {
+                const unsigned p=(axis?0x1684:0x15c4)+i,v=(axis?0x1784:0x1704)+i;
+                const unsigned target=std::to_integer<unsigned>(rom[0x326b+8*6+i*2+axis]);
+                const unsigned velocity=(target-std::to_integer<unsigned>(source[p]))*16;
+                source[v]=static_cast<std::byte>(velocity&255);source[v+64]=static_cast<std::byte>((velocity>>8)&255);
+            }
+        }
+        timeline->update(actors,source,true);
+        crossing->update(actors,source,true);
+        auto paused_bank=source;
+        for(unsigned tick=0;tick<48;++tick) {
+            actors.advance_animation(source);
+            timeline->update(actors,source,true);
+            const bool lower=tick>=8 && tick<40;
+            if(!lower) actors.advance_animation(paused_bank);
+            auto swapped=paused_bank;
+            if(lower) {
+                for(unsigned field=0;field<32;++field) for(unsigned x=4;x<64;++x)
+                    std::swap(swapped[0x1500+field*64+x],swapped[0x200+field*64+x]);
+                swapped[0x79]=std::byte{};
+            }
+            crossing->update(actors,swapped,true);
+            const auto& shown=timeline->actors(1);
+            for(unsigned i=0;i<3;++i) for(unsigned p:{0x1584u,0x15c4u,0x1604u,0x1644u,0x1684u,0x16c4u})
+                require(shown[p+i]==source[p+i],"Bumper layout movement retained an old destination until collision");
+            for(unsigned i=0;i<3;++i) for(unsigned field=0;field<32;++field)
+                require(crossing->actors(1)[0x1504+i+field*64]==shown[0x1504+i+field*64],
+                    "Bumper layout movement froze or reset while crossing the seam");
+        }
+        const auto& shown=timeline->actors(1);
+        for(unsigned i=0;i<3;++i) {
+            require(shown[0x15c4+i]==rom[0x326b+layout*6+i*2] && shown[0x1684+i]==rom[0x326c+layout*6+i*2],
+                "All three bumpers must reach the selected ROM layout without a hit");
+            require((std::to_integer<unsigned>(shown[0x1544+i])&0xa0)==0x80,
+                "Relocated bumper must remain visible without a hit");
+        }
+    }
     // Unlike frozen-bank swap tests, the ROM may dispatch an actor on the
     // very frame the viewport changes. Retain the independently advanced pose.
     for(unsigned type:{21u,22u,15u,19u,20u,33u,9u,10u,8u,14u,70u,71u}) {

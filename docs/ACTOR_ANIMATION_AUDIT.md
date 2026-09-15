@@ -70,6 +70,14 @@ signal expire them. Spawning, flight initialization, hits and score changes
 remain runtime-owned. Synthetic fixtures cover these rare saved states;
 the ordinary replay is not evidence that every rare effect crossed a seam.
 
+Bumper layout follow-up: the retained actor banks now refresh shared selectors
+`A8` (destination layout) and `A9` (three-target destination/color index) before
+advancing. Previously, prediction could correctly recognize ordinary type-51
+movement while the visual copy used a stale layout, so no actor correction was
+accepted until a later hit. Regression fixtures reproduce that mismatch and
+check all eight destination layouts, all three bumpers, final visibility, and
+completion while the original upper bank is dormant across seam crossings.
+
 Slingshot follow-up (2026-09-14): types 40/41 finish their four-pose emergence
 (`01:5667/571A`) and become 52/53. Their deterministic launch (`56B6/5769`)
 uses direction 20/28 from the ROM velocity tables, applies the eightfold

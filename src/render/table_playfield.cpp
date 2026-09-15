@@ -218,7 +218,10 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
         incoming[0x2e]=std::byte{};incoming[0x2f]=std::byte{2};incoming[0x50]=std::byte{10};
         auto& visual=actors_[half];
         // Read signals without consuming hit queues, release flags or RNG.
-        for(unsigned address:{0x4au,0x4cu,0x4du,0x4eu,0x53u,0x54u,0x57u,0x59u,0x5du,0x5eu,0x60u,0x61u,0x63u,0x64u,0x68u,0x6du,0x70u})
+        // A8 selects the bumper layout; A9 indexes its three destinations and
+        // colors. Predicted type-51 motion must use these live selectors too,
+        // or the retained visual bank can finish at an obsolete destination.
+        for(unsigned address:{0x4au,0x4cu,0x4du,0x4eu,0x53u,0x54u,0x57u,0x59u,0x5du,0x5eu,0x60u,0x61u,0x63u,0x64u,0x68u,0x6du,0x70u,0xa8u,0xa9u})
             visual[address]=ram[address];
         if(!valid_) {
             visual=incoming;
