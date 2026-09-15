@@ -131,10 +131,19 @@ int main() {
             require(panel.compose(state).pixels==title_ranks.pixels,"Title takes precedence over stale score viewer");
             constexpr std::array<std::byte,9> scores_signature{std::byte{0xfd},std::byte{0xeb},std::byte{3},
                 std::byte{2},std::byte{1},std::byte{0xb0},std::byte{0x41},std::byte{0x8e},std::byte{0x40}};
+            const auto check_score_loading=[&](unsigned outer) {
+                const auto video=std::make_unique<diagnostics::ReferenceSnapshot>();
+                scene[outer-2]=std::byte{0xff};scene[outer-1]=std::byte{0x46};
+                require(render::cabinet_viewport_blank(*video,nullptr,scene),"Every score caller hides the outgoing loader raster");
+                scene[outer-2]=std::byte{0x7c};scene[outer-1]=std::byte{0x47};
+                require(!render::cabinet_viewport_blank(*video,nullptr,scene),"Loaded score screen is visible for every caller");
+                scene[outer-2]=scene[outer-1]=std::byte{};
+            };
             scene[0x7a]=std::byte{1};
             require(!diagnostics::observe_alien_state(scene).high_score_menu,"Viewer mode alone is insufficient");
             std::copy(scores_signature.begin(),scores_signature.end(),scene.begin()+0x1f7);
             require(diagnostics::observe_alien_state(scene).high_score_menu,"Complete paused score-viewer call signature");
+            check_score_loading(0x1f7);
             for(unsigned i=0;i<9;++i) {
                 scene[0x1f7+i]^=std::byte{1};
                 require(!diagnostics::observe_alien_state(scene).high_score_menu,"Partial score-viewer signature rejected");
@@ -148,6 +157,7 @@ int main() {
             std::copy(practice_scores.begin(),practice_scores.end(),scene.begin()+0x1f7);
             scene[0x7a]=std::byte{2};scene[0x7c]=std::byte{1};
             require(diagnostics::observe_alien_state(scene).high_score_menu,"Practice game-end score call recognized");
+            check_score_loading(0x1f7);
             for(unsigned i=0;i<9;++i) {
                 scene[0x1f7+i]^=std::byte{1};
                 require(!diagnostics::observe_alien_state(scene).high_score_menu,"Partial practice score call rejected");
@@ -160,6 +170,7 @@ int main() {
                 std::byte{2},std::byte{1},std::byte{0x7d},std::byte{0x41}};
             std::copy(game_scores.begin(),game_scores.end(),scene.begin()+0x1f9);
             require(diagnostics::observe_alien_state(scene).high_score_menu,"Normal game-end ranking recognized");
+            check_score_loading(0x1f9);
             for(unsigned i=0;i<7;++i) {
                 scene[0x1f9+i]^=std::byte{1};
                 require(!diagnostics::observe_alien_state(scene).high_score_menu,"Partial normal game-end signature rejected");
@@ -169,6 +180,7 @@ int main() {
             require(!diagnostics::observe_alien_state(scene).high_score_menu,"Demo excludes normal game-end ranking");
             scene[0x1fe]=std::byte{0x5c};scene[0x1ff]=std::byte{0x40};
             require(diagnostics::observe_alien_state(scene).high_score_menu,"Post-demo ranking recognized");
+            check_score_loading(0x1f9);
             for(unsigned i=0;i<7;++i) {
                 scene[0x1f9+i]^=std::byte{1};
                 require(!diagnostics::observe_alien_state(scene).high_score_menu,"Partial demo ranking signature rejected");

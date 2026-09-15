@@ -47,6 +47,8 @@ int main(int argc,char** argv) {
         bool was_bonus=false;
         std::uint64_t fade_out_energy=~std::uint64_t{0},fade_in_energy=0;
         unsigned fade_out_frames=0,fade_in_frames=0;
+        std::uint64_t bonus_entry_energy=0;
+        unsigned bonus_entry_frames=0;
         for(unsigned n=0;n<2800;++n) {
             const auto frame=runtime->advance(input_at(n));
             if(n>=2150 && n<2243) return_fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
@@ -65,6 +67,15 @@ int main(int argc,char** argv) {
             }
             const auto saved=runtime->save();
             const auto video=diagnostics::decode_reference_snapshot(saved);
+            if(n+1>=864 && n+1<=895) {
+                const bool blank=render::cabinet_viewport_blank(video,previous?&*previous:nullptr,ram);
+                std::uint64_t energy=0;
+                if(!blank) for(const auto p:pixels) energy+=(p&255)+((p>>8)&255)+((p>>16)&255);
+                require(energy>=bonus_entry_energy,"Bonus viewport flashed before its fade-in");
+                if(n+1==864) require(blank,"Hide the enabled pre-fade bonus raster");
+                else require(!blank,"Preserve every normal bonus fade-in frame");
+                bonus_entry_energy=energy;++bonus_entry_frames;
+            }
             const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
             cabinet_check.check(*table,video,previous?&*previous:nullptr,ram,timed?&raster:nullptr);
             // Verified ordinary-bonus ROM fade windows. Neither half may
@@ -127,6 +138,7 @@ int main(int argc,char** argv) {
             previous=video;
         }
         require(first_bonus==854 && first_main==2199,"Original ordinary bonus entry and return boundaries");
+        require(bonus_entry_frames==32 && bonus_entry_energy>1000000,"Bonus viewport fades from black to visible");
         require(fade_out_frames==19 && fade_in_frames==30 && fade_out_energy==0 && fade_in_energy>1000000,
             "Bonus fade coverage must reach black and restore a visible full table");
         require(first_ready==2243 && dormant_frames>1 && lower_resumed,"Stitching resumes after the complete return fade, with a dormant lower actor bank");

@@ -49,6 +49,7 @@ int main(int argc,char** argv) {
             render::Image loss_preview;
             unsigned scored=0,bonus_frames=0;
             unsigned ended_frames=0,round_ends=0;
+            unsigned hidden_entry_frames=0;
             bool was_over=false,returned_to_title=false;
             const unsigned limit=room==0?3000:900;
             constexpr std::array<unsigned,3> end_frames{740,1463,2404};
@@ -79,7 +80,17 @@ int main(int argc,char** argv) {
                     final_ram.assign(ram.begin(),ram.end());final_pixels.assign(frame.pixels.begin(),frame.pixels.end());
                     final_audio.assign(frame.stereo.begin(),frame.stereo.end());
                 }
-                if(n==448) previous=diagnostics::decode_reference_snapshot(runtime->save());
+                if(n<=448) {
+                    const auto video=diagnostics::decode_reference_snapshot(runtime->save());
+                    const bool blank=render::cabinet_viewport_blank(video,previous?&*previous:nullptr,ram);
+                    if(observed.bonus_room && !observed.title_menu) {
+                        if(previous && !(previous->control&0xc0) && (video.control&0xc0)) {
+                            require(blank,"Practice bonus entry hides its pre-fade raster in every room");
+                            ++hidden_entry_frames;
+                        } else require(!blank,"Practice bonus fade and gameplay remain visible");
+                    }
+                    previous=video;
+                }
                 if(n==449) {
                     require(std::to_integer<unsigned>(ram[0x7c])==1 && observed.bonus_room==room+1,"Original practice inputs select requested bonus room");
                     require(!observed.title_menu && !observed.demo_play,"Bonus room is not idle/demo");
@@ -95,6 +106,7 @@ int main(int argc,char** argv) {
                 if(room==0 && n>=600 && n<900) loss_replay.inputs.push_back(input_at(n,room));
             }
             require(bonus_frames==562,"Bonus play observed after original room loading");
+            require(hidden_entry_frames==1,"Each practice room covers one display-enable transition");
             // This short input route earns points in rooms 1..3. Room 4's
             // coverage is entry/rendering/restore, not a claimed award or clear.
             if(room<3) require(scored>0,"Original bonus score awards observed");

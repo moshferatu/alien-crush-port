@@ -205,7 +205,8 @@ int main(int argc,char** argv) {
                     render::table_aspect_width,render::table_aspect_height,true);
                 else {
                     const auto scene=diagnostics::observe_alien_state(runtime->work_ram());
-                    if(scene.title_transition) std::fill(original.begin(),original.end(),0xff000000);
+                    if(render::cabinet_viewport_blank(snapshot,previous_video?&*previous_video:nullptr,runtime->work_ram()))
+                        std::fill(original.begin(),original.end(),0xff000000);
                     // The title's scrolling BAT pattern repeats every 96 pixels.
                     // Its top-left repeat contains no menu lettering; omit sprites
                     // so only the background extends outside the original image.

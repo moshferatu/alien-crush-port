@@ -15,6 +15,10 @@ inline constexpr unsigned table_aspect_width=40,table_aspect_height=57;
 // Read-only recognition of the original main-table RLE upload call. A host may
 // omit its presentation delay during an already-confirmed transition hold.
 bool table_transition_upload(const diagnostics::ReferenceSnapshot&,std::span<const std::byte> ram);
+// Hide outgoing score-view graphics and the bonus loader's pre-fade frame.
+// This affects cabinet presentation only; no runtime frames are skipped.
+bool cabinet_viewport_blank(const diagnostics::ReferenceSnapshot& current,
+    const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram);
 // Collapse stationary handoff frames on a continuous presentation clock. The
 // original core still executes every frame; this never changes game state.
 class TableTransitionClock {

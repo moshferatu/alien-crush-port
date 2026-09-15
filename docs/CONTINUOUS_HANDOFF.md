@@ -114,6 +114,17 @@ silently replay under different execution semantics.
 
 ## Acceptance evidence
 
+Cabinet viewport entry also filters two original transition rasters. The score
+loader (`1C:46FD -> 48B5`) waits a frame before disabling video, leaving the
+outgoing table visible after the layout has already changed to centered scores.
+The bonus loader enables video at `FE37` before `EEDF` starts its palette fade,
+producing a bright raster before the fade begins. `cabinet_viewport_blank`
+blacks out the score-loader wait and the bonus display-enable edge. It does not
+skip emulation or audio frames, change the exit transitions, or delay the normal
+fade. Score detection covers pause, practice, normal game end and demo callers.
+Replay checks cover the outgoing score raster, monotonic ordinary bonus entry,
+and display-enable transitions in all four practice rooms.
+
 - Both directions, repeated crossings, bonus returns and quick-state restoration.
 - Compare gameplay state at matching handoff boundaries, rather than demanding
   equal original frame numbers after removing loading time. Check ball position,

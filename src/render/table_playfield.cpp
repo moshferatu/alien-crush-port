@@ -19,6 +19,23 @@ int bonus_table_fade(std::span<const std::byte> ram) {
     return 0;
 }
 }
+bool cabinet_viewport_blank(const diagnostics::ReferenceSnapshot& current,
+    const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram) {
+    const auto scene=diagnostics::observe_alien_state(ram);
+    if(scene.title_transition) return true;
+    if(scene.high_score_menu) {
+        // 1C:46FD -> 48B5 waits at E003 before disabling the outgoing
+        // display. The score wrapper has two extra stack bytes when entered
+        // from pause or practice, compared with normal/demo game end.
+        const unsigned outer=(ram[0x1f7]==std::byte{0xfd} && ram[0x1f8]==std::byte{0xeb})?0x1f7:0x1f9;
+        return ram[outer-2]==std::byte{0xff} && ram[outer-1]==std::byte{0x46};
+    }
+    // FE37 enables video before EEDF clears the newly loaded palette for
+    // its fade. The first enabled raster consequently flashes at full
+    // brightness. Keep this one frame black, then show the original fade.
+    return scene.bonus_room && previous && current.frame==previous->frame+1 &&
+        !(previous->control&0xc0) && (current.control&0xc0);
+}
 bool TableTransitionClock::omit(const diagnostics::ReferenceSnapshot& video,std::span<const std::byte> ram,bool table_available) {
     if(ram.size()!=8192) throw std::runtime_error("Table clock requires 8192-byte work RAM");
     const auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};

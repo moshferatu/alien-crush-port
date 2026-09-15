@@ -48,6 +48,14 @@ int main(int argc,char** argv) {
                         require(ram[0x122b+letter*6+rank]==std::byte{0x40},"Viewing scores preserves original name bytes");
                 }
                 const auto video=diagnostics::decode_reference_snapshot(runtime->save());
+                const bool blank=render::cabinet_viewport_blank(video,previous?&*previous:nullptr,ram);
+                if(n==650) {
+                    require(std::any_of(pixels.begin(),pixels.end(),[](auto p){return (p&0xffffff)!=0;}),
+                        "Score entry regression fixture contains the outgoing table raster");
+                    require(blank,"Score entry must hide the outgoing table before centering the score viewport");
+                    require(render::cabinet_viewport_blank(video,nullptr,ram),"Cold restore during score loading also hides outgoing graphics");
+                }
+                if(n>=656 && n<900) require(!blank,"Ready score view must remain visible");
                 const auto camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
                 const auto output=previous?table->compose(video,*previous,state.table_code,camera,ram):std::nullopt;
                 const auto shown=hold.present(output,video.frame,state.table_code,camera,ram);
