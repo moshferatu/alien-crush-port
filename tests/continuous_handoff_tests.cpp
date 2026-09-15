@@ -2,6 +2,7 @@
 #include "alien_crush/core/recording.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/runtime/game_runtime.hpp"
+#include "alien_crush/render/table_playfield.hpp"
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -38,13 +39,57 @@ int main(int argc,char** argv) {
     try {
         if(argc!=3) throw std::runtime_error("Expected ROM and recording paths");
         const auto path=core::path_from_utf8(argv[1]);
+        const auto table=std::make_unique<render::TablePlayfield>(core::read_file(path));
+        // The same fractional world position must project identically from
+        // either local coordinate system, including a cold restore or reversal.
+        for(unsigned x:{48u,96u,176u,272u}) {
+            int previous_y=-999;
+            for(unsigned world=224*256;world<=352*256;world+=64) {
+                std::array<std::byte,8192> ram{};
+                ram[0x1500]=std::byte{1};ram[0x1540]=std::byte{0x80};
+                ram[0x15c0]=static_cast<std::byte>(x&255);ram[0x1600]=static_cast<std::byte>(x>>8);
+                const auto position=[&](unsigned half) {
+                    const auto local=world-(half==0?224*256:0);
+                    ram[0x1640]=static_cast<std::byte>(local&255);
+                    ram[0x1680]=static_cast<std::byte>((local>>8)&255);
+                    ram[0x16c0]=static_cast<std::byte>((local>>16)&255);
+                    const auto before=ram;
+                    const auto ball=table->transition_ball(half,ram);
+                    if(!ball || ram!=before) throw std::runtime_error("Seam projection altered ball state");
+                    return *ball;
+                };
+                const auto upper=position(1),lower=position(0);
+                if(upper.x!=lower.x || upper.y!=lower.y)
+                    throw std::runtime_error("Equivalent ball world positions jump when the table half changes");
+                if(previous_y!=-999 && (upper.y<previous_y || upper.y>previous_y+1))
+                    throw std::runtime_error("Seam projection reverses or jumps during fractional motion");
+                previous_y=upper.y;
+                // Outside the join, preserve the native ball-to-art alignment.
+                if(world<=256*256 && upper.y!=static_cast<int>(world/256)-70)
+                    throw std::runtime_error("Upper ball alignment changed outside the seam");
+                if(world>=320*256 && lower.y!=static_cast<int>(world/256)-78)
+                    throw std::runtime_error("Lower ball alignment changed outside the seam");
+            }
+        }
+        const auto trajectory=[&](std::ostream& out,std::span<const std::byte> ram) {
+            const auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+            const auto velocity=[&](unsigned p) {
+                const unsigned v=b(p)|(b(p+64)<<8);
+                return (v<32768?static_cast<int>(v):static_cast<int>(v)-65536)/256.0;
+            };
+            const auto ball=table->transition_ball(b(0x79),ram);
+            out<<','<<(b(0x1580)/256.0+b(0x15c0)+(b(0x1600)<<8))
+                <<','<<(b(0x1640)/256.0+b(0x1680)+(b(0x16c0)<<8)+(b(0x79)==0?224:0))
+                <<','<<velocity(0x1700)<<','<<velocity(0x1780)
+                <<','<<(ball?ball->x:-999)<<','<<(ball?ball->y:-999);
+        };
         auto runtime=make_reference_runtime(HandoffMode::continuous);runtime->load(path);
         recording::Recording recording{runtime->save(),{}};
         recording::Recording crossing;
         std::vector<std::int16_t> crossing_audio;
         ac_set_handoff_boundary(boundary);
         std::ofstream trace(std::filesystem::path(argv[2]).string()+".csv");
-        trace<<"frame,half,x,y,pc,packets,waits,audio,ms\n";
+        trace<<"frame,half,x,y,pc,packets,waits,audio,ms,x_fixed,world_y,vx,vy,render_x,render_y\n";
         unsigned crossings=0,last_half=0;
         std::uint64_t samples=0;
         for(unsigned n=0;n<1800;++n) {
@@ -64,7 +109,8 @@ int main(int argc,char** argv) {
             trace<<n+1<<','<<half<<','<<(value(0x15c0)|(value(0x1600)<<8))<<','
                 <<(value(0x1680)|(value(0x16c0)<<8))<<','<<runtime->video_snapshot().pc<<','
                 <<packets<<','<<waits<<','<<frame.stereo.size()<<','
-                <<std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count()<<'\n';
+                <<std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
+            trajectory(trace,ram);trace<<'\n';
             if(n==578) crossing.initial=runtime->save();
         }
         unsigned long long packets{},waits{};ac_handoff_counts(&packets,&waits);
@@ -106,16 +152,21 @@ int main(int argc,char** argv) {
         const auto original_boundaries=std::move(boundaries);boundaries.clear();
         runtime.reset();runtime=make_reference_runtime(HandoffMode::continuous);runtime->load(path);
         ac_set_handoff_boundary(boundary);
+        std::ofstream entry_trace(std::filesystem::path(argv[2]).string()+".entries.csv");
+        entry_trace<<"entry,frame,half,x_fixed,world_y,vx,vy,render_x,render_y\n";
         for(unsigned i=0;i<entries.size();++i) {
             // Explicit diagnostic import of a genuine pre-handoff reference
             // checkpoint. Production restore never changes a state's identity.
             auto entry=entries[i];entry.core_revision=runtime->revision();runtime->restore(entry);
+            entry_trace<<i<<','<<entry.frame_number<<','<<std::to_integer<unsigned>(runtime->work_ram()[0x79]);
+            trajectory(entry_trace,runtime->work_ram());entry_trace<<'\n';
             boundaries.clear();
             for(unsigned n=static_cast<unsigned>(entry.frame_number);n<entry.frame_number+20;++n) {
                 runtime->advance(recording::canonical_input(n));
                 const auto snapshot=runtime->video_snapshot();
                 const auto ram=runtime->work_ram();
                 const auto byte=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+                entry_trace<<i<<','<<n+1<<','<<byte(0x79);trajectory(entry_trace,ram);entry_trace<<'\n';
                 if(byte(0x1fe)==0xa0 && byte(0x1ff)==0x40 &&
                     ((snapshot.pc>=0xe3dd && snapshot.pc<=0xe4a0) || (snapshot.pc>=0x46fd && snapshot.pc<=0x4740))) {
                     std::cerr<<"Entry "<<i<<" frame "<<n+1<<" PC "<<std::hex<<snapshot.pc<<" caller "<<(byte(0x1fc)|(byte(0x1fd)<<8))<<'\n';

@@ -2,6 +2,7 @@
 #include "alien_crush/render/table_playfield.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <stdexcept>
 namespace alien_crush::render {
@@ -559,7 +560,16 @@ std::optional<Sprite> TablePlayfield::transition_ball(unsigned table,std::span<c
     sat[1]=static_cast<std::uint16_t>((b(0x15c0)|(b(0x1600)<<8))+piece.x);
     sat[2]=static_cast<std::uint16_t>(0x200+piece.pattern); sat[3]=piece.flags;
     auto ball=render::sprites(sprites_[table].vram,tables_[table].palette,sat,0)[0];
-    if(table==0) ball.y+=table_half_offset;
+    // Physics changes local origins by 224, while the artwork overlaps by
+    // 216. A half-dependent offset jumps by eight pixels at every crossing.
+    // Map the shared world coordinate instead: smoothly compress those eight
+    // pixels across world Y 256..320, preserving both native alignments beyond
+    // the join. Fractional input avoids a new rounding step at each half change.
+    const unsigned local_y=b(0x1680)|(b(0x16c0)<<8);
+    const double world_y=local_y+b(0x1640)/256.0+(table==0?224:0);
+    const double t=std::clamp((world_y-256.0)/64.0,0.0,1.0);
+    const double correction=(224-table_half_offset)*t*t*(3-2*t);
+    ball.y=static_cast<int>(std::floor(world_y-correction))+piece.y-64;
     return ball;
 }
 std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSnapshot& current,

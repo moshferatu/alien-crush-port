@@ -125,10 +125,20 @@ int main(int argc,char** argv) {
             (void)ball_transition.present(output,video.frame,half,camera,runtime->work_ram(),
                 backdrop?&*backdrop:nullptr,ball?&*ball:nullptr);
             if(ball_transition.ball_updated()) ++ball_updates.at(half);
-            if(n==607 && (!ball || ball->x!=234 || ball->y!=213))
-                throw std::runtime_error("Ball translation changed at upper handoff");
-            if(n==844 && (!ball || ball->x!=112 || ball->y!=210))
-                throw std::runtime_error("Ball translation changed at lower handoff");
+            if(n==607 || n==844) {
+                if(!ball || ball->x!=(n==607?234:112))
+                    throw std::runtime_error("Ball horizontal translation changed at handoff");
+                std::array<std::byte,8192> other;
+                std::copy(runtime->work_ram().begin(),runtime->work_ram().end(),other.begin());
+                const unsigned y=std::to_integer<unsigned>(other[0x1680])|
+                    (std::to_integer<unsigned>(other[0x16c0])<<8);
+                const unsigned translated=y+(half==0?224u:0u)-(half==1?224u:0u);
+                other[0x1680]=static_cast<std::byte>(translated&255);
+                other[0x16c0]=static_cast<std::byte>((translated>>8)&255);
+                const auto equivalent=table.transition_ball(1-half,other);
+                if(!equivalent || equivalent->y!=ball->y)
+                    throw std::runtime_error("Ball vertical projection depends on the active half");
+            }
             const auto presented=transition.present(output,video.frame,half,camera,runtime->work_ram());
             const bool upload=render::table_transition_upload(video,runtime->work_ram());
             if(upload) {
