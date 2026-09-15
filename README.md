@@ -14,6 +14,15 @@ To compare with timer pacing, run `alien-crush.exe --cabinet --no-vsync`
 (or `Launch-Cabinet.cmd --no-vsync`). Both modes use the optimized stitched
 renderer. If VSync is unavailable, timer pacing is selected automatically.
 
+On normal exit, the executable automatically prints a native coverage summary
+to the console, including session frame counts for the native stitched playfield
+and the reference viewport. These count game frames, including catch-up frames,
+but exclude repeated VSync presentations and quick-state restoration warm-up.
+Unlike Devil's Crush, this backend does not yet translate gameplay CPU routines
+or measure execution cycle ownership, so its report explicitly marks the
+outside-wait/stall CPU percentage as unavailable. Native cabinet rendering,
+animation, and controls are not counted as translated CPU execution.
+
 ## ROM
 
 Supply your own `Alien Crush.pce`: 262,144 bytes, SHA-256

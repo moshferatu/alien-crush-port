@@ -118,7 +118,7 @@ int main(int argc,char** argv) {
         bool running=true,focused=true,display_layout_changed=false;
         const auto frame_ns=static_cast<std::uint64_t>(1e9/runtime->frames_per_second());
         auto deadline=SDL_GetTicksNS();
-        std::uint64_t count=0;
+        std::uint64_t count=0,stitched_frames=0;
         unsigned catch_up=0;
         while(running && (!limit || count<limit) && (!playback || count<playback->inputs.size())) {
             SDL_Event event;
@@ -201,8 +201,11 @@ int main(int argc,char** argv) {
                 auto stitched=table->cabinet_frame(snapshot,previous_video?&*previous_video:nullptr,
                     runtime->work_ram(),table_raster?&raster:nullptr,transition);
                 if(timing.is_open()) compose_ended=SDL_GetTicksNS();
-                if(stitched) display.show({frame.number,stitched->width,stitched->height,stitched->pixels,{}},
-                    render::table_aspect_width,render::table_aspect_height,true);
+                if(stitched) {
+                    display.show({frame.number,stitched->width,stitched->height,stitched->pixels,{}},
+                        render::table_aspect_width,render::table_aspect_height,true);
+                    ++stitched_frames;
+                }
                 else {
                     const auto scene=diagnostics::observe_alien_state(runtime->work_ram());
                     if(render::cabinet_viewport_blank(snapshot,previous_video?&*previous_video:nullptr,runtime->work_ram()))
@@ -266,6 +269,17 @@ int main(int argc,char** argv) {
             }
             host::write_cabinet_settings(data_path/"cabinet.ini",settings);
         }
+        // Count simulated session frames, not VSync repeats or restored frame
+        // numbers. Cabinet presentation is native; the reference backend has
+        // no translated gameplay routines or execution-cycle ownership counters.
+        std::cout<<"Native coverage on exit ("<<count<<" session frames):\n"
+            <<"  Native CPU translation: 0 translated gameplay routines; game logic uses the reference interpreter.\n"
+            <<"  Native execution outside wait/stalls: unavailable (backend has no cycle ownership accounting).\n"
+            <<"  Native stitched playfield: "<<stitched_frames<<" of "<<count<<" frames";
+        if(count) std::cout<<" ("<<std::fixed<<std::setprecision(2)
+            <<100.0*static_cast<double>(stitched_frames)/static_cast<double>(count)<<"%)"<<std::defaultfloat;
+        std::cout<<"\n  Reference viewport: "<<count-stitched_frames<<" frames\n"
+            <<"  Presentation counts are not CPU execution coverage.\n";
         return 0;
     } catch(const std::exception& e) { std::cerr<<"Alien Crush: "<<e.what()<<'\n'; return 1; }
 }
