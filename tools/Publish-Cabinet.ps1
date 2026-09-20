@@ -123,7 +123,9 @@ High scores and initials automatically save to portable-data/alien-crush.hiscore
 Publishing updates packaged files and preserves this directory and other local
 files. If needed, copy cabinet-specific bindings/artwork manually once.
 See README.md for controls, monitor setup and configuration file formats.
-Window placement, raw buttons and plunger settings share portable-data/cabinet.ini.
+Window placement, raw buttons, physical nudge and plunger settings share portable-data/cabinet.ini.
+PinOne accelerometer nudging works automatically in cabinet mode (axes 0/1).
+Optional input.nudge.* settings adjust sensitivity; see README.md.
 Older separate configuration files are imported on startup and retained as backups.
 Normal exit writes the combined settings. Edit plunger values in this main INI.
 '@

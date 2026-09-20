@@ -260,6 +260,41 @@ Release all mapped buttons after startup, reconnect, quick-load or returning fro
 another application before using them. Disconnecting clears held raw input and
 reconnecting finds the board by name even if its SDL instance ID changes. Recordings
 store the resulting controller bits and accepted plunger commands; replay ignores hardware mappings.
+Physical nudging is enabled automatically in `--cabinet` for a connected joystick
+whose name contains `PinOne` (case insensitive). Shake the cabinet to trigger the
+same nudge as X / button II. Both directions on the accelerometer's X/Y axes
+(0 and 1) trigger this single original-game action; shake strength does not change
+the in-game impulse. The plunger's Z axis is ignored. No Steam mapping or separate
+configuration file is needed.
+
+Optional overrides go in the existing `portable-data/cabinet.ini`:
+
+```text
+input.nudge.enabled=1
+input.nudge.device=PinOne
+input.nudge.axis_x=0
+input.nudge.axis_y=1
+input.nudge.threshold=20
+input.nudge.release=8
+input.nudge.cooldown_ms=250
+```
+
+Threshold and release are percentages of the signed joystick range from zero
+(32767). Lower `threshold` for lighter nudges, or raise it if flipper/solenoid
+vibration triggers nudges. `release` must be below `threshold`. After startup,
+focus return, quick-load, reconnect, or each shake, both axes must settle below
+`release` for 100ms. Each trigger presses nudge for 50ms; the cooldown prevents
+rapid retriggering. Set `enabled=0` to disable physical nudging. Device matching
+uses a literal, case-insensitive name substring; axis indices are zero-based.
+Restart after changing settings. `--input-probe` shows the raw readings for tuning.
+Calibrate the board's centered resting output and sensitivity with the
+[PinOne accelerometer tool](https://pinball-docs.clevelandsoftwaredesign.com/docs/PinOne/Configuring/accelerometer/).
+The default axes follow the manufacturer's
+[joystick mapping](https://pinball-docs.clevelandsoftwaredesign.com/docs/PinOne/steam-calibration/).
+Physical shakes are ignored while paused, in menus, and during demos. Recordings
+store the resulting nudge button presses; replay ignores live accelerometer input.
+Keyboard/button nudging remains available.
+
 Plunger setup accepts the same settings as Devil's Crush. Copy the working
 `input.plunger.*` lines from that game's `portable-data/cabinet.ini` into Alien
 Crush's existing `portable-data/cabinet.ini`, alongside its window and button

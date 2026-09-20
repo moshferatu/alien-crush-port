@@ -2,6 +2,7 @@
 #include "presentation.hpp"
 #include "cabinet.hpp"
 #include "cabinet_input.hpp"
+#include "cabinet_nudge.hpp"
 #include "cabinet_plunger.hpp"
 #include "cabinet_settings.hpp"
 #include <iomanip>
@@ -56,7 +57,7 @@ int main(int argc,char** argv) {
             else if(arg=="--input-probe") probe=true;
             else if(arg=="--cabinet-plunger-probe") probe_plunger=true;
             else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
-            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper; Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nCabinet settings: windows, input.buttons and input.plunger.* share portable-data/cabinet.ini (see README).\n--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n--plunger-config <path>: reuse a Devil's Crush cabinet.ini; otherwise local cabinet.ini, then legacy cabinet-plunger.txt.\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
+            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper; Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nCabinet settings: windows, input.buttons, input.nudge.* and input.plunger.* share portable-data/cabinet.ini (see README).\n--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n--plunger-config <path>: reuse a Devil's Crush cabinet.ini; otherwise local cabinet.ini, then legacy cabinet-plunger.txt.\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
             else throw std::runtime_error("Unknown option "+arg);
         }
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
@@ -80,6 +81,9 @@ int main(int argc,char** argv) {
             host::load_cabinet_buttons(data_path/"cabinet-inputs.txt"):host::CabinetButtons{};
         const auto plunger=cabinet_mode && replay_path.empty()?
             host::load_cabinet_plunger(plunger_path):input::PlungerBinding{};
+        auto nudge=host::parse_cabinet_nudge(cabinet_mode && replay_path.empty()?host::read_cabinet_settings(data_path/"cabinet.ini"):host::CabinetSettings{});
+        nudge.enabled=nudge.enabled && cabinet_mode && replay_path.empty();
+        host::CabinetNudge cabinet_nudge(nudge);
         host::CabinetInput cabinet_input(buttons);
         host::CabinetPlunger cabinet_plunger(plunger);
         std::optional<recording::Recording> playback;
@@ -126,9 +130,9 @@ int main(int argc,char** argv) {
                 if(event.type==SDL_EVENT_QUIT || event.type==SDL_EVENT_WINDOW_CLOSE_REQUESTED) running=false;
                 if(cabinet && event.type>=SDL_EVENT_DISPLAY_FIRST && event.type<=SDL_EVENT_DISPLAY_LAST) {
                     display_layout_changed=true;
-                    SDL_ClearAudioStream(audio.stream);cabinet_input.rearm();cabinet_plunger.interrupt();
+                    SDL_ClearAudioStream(audio.stream);cabinet_input.rearm();cabinet_nudge.rearm();cabinet_plunger.interrupt();
                 }
-                if(event.type==SDL_EVENT_JOYSTICK_ADDED || event.type==SDL_EVENT_JOYSTICK_REMOVED) {cabinet_input.refresh();cabinet_plunger.refresh();}
+                if(event.type==SDL_EVENT_JOYSTICK_ADDED || event.type==SDL_EVENT_JOYSTICK_REMOVED) {cabinet_input.refresh();cabinet_plunger.refresh();cabinet_nudge.refresh();}
                 if(event.type==SDL_EVENT_GAMEPAD_ADDED) open_pad(gamepad);
                 if(event.type==SDL_EVENT_GAMEPAD_REMOVED && gamepad.pad && SDL_GetGamepadID(gamepad.pad)==event.gdevice.which) { SDL_CloseGamepad(gamepad.pad); gamepad.pad=nullptr; open_pad(gamepad); }
                 if(event.type==SDL_EVENT_KEY_DOWN && !event.key.repeat) {
@@ -145,7 +149,7 @@ int main(int argc,char** argv) {
                             if(event.key.scancode==SDL_SCANCODE_F5) {
                                 if(cabinet_plunger.owns_draw()) throw std::runtime_error("Release the plunger before saving a quick state");
                                 core::write_file_atomic(path,state::encode(runtime->save()));
-                            } else { auto decoded=state::decode(core::read_file(path)); if(!decoded.decoded) throw std::runtime_error(decoded.message); runtime->restore(decoded.container); previous_video.reset(); transition.reset(); cabinet_input.rearm(); cabinet_plunger.restored(); SDL_ClearAudioStream(audio.stream); }
+                            } else { auto decoded=state::decode(core::read_file(path)); if(!decoded.decoded) throw std::runtime_error(decoded.message); runtime->restore(decoded.container); previous_video.reset(); transition.reset(); cabinet_input.rearm();cabinet_nudge.rearm(); cabinet_plunger.restored(); SDL_ClearAudioStream(audio.stream); }
                             SDL_SetWindowTitle(display.window(),"Alien Crush");
                         } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; SDL_SetWindowTitle(display.window(),e.what()); }
                     }
@@ -158,7 +162,7 @@ int main(int argc,char** argv) {
             }
             const auto* keyboard=SDL_GetKeyboardFocus();
             const bool now_focused=cabinet?cabinet->owns(SDL_GetKeyboardFocus()):keyboard==display.window();
-            if(focused && !now_focused) {SDL_ClearAudioStream(audio.stream);cabinet_input.rearm();cabinet_plunger.interrupt();}
+            if(focused && !now_focused) {SDL_ClearAudioStream(audio.stream);cabinet_input.rearm();cabinet_nudge.rearm();cabinet_plunger.interrupt();}
             if(!focused && now_focused) deadline=SDL_GetTicksNS();
             focused=now_focused;
             if(!running) break;
@@ -174,6 +178,8 @@ int main(int argc,char** argv) {
                 SDL_GetGamepadID(gamepad.pad)!=cabinet_plunger.id()?gamepad.pad:nullptr;
             auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(standard_pad);
             if(!playback && focused) input.player_one|=cabinet_input.read().player_one;
+            if(cabinet_mode && !playback && cabinet_nudge.read(SDL_GetTicks(),focused && host::nudge_play_active(runtime->work_ram())))
+                input.player_one|=Pad::button_ii;
             if(!playback) input=input_router.route(input,runtime->work_ram());
             const auto command=playback?playback->plunger_at(static_cast<std::size_t>(count)):cabinet_plunger.apply(*runtime,input,focused);
             const auto frame_started=SDL_GetTicksNS();

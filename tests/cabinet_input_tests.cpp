@@ -2,6 +2,7 @@
 #include "cabinet_input.hpp"
 #include "cabinet_plunger.hpp"
 #include "game_input.hpp"
+#include "cabinet_nudge_checks.hpp"
 #include <iostream>
 #include <stdexcept>
 using namespace alien_crush;
@@ -20,6 +21,7 @@ int main() {
     try {
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"1");
         require(SDL_Init(SDL_INIT_JOYSTICK),"SDL initialization");
+        check_cabinet_nudge();
         {
             std::array<bool,SDL_SCANCODE_COUNT> keys{};
             std::array<bool,SDL_GAMEPAD_BUTTON_COUNT> buttons{};
