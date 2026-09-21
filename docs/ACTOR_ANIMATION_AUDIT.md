@@ -95,6 +95,24 @@ dispatch and removal, expiration, and visible pixels above the seam.
 
 ## Existing coverage and audit limits
 
+Cocoon follow-up (2026-09-20): types 26/27 previously fell through the generic
+oscillator, which neither completed their hatching action nor counted down their
+hidden respawn timer. `01:54EE..556B` only animates action 2; its upper reflection
+hides the cocoon and starts 180 decrements, followed by restoration on the next
+dispatch. Actions 0/1 wait for actual hits. Private presentation now follows
+those endpoints, restores the initial dynamic pattern and nine-hit counter, and
+holds the restored pose. It does not spawn another flyer, award points, or write
+gameplay RAM. The original ball-overlap check remains runtime-owned.
+
+The type-specific pattern-upload bit (flags bit 1) is ignored when comparing
+ordinary dispatches, like the existing background-upload bit. Otherwise a
+completed VRAM upload could rewind the private respawn cycle at the seam.
+Fixtures cover both cocoon types, exact hatching/cooldown endpoints, frozen and
+resumed banks, repeated crossings, upload acknowledgements, and authoritative
+hits. Rendered fixtures verify both cocoons return while the upper half stays
+active and the lower source bank remains unchanged; previews are written to
+`inactive-previews/cocoons-{hidden,restored}-upstairs.bmp` by `inactive_animation`.
+
 Dedicated presentation behavior already covers orange aliens (15), brain-side
 orbs (19), bouncing orbs (70/71), orb explosions (60), indicators (42/45/46/47),
 flipper mirroring (2/3), and the table's palette scripts (including tentacles

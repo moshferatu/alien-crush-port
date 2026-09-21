@@ -264,7 +264,7 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
                 for(unsigned field=0;field<32;++field) {
                     const unsigned p=0x1500+field*64+x;
                     // One-shot VRAM upload flags are not actor lifecycle events.
-                    const auto mask=field==1?std::byte{0xef}:std::byte{0xff};
+                    const auto mask=field==1?((type==26 || type==27)?std::byte{0xed}:std::byte{0xef}):std::byte{0xff};
                     unchanged&=(incoming[p]&mask)==(source_[half][p]&mask);
                     if(field!=14 || !random_wait) predicted&=(incoming[p]&mask)==(expected[p]&mask);
                 }

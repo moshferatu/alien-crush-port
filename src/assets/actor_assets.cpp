@@ -497,6 +497,28 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
             }
             continue;
         }
+        // Cocoons, 01:54EE..556B: only the hatching action animates. After
+        // hatching they hide for 180 updates, then restore their initial skin.
+        // Private presentation never spawns the child or processes hits. The
+        // original ball-overlap gate can delay authoritative restoration;
+        // an unchanged source actor still preserves this cosmetic endpoint.
+        if(type==26 || type==27) {
+            if(!(b(0x1540+x)&0x80) || count!=17) continue;
+            const auto action=b(0x1840+x);
+            if(action==3) {
+                if(b(0x1880+x)) put(0x1880+x,b(0x1880+x)-1);
+                else {
+                    put(0x1840+x,0);put(0x18c0+x,0);put(0x1880+x,9);
+                    put(0x1b80+x,64);put(0x1bc0+x,0);put(0x1c00+x,0);put(0x1c40+x,0);
+                    put(0x1540+x,(b(0x1540+x)&0x9f)|2);
+                    const unsigned pointer=std::to_integer<unsigned>(sequences_[0x1df7+type-1])|
+                        (std::to_integer<unsigned>(sequences_[0x1e51+type-1])<<8);
+                    if(pointer>=0xa000 && pointer<0xc000) ram[0x1a80+x]=sequences_[pointer-0xa000];
+                }
+                continue;
+            }
+            if(action!=2) continue;
+        }
         // Lower central mouth, 01:52F7..53F2: finish an existing open/hold/close
         // cycle. The 600-tick hold and cooldown never call FD2B. Do not start
         // a new cycle, spawn flyers, capture a ball, award points or play sound.
@@ -572,6 +594,13 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
         // 01:51A3 / 591F..5999: finite target reactions stop at their
         // designated reflection endpoint, preserving the final sprite.
         const auto action=b(0x1840+x);
+        if(patterns) {
+            put(0x1540+x,b(0x1540+x)|2);
+            if((phase>>8)==14 && !b(0x18c0+x)) put(0x18c0+x,1);
+            if(step&0x8000) {
+                put(0x1840+x,3);put(0x1880+x,180);put(0x1540+x,b(0x1540+x)|0x60);
+            }
+        }
         if(type==20) {
             put(0x1540+x,b(0x1540+x)|0x10);
             if(action==3) {

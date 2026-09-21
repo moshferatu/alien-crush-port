@@ -48,6 +48,57 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
                 "Seam crossing must neither freeze nor resurrect a finished explosion");
         }
     }
+    // 01:54EE..556B: cocoon hatching, hidden cooldown, then a restored skin.
+    for(unsigned type:{26u,27u}) {
+        auto cocoon=fixture(type,17,2,0x300,64);
+        cocoon[0x1544]=std::byte{0x88};
+        const auto pointer=std::to_integer<unsigned>(rom[0x9df7+type-1])|
+            (std::to_integer<unsigned>(rom[0x9e51+type-1])<<8);
+        cocoon[0x1a84]=rom[pointer-0x2000+3];
+        const auto initial=cocoon;
+        run(cocoon,55);
+        require(cocoon[0x1844]==std::byte{2} && cocoon[0x18c4]==std::byte{1},
+            "Cocoon must finish hatching and retain the already-spawned child marker");
+        run(cocoon,1);
+        require(cocoon[0x1844]==std::byte{3} && cocoon[0x1884]==std::byte{180} &&
+            (cocoon[0x1544]&std::byte{0x60})==std::byte{0x60},"Cocoon must hide at hatching endpoint");
+        run(cocoon,180);
+        require(cocoon[0x1844]==std::byte{3} && cocoon[0x1884]==std::byte{},"Cocoon cooldown is 180 decrements");
+        run(cocoon,1);
+        require(cocoon[0x1844]==std::byte{} && cocoon[0x1884]==std::byte{9} &&
+            cocoon[0x18c4]==std::byte{} && cocoon[0x1a84]==rom[pointer-0x2000] &&
+            (cocoon[0x1544]&std::byte{0x60})==std::byte{},"Cocoon must restore its visible initial skin");
+        settled(cocoon);
+        auto waiting=initial;waiting[0x1844]=std::byte{1};settled(waiting);
+        auto timeline=std::make_unique<render::TableAnimation>(rom);
+        timeline->update(actors,initial,false);
+        auto native=initial,continuous=initial;
+        for(unsigned tick=0;tick<420;++tick) {
+            run(continuous,1);
+            // Frozen lower bank for 250 ticks, then ordinary native dispatch
+            // and alternating seam crossings. Upload flags can clear anytime.
+            if(tick>=250 && tick%2==0) run(native,1);
+            native[0x1544]&=std::byte{0xfd};
+            auto incoming=native;
+            if(tick<250 || tick%7<3) {
+                for(unsigned field=0;field<32;++field) for(unsigned x=4;x<64;++x)
+                    std::swap(incoming[0x1500+field*64+x],incoming[0x200+field*64+x]);
+                incoming[0x79]=std::byte{1};
+            }
+            const auto untouched=incoming;
+            timeline->update(actors,incoming,true);
+            require(incoming==untouched,"Cosmetic cocoon update changed gameplay RAM");
+            for(unsigned field=0;field<32;++field) {
+                const auto mask=field==1?std::byte{0xed}:std::byte{0xff};
+                require((timeline->actors(0)[0x1504+field*64]&mask)==(continuous[0x1504+field*64]&mask),
+                    "Cocoon froze or restarted after a seam crossing/upload");
+            }
+        }
+        // A real new hit must still override the completed private cycle.
+        native[0x1844]=std::byte{};native[0x1884]=std::byte{8};
+        timeline->update(actors,native,false);
+        require(timeline->actors(0)[0x1884]==std::byte{8},"Cocoon hit must remain authoritative");
+    }
     // 01:52A1..53F2: the lower central mouth opens, holds for 600 ticks,
     // then closes once. Its hold does not call the sprite oscillator.
     auto mouth=fixture(20,3,2,0x200,-64);

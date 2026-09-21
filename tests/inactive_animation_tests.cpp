@@ -160,6 +160,51 @@ void seam_continuity(std::span<const std::byte> rom,const diagnostics::Reference
     timeline->update(actor_assets,hit,true);
     require(timeline->actors(1)[0x1500+tentacle]==std::byte{},"Retained actor survived authoritative removal");
 }
+void cocoon_rendering(std::span<const std::byte> rom,const diagnostics::ReferenceSnapshot& video,
+    std::span<const std::byte> ram) {
+    require(ram[0x79]==std::byte{1},"Cocoon rendering requires ball in upper half");
+    std::array<std::byte,8192> source{};
+    std::copy(ram.begin(),ram.end(),source.begin());
+    std::fill(source.begin()+0x1500,source.begin()+0x1d00,std::byte{});
+    std::fill(source.begin()+0x1245,source.begin()+0x1445,std::byte{});
+    source[0x53]=source[0x54]=source[0xf6]=std::byte{};
+    unsigned found=0;
+    for(unsigned x=4;x<64;++x) {
+        const auto type=std::to_integer<unsigned>(source[0x200+x]);
+        if(type!=26 && type!=27) {
+            for(unsigned field=0;field<32;++field) source[0x200+x+64*field]=std::byte{};
+            continue;
+        }
+        ++found;source[0x240+x]=std::byte{0xe8};source[0x540+x]=std::byte{3};
+        source[0x580+x]=std::byte{180};source[0x5c0+x]=std::byte{1};source[0x740+x]=std::byte{17};
+        source[0x880+x]=std::byte{0xc0};source[0x8c0+x]=std::byte{255};
+        source[0x900+x]=std::byte{};source[0x940+x]=std::byte{16};
+        const auto pointer=std::to_integer<unsigned>(rom[0x9df7+type-1])|
+            (std::to_integer<unsigned>(rom[0x9e51+type-1])<<8);
+        source[0x780+x]=rom[pointer-0x2000+16];
+    }
+    require(found==2,"Expected both original cocoon actors");
+    const auto untouched=source;
+    auto table=std::make_unique<render::TablePlayfield>(rom);
+    auto current=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+    auto previous=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+    render::TableTransitionHold hold;
+    std::optional<render::Image> hidden,restored;
+    for(unsigned tick=0;tick<=185;++tick) {
+        current->frame=6000+tick;
+        auto image=table->cabinet_frame(*current,tick?previous.get():nullptr,source,nullptr,hold);
+        require(image.has_value(),"Cocoon fixture lost cabinet view");
+        if(tick==180) {hidden=image;preview(*image,"cocoons-hidden-upstairs");}
+        if(tick==181) {restored=image;preview(*image,"cocoons-restored-upstairs");}
+        if(tick>181) require(image->pixels==restored->pixels,"Restored cocoons must stay still without hits");
+        *previous=*current;
+    }
+    unsigned left=0,right=0;
+    for(unsigned y=240;y<456;++y) for(unsigned x=0;x<256;++x)
+        if(hidden->pixels[y*256+x]!=restored->pixels[y*256+x]) ++(x<128?left:right);
+    require(left>20 && right>20,"Both cocoons must visibly return while lower source bank remains frozen");
+    require(source==untouched,"Cocoon presentation modified source bank");
+}
 void slingshot_rendering(std::span<const std::byte> rom,const diagnostics::ReferenceSnapshot& video,
     std::span<const std::byte> ram) {
     struct Artwork {
@@ -623,6 +668,7 @@ int main(int argc,char** argv) {
             }
             if(n==999) {
                 seam_continuity(rom,video,ram);
+                cocoon_rendering(rom,video,ram);
                 slingshot_rendering(rom,video,ram);
                 require(ram[0x79]==std::byte{1} && image,"Eye seam fixture requires active upper table");
                 auto eyes=assets::inactive_table_actor_ram(ram);
