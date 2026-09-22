@@ -2,6 +2,7 @@
 #include "alien_crush/runtime/game_runtime.hpp"
 #include "alien_crush/runtime/reference_launcher.hpp"
 #include "alien_crush/core/rom_image.hpp"
+#include "alien_crush/input/nudge_multiplier.hpp"
 #include <libretro.h>
 #include <array>
 #include <atomic>
@@ -19,6 +20,7 @@ extern "C" bool ac_copy_cpu_snapshot(unsigned short*,unsigned char*);
 extern "C" bool ac_copy_video_snapshot(unsigned short*,unsigned short*,unsigned short*,unsigned short*);
 extern "C" void ac_set_continuous_handoff(bool);
 extern "C" void ac_set_cabinet_controls(bool);
+extern "C" void ac_set_nudge_motion(unsigned short (*)(unsigned short,unsigned short));
 #endif
 
 namespace alien_crush {
@@ -28,6 +30,8 @@ struct CoreOption { std::string_view key; const char* value; };
 class Reference final : public ReferenceRuntime {
     HandoffMode handoff;
     ControlMode controls;
+    double nudge_multiplier;
+    std::string nudge_revision;
     inline static std::atomic<Reference*> active{};
     std::thread::id owner = std::this_thread::get_id();
     bool initialized{}, loaded{}, failed{}, core_started{};
@@ -161,10 +165,19 @@ class Reference final : public ReferenceRuntime {
         return (mask&bit)?1:0;
     }
 public:
-    explicit Reference(HandoffMode mode,ControlMode input_mode) : handoff(mode),controls(input_mode) {
+    explicit Reference(HandoffMode mode,ControlMode input_mode,double multiplier) : handoff(mode),controls(input_mode),nudge_multiplier(multiplier) {
+        const auto suffix=input::nudge_revision_suffix(multiplier);
+        if(!suffix.empty()) {
+            auto base=std::string(revision());
+            // Save headers allow 64 bytes. Keep the pinned revision prefix and
+            // all mode markers, with room for a lossless double representation.
+            base.erase(15,32);
+            nudge_revision=base+suffix;
+        }
 #ifndef AC_REFERENCE_VIDEO_OBSERVER
         if(mode==HandoffMode::continuous) throw std::runtime_error("Continuous handoff requires the video-enabled backend");
         if(controls==ControlMode::cabinet) throw std::runtime_error("Cabinet controls require the video-enabled backend");
+        if(multiplier!=1) throw std::runtime_error("Nudge multiplier requires the video-enabled backend");
 #endif
         pixels.reserve(2048U*264U); audio.reserve(131072);
         Reference* empty=nullptr;
@@ -192,6 +205,9 @@ public:
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
         ac_set_continuous_handoff(handoff==HandoffMode::continuous);
         ac_set_cabinet_controls(controls==ControlMode::cabinet);
+        ac_set_nudge_motion(nudge_multiplier==1?nullptr:+[](unsigned short motion,unsigned short impulse) -> unsigned short {
+            return input::scale_nudge_motion(motion,impulse,active.load()->nudge_multiplier);
+        });
 #endif
         retro_set_controller_port_device(0,RETRO_DEVICE_JOYPAD);
         retro_set_controller_port_device(1,RETRO_DEVICE_JOYPAD);
@@ -208,6 +224,7 @@ public:
     double frames_per_second() const override { return av.timing.fps; }
     int sample_rate() const override { return static_cast<int>(av.timing.sample_rate+0.5); }
     std::string_view revision() const override {
+        if(!nudge_revision.empty()) return nudge_revision;
 #ifdef AC_REFERENCE_STATE_EXTENSION
         if(controls==ControlMode::cabinet) return handoff==HandoffMode::continuous?
             "beetle-" AC_BEETLE_REVISION "-s1-h1-controls1":"beetle-" AC_BEETLE_REVISION "-s1-controls1";
@@ -322,5 +339,5 @@ public:
     }
 };
 }
-std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls) { return std::make_unique<Reference>(mode,controls); }
+std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls,double multiplier) { return std::make_unique<Reference>(mode,controls,multiplier); }
 }

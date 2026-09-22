@@ -70,5 +70,5 @@ enum class HandoffMode { original, continuous };
 enum class ControlMode { original, cabinet };
 // Mode is fixed for the lifetime of a runtime and included in its state identity.
 std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode=HandoffMode::original,
-    ControlMode controls=ControlMode::original);
+    ControlMode controls=ControlMode::original,double nudge_multiplier=1.0);
 }

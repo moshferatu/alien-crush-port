@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "alien_crush/render/animation_scene.hpp"
 #include "alien_crush/assets/table_assets.hpp"
 #include "alien_crush/assets/actor_assets.hpp"
 #include "alien_crush/diagnostics/reference_snapshot.hpp"
@@ -54,6 +55,7 @@ public:
     void reset();
     bool held() const { return held_; }
     bool ball_updated() const { return ball_updated_; }
+    const TableBallBackdrop* ball_backdrop() const {return ball_updated_ && backdrop_?&*backdrop_:nullptr;}
     std::optional<Image> present(std::optional<Image> live,std::uint64_t frame,
         unsigned table,unsigned camera,std::span<const std::byte> ram,
         const TableBallBackdrop* backdrop=nullptr,const Sprite* ball=nullptr);
@@ -84,6 +86,8 @@ class TablePlayfield {
     assets::LowerCounterTiles counter_;
     std::array<std::vector<std::array<std::uint16_t,512>>,2> partial_fades_;
     mutable TableAnimation animation_;
+    bool capture_animation_{};
+    mutable std::optional<AnimationScene> animation_scene_;
     mutable std::uint64_t animation_frame_{};
     mutable unsigned animation_half_{2};
     mutable std::uint64_t cabinet_frame_number_{~std::uint64_t{0}};
@@ -98,6 +102,8 @@ class TablePlayfield {
         std::vector<std::uint8_t>* coverage,bool cabinet=false) const;
 public:
     explicit TablePlayfield(std::span<const std::byte> rom);
+    void capture_animation(bool value) {capture_animation_=value;}
+    const AnimationScene* animation_scene() const {return animation_scene_?&*animation_scene_:nullptr;}
     // Full table throughout main-table loading, fades and score awards. Menus
     // and bonus rooms return empty. The diagnostic compose contract stays exact.
     std::optional<Image> cabinet_frame(const diagnostics::ReferenceSnapshot& current,
@@ -111,8 +117,9 @@ public:
         const diagnostics::ReferenceSnapshot& previous,unsigned table,unsigned camera,
         std::span<const std::byte> ram,const TableRaster* raster=nullptr,
         std::optional<TableBallBackdrop>* backdrop=nullptr) const;
-    std::optional<Sprite> transition_ball(unsigned table,std::span<const std::byte> ram) const;
+    std::optional<Sprite> transition_ball(unsigned table,std::span<const std::byte> ram,
+        MotionPosition* subpixel=nullptr) const;
     Image inactive_view(unsigned table,std::span<const std::byte> ram,std::span<std::uint8_t> visible_sprites={},
-        std::span<std::uint8_t> blockers={},std::span<const std::uint16_t> palette={}) const;
+        std::span<std::uint8_t> blockers={},std::span<const std::uint16_t> palette={},CompositionCapture* capture=nullptr) const;
 };
 }

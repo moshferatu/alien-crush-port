@@ -14,6 +14,25 @@ To compare with timer pacing, run `alien-crush.exe --cabinet --no-vsync`
 (or `Launch-Cabinet.cmd --no-vsync`). Both modes use the optimized stitched
 renderer. If VSync is unavailable, timer pacing is selected automatically.
 
+On high-refresh displays, cabinet mode smooths moving sprites throughout the
+main table and bonus stages, including flippers, aliens, bumpers, guards and the
+ball. Sprite positions interpolate separately; pose and palette changes blend
+at those positions. The title background scrolls at fractional positions, and
+the backglass logo's color animation also blends between ticks. Swallowing
+mouths still cover the ball. Physics, audio, animation scripts and recordings
+retain the original 59.826 Hz rate. Smoothing adds up to one game tick of visual
+latency. Pausing freezes the table, and scene changes discard outgoing history.
+Desktop mode retains the original presentation.
+Smoothing defaults on when the playfield display reports more than 66 Hz.
+Use **F7** to compare while playing, or `Launch-Cabinet.cmd --no-smooth` to
+disable it at startup (`--smooth` enables it). F6 still cycles cabinet windows.
+If refresh detection is incorrect, use `--refresh 144` (or your monitor's actual
+rate). `--no-vsync --refresh 240` exercises the 240 Hz timer presentation path;
+the monitor must support that rate to display every generated picture.
+Normal exit reports presentation pictures separately from simulation frames.
+See [smoothing implementation and checks](docs/MOTION_SMOOTHING.md) for measured
+results and the difference between generated pictures and physical refreshes.
+
 On normal exit, the executable automatically prints a native coverage summary
 to the console, including session frame counts for the native stitched playfield
 and the reference viewport. These count game frames, including catch-up frames,
@@ -137,6 +156,7 @@ playfield, backglass and score windows onto your monitors, or use these keys:
 | Cabinet key | Action |
 | --- | --- |
 | F6 / Shift+F6 | Focus the next / previous window: playfield, backglass, score |
+| F7 | Toggle high-refresh cabinet animation smoothing |
 | F10 / Shift+F10 | Move the focused window to the next / previous connected monitor |
 | R / Shift+R | Rotate the focused window clockwise / counterclockwise by 90 degrees |
 | F11 | Toggle fullscreen for the focused window |
@@ -169,7 +189,7 @@ score and a "PRESS RUN" prompt, hiding the inactive score and ball counter.
 Attract-mode demos show the same high score and prompt with a "DEMO" label;
 simulated scores and ball counts stay hidden. Run returns to the original menus.
 In a bonus room, the score remains the game's cumulative total and the lower-right
-field shows BONUS 1–4 instead of the main-table ball counter. Bonus rooms use the
+field shows BONUS 1â€“4 instead of the main-table ball counter. Bonus rooms use the
 original single-screen playfield in cabinet mode, aligned to the bottom of the
 window like the main table.
 When the original bonus loop ends, the panel displays ROUND OVER while retaining
@@ -248,7 +268,7 @@ now operates only the right flipper. The fourth launches while the ball is seate
 For an additional dedicated launch/confirm button, use `ACINPUTS2` with a ninth
 index (for example `0 1 2 3 4 -1 -1 -1 5`). Existing eight-entry `ACINPUTS1`
 files remain readable. **The numbers above are examples, not
-verified PinOne defaults.** Use `-1` to disable a mapping; valid indices are 0–255.
+verified PinOne defaults.** Use `-1` to disable a mapping; valid indices are 0â€“255.
 The name is a nonempty case-insensitive substring; the first matching device with
 all configured buttons is selected. Choose a distinctive name when several boards
 are connected. Settings load at startup in `--cabinet` mode.
@@ -294,6 +314,16 @@ The default axes follow the manufacturer's
 Physical shakes are ignored while paused, in menus, and during demos. Recordings
 store the resulting nudge button presses; replay ignores live accelerometer input.
 Keyboard/button nudging remains available.
+
+Use `--nudge-multiplier 2` to double the force applied to the ball, matching
+Devil's Crush's option. For example, run `Launch-Cabinet.cmd --nudge-multiplier 2`
+or `alien-crush.exe --cabinet --nudge-multiplier 2`. Decimal factors from 0 to 16
+are accepted: 1 preserves the original force, 0 removes the ball impulse, and
+0.5 halves it. This applies to keyboard, controller and physical nudges, in both
+desktop and cabinet modes. It does not change accelerometer sensitivity, screen
+shake, cooldown or tilt penalties. Attract demos retain their original force.
+Recordings retain their multiplier automatically; an explicitly conflicting replay
+flag is rejected. Quick states require the same multiplier used when saving.
 
 Plunger setup accepts the same settings as Devil's Crush. Copy the working
 `input.plunger.*` lines from that game's `portable-data/cabinet.ini` into Alien
@@ -360,7 +390,7 @@ ownership. Replay reproduces accepted commands without needing the device.
 This has virtual SDL coverage; physical PinOne calibration and cabinet acceptance
 are still pending.
 
-Cabinet mode always uses the 256×456 full-table view. The former host
+Cabinet mode always uses the 256Ã—456 full-table view. The former host
 `--stitched` option and V view toggle have been removed. Both backgrounds
 come from your ROM; the active half has live sprites and background changes,
 with standard score digits removed. The original pixel aspect ratio is preserved.

@@ -357,7 +357,7 @@ TablePlayfield::TablePlayfield(std::span<const std::byte> rom)
     }
 }
 Image TablePlayfield::inactive_view(unsigned table,std::span<const std::byte> ram,std::span<std::uint8_t> visible,
-    std::span<std::uint8_t> blockers,std::span<const std::uint16_t> palette) const {
+    std::span<std::uint8_t> blockers,std::span<const std::uint16_t> palette,CompositionCapture* capture) const {
     if(table>1) throw std::runtime_error("Unknown inactive table");
     auto projected=assets::inactive_table_actor_ram(ram);
     assets::apply_inactive_table_events(projected,ram,table);
@@ -385,12 +385,13 @@ Image TablePlayfield::inactive_view(unsigned table,std::span<const std::byte> ra
     for(const auto& piece:assets::assemble_table_overlay(projected,next_slot))
         std::copy(piece.words.begin(),piece.words.end(),sat.begin()+piece.slot*4);
     return render::compose(vram,palette.empty()?std::span<const std::uint16_t>(tables_[table].palette):palette,
-        sat,{256,240,0,0,0,0xc0},visible,blockers);
+        sat,{256,240,0,0,0,0xc0},visible,blockers,0,capture);
 }
 std::optional<Image> TablePlayfield::cabinet_frame(const diagnostics::ReferenceSnapshot& current,
     const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram,
     const TableRaster* raster,TableTransitionHold& transition) const {
     if(previous && current.frame==cabinet_frame_number_) return cabinet_image_;
+    animation_scene_.reset();
     const bool frozen=cabinet_image_ && previous && (std::to_integer<unsigned>(ram[0xf6])&2) &&
         current.frame==animation_frame_+1 && animation_half_==1-std::to_integer<unsigned>(ram[0x79]);
     cabinet_image_=cabinet_frame_impl(current,previous,ram,raster,transition);
@@ -409,6 +410,7 @@ std::optional<Image> TablePlayfield::cabinet_frame(const diagnostics::ReferenceS
         const unsigned y=112+(state.table_code==0?table_half_offset:0);
         for(unsigned i=0;i<3;++i) {
             const auto& digit=digits[i].image;
+            if(animation_scene_) animation_scene_->layers.push_back({0x300000+i,{double(136+i*16),double(y)},digit,true});
             for(unsigned row=0;row<16;++row) for(unsigned col=0;col<16;++col) {
                 const auto color=digit.pixels[row*16+col];
                 if(color>>24) cabinet_image_->pixels[(y+row)*256+136+i*16+col]=color;
@@ -479,19 +481,23 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
     const unsigned camera=std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8);
     std::optional<Image> live;
     std::optional<TableBallBackdrop> backdrop;
+    const auto ball=transition_ball(half,ram);
     if(previous && current.frame==previous->frame+1 && camera==0 && matches(current,half)) {
         // The retained actors are already in the destination half's epoch.
         // Its first loaded frame need not hold the outgoing animation image.
         const auto* ready_raster=matches(*previous,half)?raster:nullptr;
-        live=compose_impl(current,*previous,half,camera,ram,ready_raster,false,nullptr,true);
-        if(live) {
+        if(!ball) live=compose_impl(current,*previous,half,camera,ram,ready_raster,false,nullptr,true);
+        if(ball || live) {
+            // The transition presenter replaces the ball from this clean
+            // backdrop anyway. Composing an additional ball-included image
+            // first only doubled the most expensive work on each game tick.
             TableBallBackdrop clean;
             if(auto image=compose_impl(current,*previous,half,camera,ram,ready_raster,true,&clean.sprites,true)) {
+                if(ball) live=*image;
                 clean.image=std::move(*image);backdrop=std::move(clean);
             }
         }
     }
-    const auto ball=transition_ball(half,ram);
     live=transition.present(std::move(live),current.frame,half,camera,ram,
         backdrop?&*backdrop:nullptr,ball?&*ball:nullptr);
     if(live) return live;
@@ -546,7 +552,7 @@ std::optional<Image> TablePlayfield::compose(const diagnostics::ReferenceSnapsho
     }
     return result;
 }
-std::optional<Sprite> TablePlayfield::transition_ball(unsigned table,std::span<const std::byte> ram) const {
+std::optional<Sprite> TablePlayfield::transition_ball(unsigned table,std::span<const std::byte> ram,MotionPosition* subpixel) const {
     if(ram.size()!=8192) throw std::runtime_error("Transition ball requires 8192-byte RAM");
     auto b=[&](std::size_t p){return std::to_integer<unsigned>(ram[p]);};
     if(table>1 || b(0x1500)!=1 || (b(0x1540)&0xa0)!=0x80 || (b(0x1a00)&0xa0)) return std::nullopt;
@@ -570,6 +576,9 @@ std::optional<Sprite> TablePlayfield::transition_ball(unsigned table,std::span<c
     const double t=std::clamp((world_y-256.0)/64.0,0.0,1.0);
     const double correction=(224-table_half_offset)*t*t*(3-2*t);
     ball.y=static_cast<int>(std::floor(world_y-correction))+piece.y-64;
+    // Interpolate the same raster endpoints as unsmoothed presentation. Stored
+    // fractional residue must not displace a stationary ball in the launcher.
+    if(subpixel) *subpixel={double(ball.x),double(ball.y)};
     return ball;
 }
 std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSnapshot& current,
@@ -642,6 +651,8 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         const bool ball=s[0]==96 && s[1]==264;
         if(s[3]==0x8f && digit && (cabinet || score || ball)) hidden|=std::uint64_t{1}<<i;
     }
+    std::array<CompositionCapture,2> captures;
+    const bool capture=cabinet && capture_animation_;
     Image live;
     std::vector<std::uint8_t> live_sprites(256*240),inactive_sprites(256*240);
     std::vector<std::uint8_t> active_blocks(coverage?256*240:0);
@@ -679,8 +690,8 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
                 for(auto& write:palette) if(animation_.owns_color(table,write.address)) write.value=active_palette[write.address];
             }
         }
-        live=render::compose_palette_raster(active_vram,initial_palette,sat,{256,240,0,0,0,0xc0},writes,palette,live_sprites,active_blocks,hidden);
-    } else live=render::compose(active_vram,active_palette,sat,{256,240,0,0,0,0xc0},live_sprites,active_blocks,hidden);
+        live=render::compose_palette_raster(active_vram,initial_palette,sat,{256,240,0,0,0,0xc0},writes,palette,live_sprites,active_blocks,hidden,capture?&captures[table]:nullptr);
+    } else live=render::compose(active_vram,active_palette,sat,{256,240,0,0,0,0xc0},live_sprites,active_blocks,hidden,capture?&captures[table]:nullptr);
     std::vector<std::uint8_t> inactive_blocks(coverage?256*240:0);
     std::span<const std::uint16_t> inactive_palette;
     auto animated_palette=tables_[1-table].palette;
@@ -693,7 +704,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
             inactive_palette=animated_palette;
         }
     }
-    const auto inactive=inactive_view(1-table,ram,inactive_sprites,inactive_blocks,inactive_palette);
+    const auto inactive=inactive_view(1-table,ram,inactive_sprites,inactive_blocks,inactive_palette,capture?&captures[1-table]:nullptr);
     if(coverage) {
         coverage->assign(256*table_playfield_height,0);
         const auto& lower=table==0?active_blocks:inactive_blocks;
@@ -722,6 +733,77 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
     }
     auto result=table==0?stitch_table_views(live,inactive,0,live_sprites,inactive_sprites):
         stitch_table_views(inactive,live,1,inactive_sprites,live_sprites);
+    if(capture) {
+        AnimationScene scene;
+        scene.key=1;
+        scene.background=stitch_table_views(captures[0].background,captures[1].background,table);
+        for(unsigned half=0;half<2;++half) {
+            auto projected=half==table?std::array<std::byte,8192>{}:assets::inactive_table_actor_ram(ram);
+            if(half==table) std::copy(ram.begin(),ram.end(),projected.begin());
+            else {
+                assets::apply_inactive_table_events(projected,ram,half);
+                projected[0x79]=static_cast<std::byte>(half);
+                for(const auto address:{0x53,0x54,0x99,0x9a}) projected[address]=ram[address];
+            }
+            projected[0x16]=projected[0x17]=std::byte{};
+            projected[0x2e]=std::byte{};projected[0x2f]=std::byte{2};projected[0x50]=std::byte{10};
+            if(hide_ball) projected[0x1540]|=std::byte{0x20};
+            const auto pieces=assets::assemble_table_actors(actors_,projected);
+            std::array<std::uint16_t,256> attributes{};
+            std::array<std::uint64_t,64> identities{};
+            std::array<unsigned,64> ordinal{};
+            std::array<MotionPosition,64> anchors{};
+            std::array<bool,64> actor_piece{};
+            std::array<bool,64> mouths{};
+            for(unsigned slot=0;slot<64;++slot) identities[slot]=0x100000+half*64+slot;
+            for(const auto& piece:pieces) {
+                std::copy(piece.words.begin(),piece.words.end(),attributes.begin()+piece.slot*4);
+                const auto type=std::to_integer<unsigned>(projected[0x1500+piece.actor]);
+                identities[piece.slot]=half*0x10000+piece.actor*256+ordinal[piece.actor]++;
+                identities[piece.slot]|=static_cast<std::uint64_t>(type)<<32;
+                const auto word=[&](unsigned lo,unsigned hi) {
+                    return std::to_integer<unsigned>(projected[lo+piece.actor])|
+                        (std::to_integer<unsigned>(projected[hi+piece.actor])<<8);
+                };
+                anchors[piece.slot]={double(static_cast<std::int16_t>(word(0x15c0,0x1600)))-32,
+                    double(static_cast<std::int16_t>(word(0x1680,0x16c0)))-64};
+                actor_piece[piece.slot]=true;
+                mouths[piece.slot]=half==table && (type==11 || type==12 || type==13 || type==34) &&
+                    (std::to_integer<unsigned>(projected[0x1540+piece.actor])&0x0c);
+            }
+            unsigned overlay_index=0;
+            for(const auto& piece:assets::assemble_table_overlay(projected,pieces.empty()?10:pieces.back().slot+1)) {
+                std::copy(piece.words.begin(),piece.words.end(),attributes.begin()+piece.slot*4);
+                identities[piece.slot]=0x100000+half*64+overlay_index++;
+            }
+            // Only positions/dimensions are used; colors come from the exact raster.
+            const auto decoded=animation_geometry(attributes);
+            const auto& source=half==table?live:inactive;
+            auto split=split_animation(source,captures[half],decoded,1);
+            for(auto& layer:split.layers) {
+                const auto slot=static_cast<unsigned>(layer.id);
+                layer.id=identities[slot];layer.foreground=mouths[slot];
+                const int ox=static_cast<int>(layer.position.x),oy=static_cast<int>(layer.position.y);
+                if(actor_piece[slot]) {
+                    layer.pose_offset={layer.position.x-anchors[slot].x,layer.position.y-anchors[slot].y};
+                    layer.actor_group=layer.id&~std::uint64_t{255};
+                }
+                for(int y=0;y<layer.image.height;++y) for(int x=0;x<layer.image.width;++x) {
+                    const int dx=ox+x,dy=oy+y;
+                    if(dx<0 || dx>=256 || dy<0 || dy>=240) continue;
+                    bool visible=true;
+                    if(half==0 && dy<240-table_half_offset)
+                        visible=!captures[1].owner[(dy+table_half_offset)*256+dx] || table==0;
+                    if(half==1 && dy>=table_half_offset)
+                        visible=!captures[0].owner[(dy-table_half_offset)*256+dx] || table==1;
+                    if(!visible) layer.image.pixels[y*layer.image.width+x]=0;
+                }
+                layer.position.y+=half==0?table_half_offset:0;
+                scene.layers.push_back(std::move(layer));
+            }
+        }
+        animation_scene_=std::move(scene);
+    }
     if(cabinet) for(unsigned half=0;half<2;++half) {
         auto projected=half==table?std::array<std::byte,8192>{}:assets::inactive_table_actor_ram(ram);
         if(half==table) std::copy(ram.begin(),ram.end(),projected.begin());
@@ -753,13 +835,20 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         // its correct ordering. Add only pixels clipped by that old viewport.
         for(auto it=pieces.rbegin();it!=pieces.rend();++it) {
             const auto& sprite=flight[it->slot];
+            AnimationLayer extension{0x200000u+half*0x10000u+it->actor*256u+it->descriptor,
+                {double(sprite.x),double(sprite.y)},
+                {sprite.width,sprite.height,std::vector<std::uint32_t>(sprite.image.pixels.size())}};
             for(int y=0;y<sprite.height;++y) for(int x=0;x<sprite.width;++x) {
                 const int dx=sprite.x+x,dy=sprite.y+y;
                 if(dx<0 || dx>=256 || dy<0 || dy>=table_playfield_height ||
                     (!half?dy>=table_half_offset:dy<240)) continue;
                 const auto color=sprite.image.pixels[y*sprite.width+x];
-                if(color>>24) result.pixels[dy*256+dx]=color;
+                if(color>>24) {
+                    result.pixels[dy*256+dx]=color;
+                    if(capture) extension.image.pixels[y*sprite.width+x]=color;
+                }
             }
+            if(capture) animation_scene_->layers.push_back(std::move(extension));
         }
     }
     return result;

@@ -23,6 +23,8 @@ extern "C" bool ac_handoff_audit_result(unsigned long long* checked) {
 }
 static bool ac_continuous_handoff = false;
 static bool ac_cabinet_controls = false;
+static unsigned short (*ac_nudge_motion)(unsigned short,unsigned short) = nullptr;
+extern "C" void ac_set_nudge_motion(unsigned short (*callback)(unsigned short,unsigned short)) { ac_nudge_motion=callback; }
 extern "C" void ac_set_cabinet_controls(bool enabled) { ac_cabinet_controls=enabled; }
 static unsigned long long ac_handoff_packets = 0, ac_handoff_waits = 0;
 extern "C" void ac_set_continuous_handoff(bool enabled) {

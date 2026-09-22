@@ -19,7 +19,8 @@ class Cabinet {
     std::uint64_t backglass_tick_{};
 public:
     Cabinet(Presentation& playfield,const std::filesystem::path& data,std::span<const std::byte> rom);
-    void show(std::span<const std::byte> ram);
+    void show(std::span<const std::byte> ram,bool smoothing=false,double fraction=1);
+    void repeat(double fraction) {backglass_.repeat(fraction);}
     bool owns(SDL_Window*) const;
     bool handle_key(const SDL_KeyboardEvent&);
     // False means the display topology is temporarily unavailable; retry later.

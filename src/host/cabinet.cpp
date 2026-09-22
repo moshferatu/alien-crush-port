@@ -164,10 +164,12 @@ bool Cabinet::recover_displays() {
     }
     return true;
 }
-void Cabinet::show(std::span<const std::byte> ram) {
+void Cabinet::show(std::span<const std::byte> ram,bool smoothing,double fraction) {
     if(backglass_image_ || backglass_animation_) {
         const auto& art=backglass_image_?*backglass_image_:backglass_animation_->frame(backglass_tick_++);
-        backglass_.show({0,art.width,art.height,art.pixels,{}},art.width*(backglass_animation_?5:1),art.height*(backglass_animation_?4:1));
+        const render::AnimationScene animation{art,{},100};
+        backglass_.show({backglass_tick_,art.width,art.height,art.pixels,{}},art.width*(backglass_animation_?5:1),art.height*(backglass_animation_?4:1),
+            false,{},nullptr,nullptr,{},fraction,smoothing && backglass_animation_?&animation:nullptr);
     } else backglass_.panel("ALIEN CRUSH");
     const auto state=diagnostics::observe_alien_state(ram);
     const auto image=score_panel_.compose(state);

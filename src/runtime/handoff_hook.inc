@@ -2,6 +2,17 @@
 // Only the two main-table handoff call trees, from live play or attract mode. No persistent execution
 // phase exists outside the serialized CPU/RAM state; IRQs fail the stack guard.
         {
+        // 01:4443 is the return after the original signed half-impulse was
+        // added to ball Y velocity. The early-return branches also land here,
+        // so repeat their ball/action gates before reading the scratch impulse.
+        // Preserve the nudge vector, screen shake, input cooldown and tilt count.
+        if(ac_nudge_motion && PC==0x4443 && MPR[1]==0xf8 && MPR[2]==1 &&
+            !RdMem(0x2076) && RdMem(0x3500)==1 && !(RdMem(0x3840)&0x21)) {
+            const unsigned short motion=RdMem(0x3780)|(RdMem(0x37c0)<<8);
+            const unsigned short impulse=RdMem(0x2004)|(RdMem(0x2005)<<8);
+            const unsigned short scaled=ac_nudge_motion(motion,impulse);
+            WrMem(0x3780,scaled&255);WrMem(0x37c0,scaled>>8);
+        }
         // Original flipper routines, after initialization and before their
         // ordinary motion/collision code. Only live, initialized flipper actors
         // in table scenes may use these masks or bypass the shooter/ball gate.

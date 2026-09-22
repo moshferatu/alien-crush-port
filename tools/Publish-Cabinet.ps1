@@ -126,6 +126,11 @@ See README.md for controls, monitor setup and configuration file formats.
 Window placement, raw buttons, physical nudge and plunger settings share portable-data/cabinet.ini.
 PinOne accelerometer nudging works automatically in cabinet mode (axes 0/1).
 Optional input.nudge.* settings adjust sensitivity; see README.md.
+For stronger ball nudges, run Launch-Cabinet.cmd --nudge-multiplier 2.
+The factor accepts 0 through 16 (default 1); it changes force, not shake detection.
+Sprite movement, animation poses, palette effects and title scrolling are smoothed on high-refresh playfield monitors.
+F7 toggles smoothing; Launch-Cabinet.cmd --no-smooth disables it at startup.
+Use --refresh 144 (or your actual refresh rate) only if display detection is wrong.
 Older separate configuration files are imported on startup and retained as backups.
 Normal exit writes the combined settings. Edit plunger values in this main INI.
 '@
