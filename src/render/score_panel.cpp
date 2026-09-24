@@ -7,8 +7,8 @@
 namespace alien_crush::render {
 namespace {
 // Five-bit rows. Labels are host UI, not claimed as cartridge font assets.
-constexpr std::string_view letters="SCOREHIGBALPUNDMVT";
-constexpr std::array<std::array<unsigned,7>,18> labels{{
+constexpr std::string_view letters="SCOREHIGBALPUNDMVTFJKQWXYZ.";
+constexpr std::array<std::array<unsigned,7>,27> labels{{
     {15,16,16,14,1,1,30},{14,17,16,16,16,17,14},
     {14,17,17,17,17,17,14},{30,17,17,30,20,18,17},
     {31,16,16,30,16,16,31},{17,17,17,31,17,17,17},
@@ -17,10 +17,15 @@ constexpr std::array<std::array<unsigned,7>,18> labels{{
     {16,16,16,16,16,16,31},{30,17,17,30,16,16,16},
     {17,17,17,17,17,17,14},{17,25,25,21,19,19,17},
     {30,17,17,17,17,17,30},{17,27,21,21,17,17,17},{17,17,17,17,17,10,4},
-    {31,4,4,4,4,4,4}}};
+    {31,4,4,4,4,4,4},
+    {31,16,16,30,16,16,16},{7,2,2,2,2,18,12},
+    {17,18,20,24,20,18,17},{14,17,17,17,21,18,13},
+    {17,17,17,21,21,21,10},{17,17,10,4,10,17,17},
+    {17,17,10,4,4,4,4},{31,1,2,4,8,16,31},
+    {0,0,0,0,0,6,6}}};
 void label(Image& image,std::string_view text,int x,int y) {
     for(const char c:text) {
-        if(c==' ') {x+=6;continue;}
+        if(c==' ' || c=='\0') {x+=6;continue;}
         const auto& glyph=labels.at(letters.find(c));
         for(int row=0;row<7;++row) for(int col=0;col<5;++col)
             if(glyph[static_cast<std::size_t>(row)]&(1u<<(4-col)))
@@ -73,6 +78,7 @@ Image ScorePanel::compose(const diagnostics::AlienState& state) const {
         label(result,"HIGH SCORES",95,2);
         for(unsigned rank=0;rank<state.high_scores.size();++rank) {
             number(rank+1,38,16+static_cast<int>(rank)*16,1);
+            label(result,{state.high_score_initials[rank].data(),3},64,20+static_cast<int>(rank)*16);
             number(state.high_scores[rank],160,16+static_cast<int>(rank)*16,1);
         }
         return result;

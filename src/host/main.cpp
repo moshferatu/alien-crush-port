@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "presentation.hpp"
+#include "startup_display.hpp"
 #include "alien_crush/render/viewport_actors.hpp"
 #include "cabinet.hpp"
 #include "cabinet_input.hpp"
@@ -155,6 +156,7 @@ int main(int argc,char** argv) {
         bool smooth_active=cabinet_mode && smoothing && refresh_hz>runtime->frames_per_second()*1.1;
         std::cout<<"Cabinet animation smoothing: "<<(smooth_active?"on":"off")<<" ("<<refresh_hz<<" Hz; F7 toggles)\n";
         std::uint64_t count=0,stitched_frames=0;
+        host::StartupDisplay startup_display;
         unsigned catch_up=0;
         while(running && (!limit || count<limit) && (!playback || count<playback->inputs.size())) {
             SDL_Event event;
@@ -241,7 +243,7 @@ int main(int argc,char** argv) {
             const auto command=playback?playback->plunger_at(static_cast<std::size_t>(count)):cabinet_plunger.apply(*runtime,input,focused);
             const auto frame_started=SDL_GetTicksNS();
             if(table_raster) runtime->observe_display(true);
-            const auto frame=playback?recording::advance(*runtime,input,command):runtime->advance(input);
+            auto frame=playback?recording::advance(*runtime,input,command):runtime->advance(input);
             const auto runtime_ended=timing.is_open()?SDL_GetTicksNS():0;
             auto compose_ended=runtime_ended;
             // A slow refresh or isolated stall can leave multiple game frames
@@ -257,7 +259,18 @@ int main(int argc,char** argv) {
             // Snapshot inspection invalidates borrowed views. Keep this frame's
             // audio through composition. Every frame is queued on the same clock.
             const std::vector<std::int16_t> sound(frame.stereo.begin(),frame.stereo.end());
-            if(cabinet_mode) {
+            std::vector<std::uint32_t> startup_pixels;
+            bool startup_blank=false;
+            if(!startup_display.ready()) {
+                // Snapshot inspection invalidates the borrowed frame, including
+                // the first visible title frame. Preserve it before inspection.
+                startup_pixels.assign(frame.pixels.begin(),frame.pixels.end());
+                startup_blank=startup_display.blank(runtime->video_snapshot().control);
+                if(startup_blank) std::fill(startup_pixels.begin(),startup_pixels.end(),0xff000000);
+                frame.pixels=startup_pixels;
+            }
+            if(startup_blank) display.show(frame);
+            else if(cabinet_mode) {
                 // Own fallback pixels before inspecting the video snapshot.
                 std::vector<std::uint32_t> original(frame.pixels.begin(),frame.pixels.end());
                 const auto snapshot=runtime->video_snapshot();

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "cabinet.hpp"
+#include "startup_display.hpp"
 #include "cabinet_settings.hpp"
 #include "window_layout.hpp"
 #include "alien_crush/core/files.hpp"
@@ -12,6 +13,23 @@
 using namespace alien_crush;
 namespace {
 void require(bool ok,const char* message){if(!ok) throw std::runtime_error(message);}
+void require_black_window(SDL_Window* window) {
+    require(!(SDL_GetWindowFlags(window)&SDL_WINDOW_HIDDEN),"Startup window is visible");
+    // Read the renderer directly: Presentation::capture redraws and would mask
+    // a missing startup clear.
+    auto* surface=SDL_RenderReadPixels(SDL_GetRenderer(window),nullptr);
+    require(surface!=nullptr,"Read startup pixels");
+    auto* pixels=SDL_ConvertSurface(surface,SDL_PIXELFORMAT_ARGB8888);
+    SDL_DestroySurface(surface);
+    require(pixels!=nullptr,"Convert startup pixels");
+    bool black=true;
+    for(int y=0;y<pixels->h;++y) {
+        const auto* row=reinterpret_cast<const Uint32*>(static_cast<const Uint8*>(pixels->pixels)+y*pixels->pitch);
+        for(int x=0;x<pixels->w;++x) black=black && (row[x]&0xffffff)==0;
+    }
+    SDL_DestroySurface(pixels);
+    require(black,"Startup is painted black before any game frame");
+}
 void geometry_tests() {
     const std::array<SDL_Rect,3> monitors{{{-1080,0,1080,1920},{0,0,1920,1080},{1920,-200,1280,720}}};
     auto check=[&](SDL_Rect window,std::size_t fallback,SDL_Rect expected,const char* message) {
@@ -38,9 +56,30 @@ void geometry_tests() {
 }
 int main(int argc,char** argv) {
     try {
-        require(argc==3,"Expected ROM and test data directory");
+        require(argc==3 || argc==4,"Expected ROM and test data directory");
         geometry_tests();
         require(SDL_Init(SDL_INIT_VIDEO),"Initialize SDL");
+        {
+            host::Presentation desktop("Desktop startup",320,240);
+            require_black_window(desktop.window());
+            require(desktop.pictures()==0,"Startup clear does not count as a game picture");
+        }
+        if(argc==4 && std::string(argv[3])=="--startup-only") {
+            {
+                host::Presentation playfield("Cabinet startup",320,240,true);
+                require(SDL_GetWindowFlags(playfield.window())&SDL_WINDOW_HIDDEN,"Cabinet starts hidden");
+                require(SDL_SetWindowSize(playfield.window(),384,768),"Restore portrait size");
+                playfield.reveal();
+                require_black_window(playfield.window());
+                require(SDL_HideWindow(playfield.window()),"Hide before fullscreen startup");
+                require(SDL_SetWindowFullscreen(playfield.window(),true),"Restore fullscreen");
+                playfield.reveal();
+                require_black_window(playfield.window());
+            }
+            SDL_Quit();
+            std::cout<<"PASS: desktop, portrait and fullscreen startup pixels are black\n";
+            return 0;
+        }
         {
             host::Presentation playfield("Bonus alignment",384,768,true);
             const std::vector<std::uint32_t> pixels(256*240,0xff80c040);
@@ -65,7 +104,26 @@ int main(int argc,char** argv) {
         {
             auto runtime=make_reference_runtime();runtime->load(core::path_from_utf8(argv[1]));
             Frame frame;
-            for(int i=0;i<240;++i) frame=runtime->advance({});
+            host::StartupDisplay startup;
+            host::Presentation boot("Boot frames",256,240,true);
+            for(int i=0;i<240;++i) {
+                frame=runtime->advance({});
+                if(i<30) {
+                    std::vector<std::uint32_t> pixels(frame.pixels.begin(),frame.pixels.end());
+                    const auto snapshot=runtime->video_snapshot();
+                    const bool blank=startup.blank(snapshot.control);
+                    require(blank==(i<19),"Mask exactly the ROM's nineteen display-disabled boot frames");
+                    if(blank) {
+                        require(std::count_if(pixels.begin(),pixels.end(),[](auto p){return (p&0xffffff)==0xffffff;})>frame.width*frame.height/2,"Original boot output contains the white flash");
+                        std::fill(pixels.begin(),pixels.end(),0xff000000);
+                    }
+                    boot.show({frame.number,frame.width,frame.height,pixels,{}},256,240);
+                    const auto shown=boot.capture();
+                    require(shown.pixels.size()==pixels.size() && std::equal(shown.pixels.begin(),shown.pixels.end(),pixels.begin(),
+                        [](auto a,auto b){return (a&0xffffff)==(b&0xffffff);}),"Displayed startup pixels match black mask or original title");
+                }
+            }
+            require(!startup.blank(0),"Later game blanking never re-arms startup masking");
             const std::vector<std::uint32_t> pixels(frame.pixels.begin(),frame.pixels.end());
             frame.pixels=pixels;
             const auto video=runtime->video_snapshot();
@@ -157,6 +215,7 @@ int main(int argc,char** argv) {
             std::array<SDL_WindowID,3> ids{};
             ids[0]=SDL_GetWindowID(playfield.window());
             for(int i=0;i<count;++i) {
+                require_black_window(all[i]);
                 const std::string title=SDL_GetWindowTitle(all[i]);
                 if(title=="Alien Crush - Backglass") ids[1]=SDL_GetWindowID(all[i]);
                 if(title=="Alien Crush - Score") ids[2]=SDL_GetWindowID(all[i]);

@@ -30,6 +30,7 @@ public:
     Presentation(const Presentation&)=delete;
     Presentation& operator=(const Presentation&)=delete;
     SDL_Window* window() const { return window_; }
+    void reveal();
     bool enable_vsync() { return SDL_SetRenderVSync(renderer_,1); }
     float refresh_rate() const;
     std::uint64_t pictures() const {return pictures_;}

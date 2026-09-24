@@ -59,6 +59,8 @@ int main(int argc,char** argv) {
             }
             const std::array<unsigned,3> expected{n>=9800?0x41U:0x40U,n>=9804?0x5bU:0x40U,n>=9808?0x41U:0x40U};
             for(unsigned letter=0;letter<3;++letter) require(std::to_integer<unsigned>(ram[0x122b+letter*6])==expected[letter],"Original character increment, decrement wrap and advance");
+            const std::array<char,3> initials{n>=9800?'A':'.',n>=9804?' ':'.',n>=9808?'A':'.'};
+            require(state.high_score_initials[0]==initials,"DMD initials follow editing, confirmation and the next game");
         }
         if(n>=9700 && n<9900) require(state.high_score_menu,"Ranking layout spans name editing and confirmation pause");
         viewer_frames+=state.high_score_menu;

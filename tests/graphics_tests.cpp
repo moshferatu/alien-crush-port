@@ -114,6 +114,22 @@ int main() {
             scene[0x1c5b]=std::byte{10};
             require(!diagnostics::observe_alien_state(scene).match_visible,"Uninitialized match digit rejected");
             scene={};
+            for(unsigned code=0x40;code<=0x5c;++code) {
+                for(unsigned rank=0;rank<5;++rank) for(unsigned letter=0;letter<3;++letter)
+                    scene[0x122b+letter*6+rank]=static_cast<std::byte>(code);
+                auto named=diagnostics::observe_alien_state(scene);
+                named.high_score_menu=true;
+                const char expected=code==0x40?'.':code<=0x5a?static_cast<char>('A'+code-0x41):' ';
+                const auto image=panel.compose(named);
+                for(unsigned rank=0;rank<5;++rank) for(unsigned letter=0;letter<3;++letter) {
+                    require(named.high_score_initials[rank][letter]==expected,"Decode every ranked initial, dot and space; invalid codes blank");
+                    unsigned ink=0;
+                    for(unsigned y=0;y<7;++y) for(unsigned x=0;x<5;++x)
+                        ink+=image.pixels[(20+rank*16+y)*256+64+letter*6+x]!=0xff000000;
+                    require((ink!=0)==(expected!=' '),"Each nonblank initial is visible in every DMD ranking row");
+                }
+            }
+            scene={};
             state={};state.high_score_menu=true;
             state.high_scores={4294967295U,123456700,1000000,100,0};
             const auto ranks=panel.compose(state);

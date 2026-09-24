@@ -9,7 +9,15 @@ AlienState observe_alien_state(std::span<const std::byte> ram) {
     auto score=[&](std::size_t index){return 100U*(b(0x1219+index)|(b(0x121f+index)<<8)|(b(0x1225+index)<<16));};
     AlienState result;
     result.score_points=score(5);
-    for(std::size_t i=0;i<5;++i) result.high_scores[i]=score(i);
+    for(std::size_t i=0;i<5;++i) {
+        result.high_scores[i]=score(i);
+        for(std::size_t letter=0;letter<3;++letter) {
+            const auto code=b(0x122b+letter*6+i);
+            // Ranking BAT glyphs 350..36B: dot, A..Z, space.
+            result.high_score_initials[i][letter]=code==0x40?'.':
+                code>=0x41 && code<=0x5a?static_cast<char>('A'+code-0x41):' ';
+        }
+    }
     result.table_code=static_cast<std::uint8_t>(b(0x79));
     result.ball_counter=static_cast<std::uint8_t>(b(0x46));
     result.score_update_pending=(b(0x68)&4)!=0;

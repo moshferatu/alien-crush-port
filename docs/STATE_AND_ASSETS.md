@@ -59,8 +59,12 @@ changes the third byte 40->41; I at 9810 confirms, setting RAM 120C=80. The
 ranking layout remains during the confirmation pause. The title is present by
 10000, then Run at 10100/10160/10220 starts another three-ball game with zero
 current score. The new top score and raw name 41/5B/41 remain intact through
-10500, and the other four names remain unchanged. These are original character
-codes, not a claimed ASCII mapping.
+10500, and the other four names remain unchanged. The ranking font tiles
+350..36B confirm the character mapping: 40 is a dot, 41..5A are A..Z, and
+5B is a space. The cabinet DMD now shows all three initials between each
+rank and score, using its small host font. It reads the five ranked names
+from the same strided RAM columns as persistence and follows live editing;
+the sixth candidate column is excluded. Invalid character codes display blank.
 
 Frame-9400 restore through 10500 reproduces RAM/video/audio and the frame-9809
 score panel exactly. The 1100-frame recording also runs in the three-window

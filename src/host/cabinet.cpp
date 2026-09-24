@@ -93,7 +93,7 @@ Cabinet::Cabinet(Presentation& playfield,const std::filesystem::path& data,std::
         checked(SDL_SetWindowSize(window,w,h)); checked(SDL_SetWindowPosition(window,x,y));
         output->rotation(p.rotation);
         if(p.fullscreen) checked(SDL_SetWindowFullscreen(window,true));
-        checked(SDL_ShowWindow(window));
+        output->reveal();
     }
     checked(SDL_RaiseWindow(playfield.window()));
 }

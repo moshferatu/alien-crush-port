@@ -8,6 +8,7 @@ namespace alien_crush::diagnostics {
 struct AlienState {
     std::uint32_t score_points{};
     std::array<std::uint32_t,5> high_scores{};
+    std::array<std::array<char,3>,5> high_score_initials{};
     std::uint8_t table_code{},ball_counter{};
     bool score_update_pending{};
     bool title_menu{}; // Presentation only: complete saved outer title-call signature.

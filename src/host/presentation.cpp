@@ -7,8 +7,18 @@
 namespace alien_crush::host {
 namespace { void checked(bool ok) { if(!ok) throw std::runtime_error(SDL_GetError()); } }
 Presentation::Presentation(const char* title,int width,int height,bool hidden) {
-    checked(SDL_CreateWindowAndRenderer(title,width,height,SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|(hidden?SDL_WINDOW_HIDDEN:0),&window_,&renderer_));
+    checked(SDL_CreateWindowAndRenderer(title,width,height,SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|SDL_WINDOW_HIDDEN,&window_,&renderer_));
     SDL_SetRenderVSync(renderer_,0); // Auxiliary windows never wait on another monitor.
+    if(!hidden) reveal();
+}
+void Presentation::reveal() {
+    // Placement/fullscreen can resize the swapchain. Paint at its final size
+    // before exposing the window, then repaint after the platform shows it.
+    checked(SDL_SyncWindow(window_));
+    render_window();checked(SDL_RenderPresent(renderer_));
+    checked(SDL_ShowWindow(window_));
+    checked(SDL_SyncWindow(window_));
+    render_window();checked(SDL_RenderPresent(renderer_));
 }
 Presentation::~Presentation() { animation_.reset(); SDL_DestroyTexture(foreground_);SDL_DestroyTexture(ball_);SDL_DestroyTexture(stage_); SDL_DestroyTexture(source_); SDL_DestroyRenderer(renderer_); SDL_DestroyWindow(window_); }
 void Presentation::reset_smoothing() {motion_.reset();layered_=animated_=false;if(animation_) animation_->reset();}
