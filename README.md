@@ -48,6 +48,39 @@ Supply your own `Alien Crush.pce`: 262,144 bytes, SHA-256
 `1af27c808be34e0c2fe435c169f5169417d6362dee0e928413581a1f6126557f`.
 Other ROM revisions are rejected. ROMs and generated game assets are not distributed.
 
+## Launcher
+
+`alien-crush-launcher.exe` sits beside the game and is the easy way to set it
+up: `portable-data/cabinet.ini` a tab at a time, and a Play button that saves
+and starts the game, then comes back when the game closes.
+
+| Tab | |
+| --- | --- |
+| Game | The ROM, and cabinet or desktop mode |
+| Video | Smoothing, and for the cabinet: which monitor each window is on, its rotation, and whether it is fullscreen |
+| Cabinet | The nudge strength and nudge board, and the analog plunger |
+| Buttons | The cabinet board's name and the button for each input; Detect waits for a press on the board |
+
+It is worked by mouse, keyboard or controller: Up and Down move, Left and
+Right change a value, Enter opens a list, starts editing or waits for a board
+button, Tab (or L1 and R1) turns the tabs, Ctrl+S saves, and Ctrl+Enter, F5 or
+Start plays. The ROM can also be chosen with Browse or dropped on the window.
+Keyboard controls are fixed (see [Play](#play)) and are not on a tab.
+
+With no options the game plays as `portable-data/cabinet.ini` says, which is
+what the launcher edits: `game.rom`, `game.cabinet`, `video.smoothing` and
+`input.nudge_multiplier`, beside the window, button, nudge and plunger fields
+described below. An option on the command line beats the file for that run
+(`--rom`, `--cabinet` or `--no-cabinet`, `--smooth` or `--no-smooth`,
+`--nudge-multiplier`), and replays and `--frames` runs ignore these four. F7
+is remembered in `video.smoothing` when a cabinet session exits normally.
+
+The launcher's icon and heading are the title screen's logo, decoded from the
+ROM at build time (`tools/make_launcher_art.cpp`), since nothing of the ROM's
+is kept in the repository. Without `Alien Crush.pce` in the source folder, or
+`-DAC_LAUNCHER_ART_ROM=<path>`, it builds without an icon and with a text
+heading.
+
 ## Build
 
 Requires Visual Studio 2022 C++ tools, Windows SDK, and CMake 3.30+.
@@ -72,10 +105,11 @@ for a differently located ROM, or `-SkipBuild` to publish the existing cabinet
 build. The script finds CMake on PATH or through Visual Studio; `-CMakePath`
 overrides discovery. It works from any current directory.
 
-The package includes the executable, ROM, licenses, documentation and
-`Launch-Cabinet.cmd`. SDL and the Microsoft runtime are linked statically.
-Run the launcher on the cabinet, or configure your frontend to launch
-`alien-crush.exe --cabinet`. Close the game before syncing an executable update.
+The package includes the game, its launcher, the ROM, licenses, documentation
+and `Launch-Cabinet.cmd`. SDL and the Microsoft runtime are linked statically.
+Run `alien-crush-launcher.exe` or `Launch-Cabinet.cmd` on the cabinet, or
+configure your frontend to launch `alien-crush.exe --cabinet` (or
+`alien-crush.exe` alone, once the launcher has saved cabinet mode). Close the game before syncing an executable update.
 Republishing preserves local settings and other files in the destination.
 
 Point Syncthing at **only the published folder**. Before the first sync, add

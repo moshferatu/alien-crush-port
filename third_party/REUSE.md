@@ -95,3 +95,15 @@ implementations of Alien Crush ROM transfer routines, verified against the CPU;
 they are not copied from Devil's Crush's addresses or gameplay replacements.
 The Devil's Crush frame/audio loop and execution-hook separation informed the
 architecture. The original reference mode and upstream checkout remain unchanged.
+
+The settings launcher (`src/launcher/launcher.cpp`) and its icon tool
+(`tools/make_launcher_art.cpp`) are adapted from Devil's Crush
+`src/launcher/launcher.cpp` and `tools/make_launcher_art.cpp` at commit
+`cbff624`, under GPL-3.0-or-later: the SDL/stb_truetype drawing, layout,
+dropdowns, sliders, text fields, mouse/keyboard/controller handling, monitor
+list and ROM-logo icon pipeline. Its settings are Alien Crush's own:
+`cabinet.ini` is read and written through this port's host parsers, the
+keyboard tab is replaced by raw cabinet-button detection, and the icon is
+Alien Crush's title logo decoded by `TitleLogoAnimation`. No Devil's Crush ROM
+addresses or artwork are used. `third_party/stb/stb_truetype.h` is vendored
+unmodified from the same upstream revision Devil's Crush pins.

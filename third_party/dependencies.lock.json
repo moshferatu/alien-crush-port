@@ -10,6 +10,14 @@
     "revision": "ae99235c2139c176c1a8d0fde2957bf701d3cab0",
     "reference_patches": ["cmake/ReferenceState.cmake: serialization-only state1 extension; optional"]
   },
+  "stb_truetype": {
+    "version": "1.26",
+    "repository": "https://github.com/nothings/stb",
+    "revision": "6e9f34d5429cf16790ec43c9bac3f1ee4ad1f760",
+    "vendored": "third_party/stb/stb_truetype.h",
+    "sha256": "ecd30b05e0dd4fea3a13c26810dd9e1992dc379049482c393d5a19e6b5090aab",
+    "license": "MIT OR Unlicense"
+  },
   "mesen": {
     "version": "2.1.1",
     "executable_sha256": "d2eb03c2590c648bf329f127ebcfefd70130e7690a9e2ccdba8616faea1fe96b"

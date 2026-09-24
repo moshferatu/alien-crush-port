@@ -7,6 +7,7 @@
 #include "cabinet_nudge.hpp"
 #include "cabinet_plunger.hpp"
 #include "cabinet_settings.hpp"
+#include "play_settings.hpp"
 #include <iomanip>
 #include <algorithm>
 #include <sstream>
@@ -49,8 +50,9 @@ int main(int argc,char** argv) {
         std::uint64_t limit=0;
         std::optional<double> requested_nudge_multiplier;
         double refresh_override=0;
-        bool smoothing=true;
-        bool cabinet_mode=false,probe=false,probe_plunger=false,no_vsync=false;
+        // Flags beat cabinet.ini's play settings, which fill in what they leave unsaid.
+        std::optional<bool> smoothing_override,cabinet_override;
+        bool probe=false,probe_plunger=false,no_vsync=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]);};
@@ -60,10 +62,11 @@ int main(int argc,char** argv) {
             else if(arg=="--replay") replay_path=core::path_from_utf8(value());
             else if(arg=="--data-dir") data_path=core::path_from_utf8(value());
             else if(arg=="--timing-log") timing_path=core::path_from_utf8(value());
-            else if(arg=="--cabinet") cabinet_mode=true;
+            else if(arg=="--cabinet") cabinet_override=true;
+            else if(arg=="--no-cabinet") cabinet_override=false;
             else if(arg=="--no-vsync") no_vsync=true;
-            else if(arg=="--no-smooth") smoothing=false;
-            else if(arg=="--smooth") smoothing=true;
+            else if(arg=="--no-smooth") smoothing_override=false;
+            else if(arg=="--smooth") smoothing_override=true;
             else if(arg=="--refresh") {
                 const auto text=value();
                 const auto parsed=std::from_chars(text.data(),text.data()+text.size(),refresh_override);
@@ -78,7 +81,7 @@ int main(int argc,char** argv) {
             else if(arg=="--input-probe") probe=true;
             else if(arg=="--cabinet-plunger-probe") probe_plunger=true;
             else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
-            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper; Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nCabinet settings: windows, input.buttons, input.nudge.* and input.plunger.* share portable-data/cabinet.ini (see README).\n--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F7 toggles.\n--refresh <Hz>: override the detected playfield refresh rate; --no-vsync uses timer pacing.\n--nudge-multiplier <factor>: nudge force from 0 to 16 (default 1); applies to keyboard, buttons and physical nudges.\n--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n--plunger-config <path>: reuse a Devil's Crush cabinet.ini; otherwise local cabinet.ini, then legacy cabinet-plunger.txt.\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
+            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper; Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nCabinet settings: windows, input.buttons, input.nudge.* and input.plunger.* share portable-data/cabinet.ini (see README).\n--no-cabinet: one window, whatever cabinet.ini says.\nWith no options, normal play takes game.rom, game.cabinet, video.smoothing and input.nudge_multiplier\nfrom portable-data/cabinet.ini, which alien-crush-launcher.exe edits; a flag beats the file for that run.\n--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F7 toggles.\n--refresh <Hz>: override the detected playfield refresh rate; --no-vsync uses timer pacing.\n--nudge-multiplier <factor>: nudge force from 0 to 16 (default 1); applies to keyboard, buttons and physical nudges.\n--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n--plunger-config <path>: reuse a Devil's Crush cabinet.ini; otherwise local cabinet.ini, then legacy cabinet-plunger.txt.\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
             else throw std::runtime_error("Unknown option "+arg);
         }
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
@@ -89,8 +92,19 @@ int main(int argc,char** argv) {
         // cabinet backglass and score display, without grabbing the mouse.
         if(!SDL_HideCursor()) throw std::runtime_error(SDL_GetError());
         const auto base=core::path_from_utf8(SDL_GetBasePath());
-        if(rom_path.empty()) rom_path=base/"Alien Crush.pce";
         if(data_path.empty()) data_path=base/"portable-data";
+        // Normal play takes what the flags leave unsaid from cabinet.ini, where
+        // the launcher keeps it. Replays and --frames runs stay reproducible.
+        host::PlaySettings play;
+        if(replay_path.empty() && !limit) play=host::parse_play_settings(host::read_cabinet_settings(data_path/"cabinet.ini"));
+        if(rom_path.empty() && !play.rom.empty()) {
+            const auto chosen=core::path_from_utf8(play.rom);
+            rom_path=chosen.is_absolute()?chosen:base/chosen;
+        }
+        if(rom_path.empty()) rom_path=base/"Alien Crush.pce";
+        const bool cabinet_mode=cabinet_override.value_or(play.cabinet);
+        bool smoothing=smoothing_override.value_or(play.smoothing),smoothing_toggled=false;
+        if(!requested_nudge_multiplier && play.nudge_multiplier!=1) requested_nudge_multiplier=play.nudge_multiplier;
         const bool external_plunger=!plunger_path.empty();
         if(plunger_path.empty()) {
             const auto settings=cabinet_mode && replay_path.empty()?host::read_cabinet_settings(data_path/"cabinet.ini"):host::CabinetSettings{};
@@ -171,7 +185,7 @@ int main(int argc,char** argv) {
                 if(event.type==SDL_EVENT_GAMEPAD_REMOVED && gamepad.pad && SDL_GetGamepadID(gamepad.pad)==event.gdevice.which) { SDL_CloseGamepad(gamepad.pad); gamepad.pad=nullptr; open_pad(gamepad); }
                 if(event.type==SDL_EVENT_KEY_DOWN && !event.key.repeat) {
                     if(event.key.scancode==SDL_SCANCODE_F7) {
-                        smoothing=!smoothing;display.reset_smoothing();
+                        smoothing=!smoothing;smoothing_toggled=true;display.reset_smoothing();
                         std::cout<<"Cabinet animation smoothing: "<<(smoothing?"enabled for high-refresh displays":"off")<<'\n';
                     }
                     if(cabinet && cabinet->handle_key(event.key)) continue;
@@ -368,6 +382,8 @@ int main(int argc,char** argv) {
                 for(const auto button:buttons.buttons) mapping<<' '<<button;
             }
             settings.try_emplace("input.buttons",mapping.str());
+            // F7 is remembered, as each window's rotation is.
+            if(smoothing_toggled) settings["video.smoothing"]=smoothing?"1":"0";
             if(!external_plunger) {
                 std::string name;
                 constexpr char hex[]="0123456789ABCDEF";

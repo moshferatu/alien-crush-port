@@ -51,7 +51,53 @@ if(AC_BUILD_APP)
     add_executable(alien-crush src/host/main.cpp src/host/presentation.cpp src/host/cabinet.cpp src/host/backglass.cpp src/host/cabinet_input.cpp src/host/cabinet_plunger.cpp src/host/cabinet_nudge.cpp)
     target_link_libraries(alien-crush PRIVATE ac_reference SDL3::SDL3)
     ac_enable_strict_warnings(alien-crush)
-    install(TARGETS alien-crush RUNTIME DESTINATION . COMPONENT Runtime)
+
+    # The launcher's icon and heading (tools/make_launcher_art.cpp): the title
+    # screen's logo, decoded by the port from the player's ROM, as a Windows
+    # .ico and a C header. The launcher target below runs it when there is a
+    # ROM to run it on.
+    add_executable(ac_launcher_art tools/make_launcher_art.cpp)
+    target_link_libraries(ac_launcher_art PRIVATE ac_core SDL3::SDL3)
+    ac_enable_strict_warnings(ac_launcher_art)
+
+    # The launcher (src/launcher/launcher.cpp): portable-data/cabinet.ini with
+    # a face on it, and a Play button. It ships beside alien-crush.exe and
+    # starts it. SDL as the game is, the game's own reading and writing of the
+    # file, and stb_truetype to draw the system's font.
+    add_executable(alien-crush-launcher WIN32 src/launcher/launcher.cpp
+        src/host/cabinet_input.cpp src/host/cabinet_plunger.cpp src/host/cabinet_nudge.cpp)
+    target_include_directories(alien-crush-launcher PRIVATE src/host third_party/stb)
+    target_link_libraries(alien-crush-launcher PRIVATE ac_core SDL3::SDL3 comdlg32)
+    ac_enable_strict_warnings(alien-crush-launcher)
+    # Its icon and its heading are the title's logo, made from the ROM at
+    # build time, since nothing of the ROM's is kept in the repository.
+    # Without one the launcher builds without an icon, and its heading is
+    # text.
+    set(AC_LAUNCHER_ART_ROM "${CMAKE_CURRENT_SOURCE_DIR}/Alien Crush.pce"
+        CACHE FILEPATH "The ROM the launcher's icon and heading are drawn from")
+    if(EXISTS "${AC_LAUNCHER_ART_ROM}")
+        set(ac_launcher_icon "${CMAKE_CURRENT_BINARY_DIR}/alien-crush-launcher.ico")
+        set(ac_launcher_logo "${CMAKE_CURRENT_BINARY_DIR}/ac_launcher_logo.h")
+        add_custom_command(
+            OUTPUT "${ac_launcher_icon}" "${ac_launcher_logo}"
+            COMMAND ac_launcher_art "${AC_LAUNCHER_ART_ROM}" "${ac_launcher_icon}" "${ac_launcher_logo}"
+            DEPENDS ac_launcher_art "${AC_LAUNCHER_ART_ROM}"
+            COMMENT "Drawing the launcher's icon and heading from the title's logo"
+            VERBATIM
+        )
+        file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/alien-crush-launcher.rc"
+             CONTENT "1 ICON \"${ac_launcher_icon}\"\n")
+        target_sources(alien-crush-launcher PRIVATE
+            "${ac_launcher_logo}" "${CMAKE_CURRENT_BINARY_DIR}/alien-crush-launcher.rc")
+        set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/alien-crush-launcher.rc"
+            PROPERTIES OBJECT_DEPENDS "${ac_launcher_icon}")
+        target_include_directories(alien-crush-launcher PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+        target_compile_definitions(alien-crush-launcher PRIVATE AC_LAUNCHER_LOGO)
+    else()
+        message(STATUS "No ROM at ${AC_LAUNCHER_ART_ROM}: the launcher is built without its icon")
+    endif()
+
+    install(TARGETS alien-crush alien-crush-launcher RUNTIME DESTINATION . COMPONENT Runtime)
     install(FILES LICENSE README.md THIRD_PARTY_NOTICES.md DESTINATION . COMPONENT Runtime)
 endif()
 if(AC_BUILD_TESTS)

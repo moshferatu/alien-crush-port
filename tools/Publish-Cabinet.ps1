@@ -61,7 +61,7 @@ try {
     if (-not $SkipBuild) {
         & $CMakePath --preset windows-cabinet
         if ($LASTEXITCODE -ne 0) { throw "Configure failed ($LASTEXITCODE)." }
-        & $CMakePath --build --preset windows-cabinet --target alien-crush --parallel
+        & $CMakePath --build --preset windows-cabinet --target alien-crush alien-crush-launcher --parallel
         if ($LASTEXITCODE -ne 0) { throw "Build failed ($LASTEXITCODE)." }
     }
     $cache = Join-Path $buildRoot 'CMakeCache.txt'
@@ -78,6 +78,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Install failed ($LASTEXITCODE)." }
     if (-not (Test-Path -LiteralPath (Join-Path $stage 'alien-crush.exe'))) {
         throw 'Install did not produce alien-crush.exe.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $stage 'alien-crush-launcher.exe'))) {
+        throw 'Install did not produce alien-crush-launcher.exe.'
     }
     # Normalize the ROM name to the host default even when the input is renamed.
     Copy-Item -LiteralPath $romFull -Destination (Join-Path $stage 'Alien Crush.pce')
@@ -96,7 +99,9 @@ try {
     $instructions = @'
 Alien Crush cabinet package
 
-Run Launch-Cabinet.cmd, or alien-crush.exe --cabinet.
+Run alien-crush-launcher.exe to change settings and play, or Launch-Cabinet.cmd,
+or alien-crush.exe --cabinet. The launcher edits portable-data/cabinet.ini, and
+the game plays as that file says when it is started without options.
 The ROM is included under its default name. No extra runtime DLLs are needed.
 Close the game before applying an update on the cabinet.
 
@@ -151,7 +156,7 @@ Normal exit writes the combined settings. Edit plunger values in this main INI.
     Get-ChildItem -LiteralPath $stage -File | Where-Object Name -ne 'syncthing-ignore.txt' |
         ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $destinationFull -Force }
     Write-Host "Published $destinationFull" -ForegroundColor Green
-    Write-Host 'Run Launch-Cabinet.cmd. See CABINET-SETUP.txt for Syncthing setup on both machines.'
+    Write-Host 'Run alien-crush-launcher.exe or Launch-Cabinet.cmd. See CABINET-SETUP.txt for Syncthing setup on both machines.'
 } finally {
     Pop-Location
     if ($stage -and (Test-Path -LiteralPath $stage)) {
