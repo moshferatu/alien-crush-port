@@ -265,6 +265,36 @@ void slingshot_rendering(std::span<const std::byte> rom,const diagnostics::Refer
         require(visible_above==2,"Missing slingshot visibility checks");
     }
 }
+// A respawned silver orange alien (type 16, 02:60E1..6162) emerges
+// 12 pixels on each axis over 48 ticks, then stays out without
+// animating. A bank left mid-emergence must still finish it.
+void check_silver_orange_alien(const assets::ActorAssets& actors,std::span<const std::byte> rom) {
+    std::array<std::byte,8192> silver{};
+    silver[0x1504]=std::byte{16};silver[0x1544]=std::byte{0xc0};
+    silver[0x15c4]=std::byte{100};silver[0x1684]=std::byte{150};
+    silver[0x1804]=std::byte{96};silver[0x1a04]=std::byte{0x23};
+    silver[0x1a44]=std::byte{4};silver[0x1b84]=std::byte{0x10};
+    silver[0x1704]=std::byte{0xc0};silver[0x1744]=std::byte{0xff};silver[0x1584]=std::byte{0xc0};
+    silver[0x1784]=std::byte{0x40};silver[0x1884]=std::byte{48};
+    auto emerging=silver;
+    for(unsigned i=0;i<47;++i) actors.advance_animation(emerging);
+    require(emerging[0x1844]==std::byte{} && emerging[0x1544]==std::byte{0xc0},"Silver alien emerged early");
+    actors.advance_animation(emerging);
+    require(emerging[0x1844]==std::byte{1} && emerging[0x1544]==std::byte{0x80} &&
+        emerging[0x15c4]==std::byte{88} && emerging[0x1684]==std::byte{162},"Silver alien did not emerge from its hole");
+    const auto out=emerging;
+    for(unsigned i=0;i<600;++i) actors.advance_animation(emerging);
+    require(emerging==out,"Emerged silver alien moved or animated while waiting for a hit");
+    auto timeline=std::make_unique<render::TableAnimation>(rom);
+    silver[0x1884]=std::byte{20};
+    timeline->update(actors,silver,false);
+    for(unsigned i=0;i<20;++i) timeline->update(actors,silver,true);
+    require(timeline->actors(0)[0x1844]==std::byte{1} && timeline->actors(0)[0x1544]==std::byte{0x80},
+        "Silver alien left mid-emergence stayed in its hole");
+    silver[0x1544]=std::byte{};const auto uninitialized=silver;
+    actors.advance_animation(silver);
+    require(silver==uninitialized,"Uninitialized silver alien advanced");
+}
 }
 int main(int argc,char** argv) {
     try {
@@ -311,6 +341,7 @@ int main(int argc,char** argv) {
             actors.advance_animation(green);
             require(green==uninitialized,"Uninitialized green actor advanced");
         }
+        check_silver_orange_alien(actors,rom);
         // Type 33 initializes six frames at +$0020 (01:5B15..5B25).
         // Validate both FD35 reflection endpoints and the recovered sequence.
         std::array<std::byte,8192> projected{};

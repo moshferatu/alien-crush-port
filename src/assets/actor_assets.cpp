@@ -427,6 +427,19 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
             } else {put(0x1840+x,1);put(0x1880+x,16);}
             continue;
         }
+        // Silver orange aliens: 02:60E1..6162. A respawned group may be this
+        // variant. It emerges once, over 48 FADA ticks, and then waits out of
+        // its hole for a hit without calling FD2B. Finish a saved emergence;
+        // hits, the color reveal and group counts remain runtime-owned.
+        if(type==16 && (b(0x1540+x)&0x80)) {
+            if(!b(0x1840+x)) {
+                move(x,true);move(x,false);put(0x1880+x,b(0x1880+x)-1);
+                if(!b(0x1880+x)) {
+                    put(0x1840+x,1);put(0x1ac0+x,0);put(0x1540+x,b(0x1540+x)&0xbf);
+                }
+            }
+            continue;
+        }
         // Green side aliens: 02:61FE..6286. Only the raised wait calls
         // FD2B; rising/lowering use 48 half-pixel Y steps. Type 22 is the
         // related rise-and-stay variant (02:635E..6380). Use private RNG

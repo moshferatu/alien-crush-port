@@ -95,6 +95,17 @@ dispatch and removal, expiration, and visible pixels above the seam.
 
 ## Existing coverage and audit limits
 
+Silver orange aliens (2026-09-25): the orange group's controller (`01:5DA5`)
+respawns a cleared group as type 15, or as type 16 when a lane sensor sets
+`$82` bit 1 during its wait. Type 16 (`02:60E1..6162`) is the silver variant.
+It starts in its hole and emerges once over 48 FADA ticks (action 0). Then it
+waits outside the hole for a hit without calling FD2B. Type 16 had no private
+handling. A group respawned just before the ball went upstairs therefore stayed
+in its holes until the ball returned. Private presentation now finishes that
+emergence and holds the pose. The color reveal on a hit, the group count and
+the respawn stay runtime-owned. The green silver variant, type 22, was already
+handled. Fixtures check the emergence endpoint and a bank frozen mid-emergence.
+
 Cocoon follow-up (2026-09-20): types 26/27 previously fell through the generic
 oscillator, which neither completed their hatching action nor counted down their
 hidden respawn timer. `01:54EE..556B` only animates action 2; its upper reflection
