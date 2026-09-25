@@ -101,9 +101,25 @@ The settings launcher (`src/launcher/launcher.cpp`) and its icon tool
 `src/launcher/launcher.cpp` and `tools/make_launcher_art.cpp` at commit
 `cbff624`, under GPL-3.0-or-later: the SDL/stb_truetype drawing, layout,
 dropdowns, sliders, text fields, mouse/keyboard/controller handling, monitor
-list and ROM-logo icon pipeline. Its settings are Alien Crush's own:
-`cabinet.ini` is read and written through this port's host parsers, the
-keyboard tab is replaced by raw cabinet-button detection, and the icon is
-Alien Crush's title logo decoded by `TitleLogoAnimation`. No Devil's Crush ROM
+list, key capture and ROM-logo icon pipeline. `cabinet.ini` is read and written
+through this port's host module (`src/host/cabinet_config.cpp`), and the icon is Alien Crush's title logo decoded by
+`TitleLogoAnimation`. No Devil's Crush ROM
 addresses or artwork are used. `third_party/stb/stb_truetype.h` is vendored
 unmodified from the same upstream revision Devil's Crush pins.
+
+`portable-data/cabinet.ini`'s format (`src/host/cabinet_config.cpp`) follows
+Devil's Crush `src/cabinet/display_config.cpp` at commit `cbff624`, under
+GPL-3.0-or-later: its keys, percent-escaping, strict one-key-per-line reading,
+key-name bindings, flipper input lists, launch keys and the opposing-direction
+resolution. Alien Crush adds per-window artwork rotation, raw cabinet buttons
+and the reading of its own older formats. The flipper input masks are written
+by this port's own hook at `01:4B7B`; no Devil's Crush addresses are used.
+
+The music voice overlay (`src/runtime/music_voice_overlay.hpp`,
+`cmake/MusicVoiceOverlay.cmake`) follows the design of Devil's Crush
+`src/audio/music_voice_overlay.cpp` at commit `cbff624`, under
+GPL-3.0-or-later: a second PSG, built from the music slots' latch stores and
+programmed at the push for the channels effects take. Alien Crush's sound
+driver addresses (bank `$19`) were traced independently from this cartridge
+(`docs/MUSIC_VOICE_OVERLAY.md`), and its second PSG is upstream Beetle's
+`PCE_PSG` rather than Devil's Crush's native one.

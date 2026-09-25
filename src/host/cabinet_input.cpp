@@ -12,8 +12,6 @@
 
 namespace alien_crush::host {
 namespace {
-constexpr std::array masks{Pad::left,Pad::right,Pad::button_ii,Pad::run,
-    Pad::select,Pad::up,Pad::down,Pad::right,Pad::button_i};
 bool name_matches(const char* name,const std::string& needle) {
     return name && SDL_strcasestr(name,needle.c_str());
 }
@@ -43,7 +41,9 @@ CabinetButtons load_cabinet_buttons(const std::filesystem::path& path) {
     const auto bytes=core::read_file(path,4096);
     return parse_cabinet_buttons({reinterpret_cast<const char*>(bytes.data()),bytes.size()});
 }
-CabinetInput::CabinetInput(CabinetButtons binding):binding_(std::move(binding)) { refresh(); }
+CabinetInput::CabinetInput(CabinetButtons binding,const FlipperInputs& flippers):binding_(std::move(binding)),
+    masks_{flipper_pad(flippers.left,false),flipper_pad(flippers.right,true),Pad::button_ii,Pad::run,
+        Pad::select,Pad::up,Pad::down,Pad::right,Pad::button_i} { refresh(); }
 CabinetInput::~CabinetInput() { SDL_CloseJoystick(joystick_); }
 SDL_JoystickID CabinetInput::id() const { return joystick_?SDL_GetJoystickID(joystick_):0; }
 void CabinetInput::refresh() {
@@ -67,9 +67,9 @@ void CabinetInput::refresh() {
 PadInput CabinetInput::read() {
     PadInput result;
     if(!joystick_ || !SDL_JoystickConnected(joystick_)) {rearm();return result;}
-    for(std::size_t i=0;i<masks.size();++i)
+    for(std::size_t i=0;i<masks_.size();++i)
         if(binding_.buttons[i]>=0 && SDL_GetJoystickButton(joystick_,binding_.buttons[i]))
-            result.player_one|=masks[i];
+            result.player_one|=masks_[i];
     // Held start/flippers must not act immediately after reconnect or focus return.
     if(!armed_) {armed_=result.player_one==0;return {};}
     return result;

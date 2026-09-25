@@ -10,8 +10,12 @@ struct NudgeBinding {
     std::string device="PinOne";
     int axis_x=0,axis_y=1;
     int threshold=20,release=8,cooldown_ms=250;
+    bool operator==(const NudgeBinding&) const=default;
 };
+// The older cabinet.ini's nudge lines; see cabinet_config.hpp for the current file.
 NudgeBinding parse_cabinet_nudge(const CabinetSettings& settings);
+// Throws when the axes, thresholds or cooldown cannot work together.
+void validate_cabinet_nudge(const NudgeBinding&);
 // The original game has one digital nudge action, regardless of direction.
 // Only accept physical motion during live, unpaused play.
 inline bool nudge_play_active(std::span<const std::byte> ram) {

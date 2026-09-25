@@ -122,22 +122,25 @@ Syncthing setup (do this on BOTH computers before the first sync):
 The publish script configures it on the workstation. Configure the cabinet too.
 Reference: https://docs.syncthing.net/users/ignoring.html
 
-Layout, button/plunger bindings, custom backglass.bmp, high scores and quick states live in
+Layout, key/button/plunger bindings, custom backglass.bmp, high scores and quick states live in
 portable-data beside the executable. They stay local to each computer.
 High scores and initials automatically save to portable-data/alien-crush.hiscore.
 Publishing updates packaged files and preserves this directory and other local
 files. If needed, copy cabinet-specific bindings/artwork manually once.
 See README.md for controls, monitor setup and configuration file formats.
-Window placement, raw buttons, physical nudge and plunger settings share portable-data/cabinet.ini.
+portable-data/cabinet.ini holds every setting, in Devil's Crush's format: window placement,
+keys, flipper inputs, raw buttons, physical nudge, plunger, music voice overlay and smoothing.
+The launcher's tabs edit all of it; its plunger lines are interchangeable with Devil's Crush's.
 PinOne accelerometer nudging works automatically in cabinet mode (axes 0/1).
 Optional input.nudge.* settings adjust sensitivity; see README.md.
 For stronger ball nudges, run Launch-Cabinet.cmd --nudge-multiplier 2.
 The factor accepts 0 through 16 (default 1); it changes force, not shake detection.
+The music keeps all its voices while sound effects play (--no-music-voice-overlay turns it off).
 Sprite movement, animation poses, palette effects and title scrolling are smoothed on high-refresh playfield monitors.
 F7 toggles smoothing; Launch-Cabinet.cmd --no-smooth disables it at startup.
 Use --refresh 144 (or your actual refresh rate) only if display detection is wrong.
-Older separate configuration files are imported on startup and retained as backups.
-Normal exit writes the combined settings. Edit plunger values in this main INI.
+Older configuration files are read on startup and retained as backups.
+Normal exit, or Save in the launcher, writes the combined settings in the current format.
 '@
     [IO.File]::WriteAllText((Join-Path $stage 'CABINET-SETUP.txt'), $instructions + "`r`n", $utf8)
     New-Item -ItemType Directory -Path $destinationFull -Force | Out-Null

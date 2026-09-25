@@ -27,11 +27,15 @@ NudgeBinding parse_cabinet_nudge(const CabinetSettings& settings) {
         else if(key=="input.nudge.cooldown_ms") result.cooldown_ms=number;
         else throw std::runtime_error("Unknown or invalid nudge setting: "+key);
     }
+    validate_cabinet_nudge(result);
+    return result;
+}
+void validate_cabinet_nudge(const NudgeBinding& result) {
+    if(result.device.empty() || result.device.size()>1024) throw std::runtime_error("Nudge device must name a controller");
     if(result.axis_x<0 || result.axis_x>255 || result.axis_y<0 || result.axis_y>255 ||
         result.axis_x==result.axis_y || result.threshold<1 || result.threshold>100 ||
         result.release<0 || result.release>=result.threshold || result.cooldown_ms<100 || result.cooldown_ms>5000)
         throw std::runtime_error("Invalid nudge axes, thresholds or cooldown");
-    return result;
 }
 CabinetNudge::CabinetNudge(NudgeBinding binding):binding_(std::move(binding)) {refresh();}
 CabinetNudge::~CabinetNudge() {SDL_CloseJoystick(joystick_);}

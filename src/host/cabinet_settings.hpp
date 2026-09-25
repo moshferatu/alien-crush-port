@@ -6,8 +6,8 @@
 #include <string>
 #include <stdexcept>
 namespace alien_crush::host {
-// One cabinet.ini for all host settings. Preserve unrecognized fields when
-// updating window placement or migrating the older separate files.
+// The older cabinet.ini, before Devil's Crush's format (cabinet_config.hpp):
+// lenient key=value lines with comments. Read only, to bring its settings over.
 using CabinetSettings=std::map<std::string,std::string>;
 inline CabinetSettings read_cabinet_settings(const std::filesystem::path& path) {
     CabinetSettings result;
@@ -28,10 +28,5 @@ inline CabinetSettings read_cabinet_settings(const std::filesystem::path& path) 
         result[trim(line.substr(0,equal))]=trim(line.substr(equal+1));
     }
     return result;
-}
-inline void write_cabinet_settings(const std::filesystem::path& path,const CabinetSettings& settings) {
-    std::string text="# Alien Crush cabinet settings\n";
-    for(const auto& [key,value]:settings) text+=key+'='+value+'\n';
-    core::write_file_atomic(path,std::as_bytes(std::span(text.data(),text.size())));
 }
 }

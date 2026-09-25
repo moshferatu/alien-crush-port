@@ -3,27 +3,26 @@
 // alien-crush-launcher: `portable-data/cabinet.ini` with a face on it, and a
 // Play button.
 //
-// Everything here is a setting the file already has -- the play settings
-// (`src/host/play_settings.hpp`), the cabinet's windows (`src/host/cabinet.cpp`),
-// its buttons, nudge board and plunger (`src/host/cabinet_input.cpp`,
-// `cabinet_nudge.cpp`, `cabinet_plunger.cpp`) -- and nothing else: the
-// launcher is for the player who would rather not open a text file to turn
-// smoothing off or map a flipper button. It reads the file the game would
-// read, shows it a tab at a time, writes it back where it was, and starts the
-// game from the folder the file is in, so the two cannot find different ones.
+// Everything here is a setting the file already has (`src/host/cabinet_config.hpp`)
+// -- the play settings, the music voice overlay, the cabinet's windows, the
+// keys, the nudge board and the plunger -- and
+// nothing else: the launcher is for the player who would rather not open a
+// text file to turn smoothing off or rebind a flipper. It reads the file the
+// game would read, shows it a tab at a time, writes it back where it was, and
+// starts the game from the folder the file is in, so the two cannot find
+// different ones.
 //
 // ## The file
 //
 // `portable-data/cabinet.ini` beside the launcher, which is where the game
-// looks when it is started from beside it. Read with the game's own parsers,
-// so what is shown is what the game would play, and written with the game's
-// own `write_cabinet_settings`; fields the launcher does not know go back as
-// they came, and so does where each window is. Settings the game still takes
-// from its older separate files (`cabinet-inputs.txt`, `cabinet-plunger.txt`,
-// `cabinet-windows.txt`) are shown from there, as the game would read them,
-// and a save moves them into cabinet.ini, as the game's own exit does. A file
-// the game cannot read is shown as the defaults and a save replaces it.
-// Nothing is written until Save or Play.
+// looks when it is started from beside it, in Devil's Crush's format. Read
+// and written with the game's own `load_cabinet_config` and
+// `save_cabinet_config`, so what is shown is what the game would play and the
+// launcher cannot write a file the game would refuse; fields neither knows
+// are dropped, as the game's own exit drops them. A file in the older format
+// -- or the older separate files beside it -- is shown as the game reads it,
+// and a save rewrites it in this one. A file the game cannot read is shown as
+// the defaults and a save replaces it. Nothing is written until Save or Play.
 //
 // Play saves and starts the game, and the launcher waits out of sight until
 // the game closes, then comes back and reads the file again: a cabinet
@@ -41,11 +40,11 @@
 //   * A setting with a fixed list of values is a dropdown: Enter, South or a
 //     click opens it, Up and Down choose, Enter, South or a click takes the
 //     choice, and Escape, East or a click elsewhere closes it unchanged.
-//   * A cabinet button is set by pressing it. Enter (or South), or Detect,
-//     waits for the next button pressed on a joystick and takes its number,
-//     and the board's name too if none is set yet; a key, a click or five
-//     seconds stop waiting. Backspace (or West) turns the row off. Its number
-//     can also be chosen from its list.
+//   * A key binding is a row of keys. Enter, South or a click on + waits for
+//     a key and adds it, and every key can be bound, Escape too, so a click,
+//     a controller's button or five seconds stop waiting. Backspace (or West)
+//     takes the last off, and a click on a key's x takes that one. A
+//     flipper's pad inputs are added from +'s list the same way.
 //   * A path, a name or a number is typed after Enter or a click. The ROM can
 //     also be chosen with Browse, or dropped on the window.
 //   * Ctrl+S saves; Ctrl+Enter, F5 or Start plays; Escape quits at once,
@@ -62,12 +61,7 @@
 // `tools/make_launcher_art.cpp` when this is built. Without a ROM at build
 // time the launcher builds without an icon, and its heading is text.
 
-#include "cabinet_input.hpp"
-#include "cabinet_nudge.hpp"
-#include "cabinet_plunger.hpp"
-#include "cabinet_settings.hpp"
-#include "play_settings.hpp"
-#include "alien_crush/core/files.hpp"
+#include "cabinet_config.hpp"
 #include "alien_crush/core/rom_image.hpp"
 
 #include <SDL3/SDL.h>
@@ -116,43 +110,24 @@
 
 namespace {
 
-using alien_crush::host::CabinetSettings;
+using Config = alien_crush::host::CabinetConfig;
+using alien_crush::host::kPadButtonCount;
+using alien_crush::host::PadButton;
+using alien_crush::host::WindowPlacement;
 
 constexpr const char* kTitle = "Alien Crush";
 constexpr const wchar_t* kGameExe = L"alien-crush.exe";
 constexpr const char* kRomDefault = "Alien Crush.pce";
 const std::filesystem::path kDataRelative = "portable-data";
 const std::filesystem::path kConfigRelative = kDataRelative / "cabinet.ini";
+constexpr std::size_t kKeysMax = 4;
 
-// The cabinet's windows, in the order the file and the game have them, and
-// the size the game opens each at before it has been placed.
-constexpr int kWindows = 3;
-constexpr std::array<const char*, kWindows> kRoles = {"playfield", "backglass", "score"};
+// The cabinet's windows, in the order the game has them, and the size the
+// game opens each at before it has been placed.
+constexpr int kWindows = static_cast<int>(alien_crush::host::kCabinetWindowCount);
 constexpr std::array<const char*, kWindows> kWindowNames = {"Playfield", "Backglass", "Score"};
 constexpr std::array<int, kWindows> kDefaultW = {540, 640, 640};
 constexpr std::array<int, kWindows> kDefaultH = {720, 360, 200};
-
-// One window's line in the file: the monitor by name, where the window is
-// and how big, and whether it is fullscreen and how far it is turned.
-struct Placement {
-    std::string name;
-    int x = 0, y = 0, w = 0, h = 0;
-    bool fullscreen = false;
-    int rotation = 0;
-};
-
-// What the launcher shows: every field the game reads from the file, as the
-// game's own parsers read them.
-struct Config {
-    alien_crush::host::PlaySettings play;
-    alien_crush::host::NudgeBinding nudge;
-    alien_crush::input::PlungerBinding plunger;
-    alien_crush::host::CabinetButtons buttons;
-    // Whether the windows have been placed. Until they are, the game opens
-    // them on the first monitors in turn, and the file says nothing of them.
-    bool placed = false;
-    std::array<Placement, kWindows> windows{};
-};
 
 // --- text and paths --------------------------------------------------------
 
@@ -244,19 +219,22 @@ bool same_ignoring_case(std::string_view a, std::string_view b)
 
 // --- what there is to set ----------------------------------------------------
 
-enum Kind { K_HEAD, K_CHOICE, K_RANGE, K_PATH, K_TEXT, K_NUMBER, K_BUTTON };
+enum Kind { K_HEAD, K_CHOICE, K_RANGE, K_PATH, K_TEXT, K_NUMBER, K_KEYS, K_INPUTS };
 
 enum Setting {
     S_ROM, S_CABINET,
     S_SMOOTHING,
     S_MONITOR, S_ROTATION = S_MONITOR + kWindows, S_FULLSCREEN = S_ROTATION + kWindows,
-    S_NUDGE_STRENGTH = S_FULLSCREEN + kWindows, S_NUDGE_ENABLED, S_NUDGE_DEVICE, S_NUDGE_X, S_NUDGE_Y,
+    S_OVERLAY = S_FULLSCREEN + kWindows,
+    S_NUDGE_STRENGTH, S_NUDGE_ENABLED, S_NUDGE_DEVICE, S_NUDGE_X, S_NUDGE_Y,
     S_NUDGE_THRESHOLD, S_NUDGE_RELEASE, S_NUDGE_COOLDOWN,
     S_PLUNGER_DEVICE, S_PLUNGER_AXIS, S_PLUNGER_REST, S_PLUNGER_DRAWN, S_PLUNGER_DEADZONE,
     S_PLUNGER_RELEASE,
-    S_BUTTONS_DEVICE,
-    S_BUTTON,  // one for each of the board's nine inputs
 };
+
+// A binding row's list, as a group and an index into it.
+enum { G_KEYS = 1, G_LAUNCH, G_FLIPPER };
+constexpr int bind(int g, int i) { return g << 8 | i; }
 
 struct Choice {
     int value;
@@ -265,7 +243,7 @@ struct Choice {
 
 struct Row {
     Kind kind;
-    int id;  // a Setting
+    int id;  // a Setting, or bind() for a binding
     const char* label;
     const char* help;
     const Choice* choices = nullptr;
@@ -281,8 +259,8 @@ constexpr Choice cabinet_choices[] = {{1, "Cabinet (three windows)"}, {0, "Deskt
 template <typename T, std::size_t N>
 constexpr int count_of(const T (&)[N]) { return static_cast<int>(N); }
 
-enum { TAB_GAME, TAB_VIDEO, TAB_CABINET, TAB_BUTTONS, TAB_COUNT };
-constexpr const char* tab_names[TAB_COUNT] = {"Game", "Video", "Cabinet", "Buttons"};
+enum { TAB_GAME, TAB_VIDEO, TAB_AUDIO, TAB_CABINET, TAB_KEYBOARD, TAB_COUNT };
+constexpr const char* tab_names[TAB_COUNT] = {"Game", "Video", "Audio", "Cabinet", "Keyboard"};
 constexpr int kRowsMax = 64;
 std::array<std::vector<Row>, TAB_COUNT> rows;
 
@@ -297,12 +275,15 @@ void add_range(int tab, int id, const char* label, int lo, int hi, int step, boo
 }
 void add_head(int tab, const char* label, const char* help) { add(tab, Row{K_HEAD, 0, label, help}); }
 
-// The board's inputs in the order `input.buttons` has them, with what each
-// does on the table.
-constexpr std::size_t kButtons = std::tuple_size_v<decltype(alien_crush::host::CabinetButtons::buttons)>;
-constexpr std::array<const char*, kButtons> button_rows = {
-    "Left Flipper", "Right Flipper", "Nudge", "Run (Start, Launch, Pause)", "Select",
-    "Up", "Down", "Right (Menu)", "I (Launch, Confirm)",
+// The PC Engine pad's inputs in the order the file has them, with what each
+// does on the table. What they do elsewhere is the cartridge's to say.
+constexpr std::array<const char*, kPadButtonCount> pad_rows = {
+    "I (Launch, Confirm)", "II (Nudge)", "Select", "Run (Start, Pause)",
+    "Up", "Right (Right Flipper)", "Down", "Left (Left Flipper)",
+};
+// ...and as they are named in a flipper's list.
+constexpr std::array<const char*, kPadButtonCount> pad_names = {
+    "I", "II", "Select", "Run", "Up", "Right", "Down", "Left",
 };
 
 void build_rows()
@@ -337,6 +318,10 @@ void build_rows()
         add_choice(TAB_VIDEO, S_ROTATION + i, l[1].c_str(), rotation_choices, count_of(rotation_choices), rotation_help);
         add_choice(TAB_VIDEO, S_FULLSCREEN + i, l[2].c_str(), on_off, 2, fullscreen_help);
     }
+
+    add_choice(TAB_AUDIO, S_OVERLAY, "Music Voice Overlay", on_off, 2,
+        "On: the music keeps all its voices while sound effects play, on a second sound generator. "
+        "Off: an effect takes a music voice's channel, as on the original hardware.");
 
     static const char nudge_help[] =
         "A nudge board, such as a PinOne's accelerometer, read as two axes of a controller in "
@@ -381,19 +366,25 @@ void build_rows()
     add_range(TAB_CABINET, S_PLUNGER_RELEASE, "Plunger Release", 0, 100, 1, true,
         "How sudden a fall forward counts as letting go, as a percentage of the travel.");
 
-    static const char button_help[] =
-        "A cabinet board's own buttons, such as a PinOne's, read in cabinet mode. Enter or Detect "
-        "waits for a button to be pressed on the board; Backspace turns the row off. The keyboard "
-        "and other controllers still work alongside.";
-    add_head(TAB_BUTTONS, "Board", button_help);
-    add(TAB_BUTTONS, Row{K_TEXT, S_BUTTONS_DEVICE, "Buttons Device",
-        "Part of the board's name, any case. The first controller whose name has it in, and that "
-        "has every button below, is the board. Detect fills it in when it is empty."});
-    add_head(TAB_BUTTONS, "Buttons", button_help);
-    for (std::size_t i = 0; i < kButtons; ++i) {
-        add(TAB_BUTTONS, Row{K_BUTTON, S_BUTTON + static_cast<int>(i), button_rows[i], button_help, nullptr, 0,
-            -1, 255});
+    static const char key_help[] =
+        "The PC Engine pad, from the keyboard. Enter waits for a key to add; Backspace takes the last "
+        "one off. Every key can be bound, Escape too, so click or wait five seconds to stop waiting.";
+    add_head(TAB_KEYBOARD, "Pad", key_help);
+    for (std::size_t i = 0; i < kPadButtonCount; ++i) {
+        add(TAB_KEYBOARD, Row{K_KEYS, bind(G_KEYS, static_cast<int>(i)), pad_rows[i], key_help});
     }
+    static const char launch_help[] =
+        "Keys that send button I alone while the ball is seated in the shooter, so they launch it "
+        "rather than pause, and do what they are bound to above everywhere else.";
+    add_head(TAB_KEYBOARD, "Launch", launch_help);
+    add(TAB_KEYBOARD, Row{K_KEYS, bind(G_LAUNCH, 0), "Launch", launch_help});
+    static const char flipper_help[] =
+        "The pad inputs each flipper answers to during play. A key works a flipper through the "
+        "input it is bound to, and elsewhere is still that input, so a flipper on Left moves a "
+        "letter at high-score entry. None: the cartridge's own.";
+    add_head(TAB_KEYBOARD, "Flippers", flipper_help);
+    add(TAB_KEYBOARD, Row{K_INPUTS, bind(G_FLIPPER, 0), "Left Flipper", flipper_help});
+    add(TAB_KEYBOARD, Row{K_INPUTS, bind(G_FLIPPER, 1), "Right Flipper", flipper_help});
 }
 
 bool is_monitor(int id) { return id >= S_MONITOR && id < S_MONITOR + kWindows; }
@@ -453,48 +444,23 @@ void find_monitors()
     }
 }
 
-// Where the game opens a window the file has not placed: on the monitor of
-// its turn, or the last there is, a little down and across from the corner.
-Placement default_placement(int i)
-{
-    Placement p;
-    p.w = kDefaultW[static_cast<std::size_t>(i)];
-    p.h = kDefaultH[static_cast<std::size_t>(i)];
-    if (monitors.list.empty()) return p;
-    const auto& m = monitors.list[std::min(static_cast<std::size_t>(i), monitors.list.size() - 1)];
-    const auto& b = m.usable;
-    p.name = m.name;
-    p.w = std::min(p.w, b.w);
-    p.h = std::min(p.h, b.h);
-    p.x = std::clamp(b.x + i * 40, b.x, b.x + b.w - p.w);
-    p.y = std::clamp(b.y + i * 40, b.y, b.y + b.h - p.h);
-    return p;
-}
-
-// The windows as the file will have them, placed as the game would open them
-// if they were not already.
-void place(Config& c)
-{
-    if (c.placed) return;
-    for (int i = 0; i < kWindows; ++i) c.windows[static_cast<std::size_t>(i)] = default_placement(i);
-    c.placed = true;
-}
-
 // The monitor the game would open the window on, as `Cabinet` picks it; or
 // absent, for a monitor the file names that is not connected, which the game
-// would stand another in for.
+// would stand another in for. A window never placed opens on the monitor of
+// its turn, or the last there is.
 int monitor_get(const Config& c, int i)
 {
     if (monitors.list.empty()) return 0;
     const int fallback = std::min(i, static_cast<int>(monitors.list.size()) - 1);
-    if (!c.placed) return fallback;
     const auto& p = c.windows[static_cast<std::size_t>(i)];
+    const auto& g = p.geometry;
+    if (!g.valid()) return fallback;
     int selected = -1;
     for (std::size_t j = 0; j < monitors.list.size(); ++j) {
-        if (monitors.list[j].name != p.name) continue;
+        if (monitors.list[j].name != p.display_identity) continue;
         selected = static_cast<int>(j);
         const auto& b = monitors.list[j].usable;
-        if (p.x >= b.x && p.x < b.x + b.w && p.y >= b.y && p.y < b.y + b.h) break;
+        if (g.x >= b.x && g.x < b.x + b.w && g.y >= b.y && g.y < b.y + b.h) break;
     }
     return selected < 0 ? kMonitorAbsent : selected;
 }
@@ -504,31 +470,30 @@ int monitor_get(const Config& c, int i)
 void monitor_set(Config& c, int i, int v)
 {
     if (v < 0 || v >= static_cast<int>(monitors.list.size()) || v == monitor_get(c, i)) return;
-    place(c);
     const auto& m = monitors.list[static_cast<std::size_t>(v)];
     const auto& b = m.usable;
     auto& p = c.windows[static_cast<std::size_t>(i)];
-    p.w = std::min(p.w > 0 ? p.w : kDefaultW[static_cast<std::size_t>(i)], b.w);
-    p.h = std::min(p.h > 0 ? p.h : kDefaultH[static_cast<std::size_t>(i)], b.h);
-    p.name = m.name;
-    p.x = b.x + (b.w - p.w) / 2;
-    p.y = b.y + (b.h - p.h) / 2;
+    auto& g = p.geometry;
+    g.width = std::min(g.valid() ? g.width : kDefaultW[static_cast<std::size_t>(i)], b.w);
+    g.height = std::min(g.valid() ? g.height : kDefaultH[static_cast<std::size_t>(i)], b.h);
+    g.x = b.x + (b.w - g.width) / 2;
+    g.y = b.y + (b.h - g.height) / 2;
+    p.display_identity = m.name;
 }
 
 int setting_get(Config& c, int id)
 {
-    auto& n = c.nudge;
-    auto& p = c.plunger;
+    auto& n = c.input.nudge;
+    auto& p = c.input.plunger;
     if (is_monitor(id)) return monitor_get(c, window_of(id));
     if (id >= S_ROTATION && id < S_ROTATION + kWindows)
-        return c.placed ? c.windows[static_cast<std::size_t>(window_of(id))].rotation : 0;
+        return c.windows[static_cast<std::size_t>(window_of(id))].artwork_rotation;
     if (id >= S_FULLSCREEN && id < S_FULLSCREEN + kWindows)
-        return c.placed && c.windows[static_cast<std::size_t>(window_of(id))].fullscreen;
-    if (id >= S_BUTTON && id < S_BUTTON + static_cast<int>(kButtons))
-        return c.buttons.buttons[static_cast<std::size_t>(id - S_BUTTON)];
+        return c.windows[static_cast<std::size_t>(window_of(id))].fullscreen;
     switch (id) {
     case S_CABINET: return c.play.cabinet;
     case S_SMOOTHING: return c.play.smoothing;
+    case S_OVERLAY: return c.play.music_voice_overlay;
     case S_NUDGE_STRENGTH: return static_cast<int>(std::lround(c.play.nudge_multiplier * 10.0));
     case S_NUDGE_ENABLED: return n.enabled;
     case S_NUDGE_X: return n.axis_x;
@@ -547,26 +512,23 @@ int setting_get(Config& c, int id)
 
 void setting_set(Config& c, int id, int v)
 {
-    auto& n = c.nudge;
-    auto& p = c.plunger;
+    auto& n = c.input.nudge;
+    auto& p = c.input.plunger;
     if (is_monitor(id)) { monitor_set(c, window_of(id), v); return; }
+    // A window's rotation and fullscreen are kept whether or not it has been
+    // placed; one never placed still opens where the game first puts it.
     if (id >= S_ROTATION && id < S_ROTATION + kWindows) {
-        place(c);
-        c.windows[static_cast<std::size_t>(window_of(id))].rotation = v;
+        c.windows[static_cast<std::size_t>(window_of(id))].artwork_rotation = v;
         return;
     }
     if (id >= S_FULLSCREEN && id < S_FULLSCREEN + kWindows) {
-        place(c);
         c.windows[static_cast<std::size_t>(window_of(id))].fullscreen = v != 0;
-        return;
-    }
-    if (id >= S_BUTTON && id < S_BUTTON + static_cast<int>(kButtons)) {
-        c.buttons.buttons[static_cast<std::size_t>(id - S_BUTTON)] = v;
         return;
     }
     switch (id) {
     case S_CABINET: c.play.cabinet = v != 0; break;
     case S_SMOOTHING: c.play.smoothing = v != 0; break;
+    case S_OVERLAY: c.play.music_voice_overlay = v != 0; break;
     case S_NUDGE_STRENGTH: c.play.nudge_multiplier = v / 10.0; break;
     case S_NUDGE_ENABLED: n.enabled = v != 0; break;
     case S_NUDGE_X: n.axis_x = v; break;
@@ -587,20 +549,24 @@ std::string& text_of(Config& c, int id)
 {
     switch (id) {
     case S_ROM: return c.play.rom;
-    case S_NUDGE_DEVICE: return c.nudge.device;
-    case S_BUTTONS_DEVICE: return c.buttons.device;
-    default: return c.plunger.device;
+    case S_NUDGE_DEVICE: return c.input.nudge.device;
+    default: return c.input.plunger.device;
     }
+}
+
+std::vector<std::string>& keys_of(Config& c, int id)
+{
+    return (id >> 8) == G_LAUNCH ? c.input.launch_keys : c.input.keys[static_cast<std::size_t>(id & 0xFF)];
+}
+
+std::vector<PadButton>& inputs_of(Config& c, int id)
+{
+    return (id & 0xFF) == 0 ? c.input.flippers.left : c.input.flippers.right;
 }
 
 std::string range_text(const Row& r, int v)
 {
     char out[64];
-    if (r.kind == K_BUTTON) {
-        if (v < 0) std::snprintf(out, sizeof out, "Off");
-        else std::snprintf(out, sizeof out, "Button %d", v);
-        return out;
-    }
     switch (r.id) {
     case S_NUDGE_X:
     case S_NUDGE_Y: std::snprintf(out, sizeof out, "Axis %d", v); break;
@@ -626,20 +592,31 @@ int range_step(const Row& r, int v, int dir)
     return n < r.lo ? r.lo : n > r.hi ? r.hi : n;
 }
 
-// A row's value from one config into another: what Defaults does. The
-// windows are not here: Defaults on their tab unplaces all three at once.
+// A row's value from one config into another: what Defaults does.
 void row_copy(Config& to, Config& from, const Row& r)
 {
     switch (r.kind) {
     case K_CHOICE:
     case K_RANGE:
     case K_NUMBER:
-    case K_BUTTON:
-        if (r.id == S_NUDGE_STRENGTH) to.play.nudge_multiplier = from.play.nudge_multiplier;
-        else if (!is_window(r.id)) setting_set(to, r.id, setting_get(from, r.id));
+        if (r.id == S_NUDGE_STRENGTH) {
+            to.play.nudge_multiplier = from.play.nudge_multiplier;
+        } else if (is_monitor(r.id)) {
+            // Where the window is, not only which monitor: the defaults have
+            // nowhere, and the game opens it on the monitor of its turn.
+            auto& t = to.windows[static_cast<std::size_t>(window_of(r.id))];
+            const auto& f = from.windows[static_cast<std::size_t>(window_of(r.id))];
+            t.display_identity = f.display_identity;
+            t.geometry = f.geometry;
+            t.rotation = f.rotation;
+        } else {
+            setting_set(to, r.id, setting_get(from, r.id));
+        }
         break;
     case K_PATH:
     case K_TEXT: text_of(to, r.id) = text_of(from, r.id); break;
+    case K_KEYS: keys_of(to, r.id) = keys_of(from, r.id); break;
+    case K_INPUTS: inputs_of(to, r.id) = inputs_of(from, r.id); break;
     default: break;
     }
 }
@@ -657,118 +634,6 @@ bool controller_named(const std::string& part)
     }
     SDL_free(ids);
     return found;
-}
-
-// --- the file ------------------------------------------------------------------
-//
-// The encodings are the game's: `window.*` as `Cabinet::save` writes them,
-// `input.buttons` as `parse_cabinet_buttons` reads it, and a plunger device
-// escaped as the game's exit escapes it.
-
-std::array<Placement, kWindows> parse_windows(const std::string& text)
-{
-    std::istringstream stream(text);
-    std::string magic;
-    int version = 0;
-    if (!(stream >> magic >> version) || magic != "ACWINDOWS" || version != 1)
-        throw std::runtime_error("unsupported window placement");
-    std::array<Placement, kWindows> out{};
-    for (std::size_t i = 0; i < out.size(); ++i) {
-        std::string role;
-        auto& p = out[i];
-        int fullscreen = 0;
-        if (!(stream >> role >> std::quoted(p.name) >> p.x >> p.y >> p.w >> p.h >> fullscreen >> p.rotation)
-            || role != kRoles[i] || p.name.size() > 1024 || p.x < -100000 || p.x > 100000 || p.y < -100000
-            || p.y > 100000 || p.w < 64 || p.w > 32768 || p.h < 64 || p.h > 32768 || (fullscreen != 0 && fullscreen != 1)
-            || p.rotation < 0 || p.rotation > 270 || p.rotation % 90 != 0)
-            throw std::runtime_error("invalid window placement");
-        p.fullscreen = fullscreen != 0;
-    }
-    stream >> std::ws;
-    if (!stream.eof()) throw std::runtime_error("unexpected window placement fields");
-    return out;
-}
-
-// Every field the game reads, from `settings` (cabinet.ini) and, for what it
-// does not have, the older files beside it in `data`. Throws what the game
-// would stop on.
-Config read_config(const CabinetSettings& settings, const std::filesystem::path& data)
-{
-    Config c;
-    c.play = alien_crush::host::parse_play_settings(settings);
-    c.nudge = alien_crush::host::parse_cabinet_nudge(settings);
-    c.buttons = alien_crush::host::load_cabinet_buttons(data / "cabinet-inputs.txt");
-    const bool plunger_here = std::ranges::any_of(settings, [](const auto& f) { return f.first.starts_with("input.plunger."); });
-    c.plunger = alien_crush::host::load_cabinet_plunger(plunger_here ? data / "cabinet.ini" : data / "cabinet-plunger.txt");
-    std::error_code error;
-    if (settings.contains("window.playfield")) {
-        std::string text = "ACWINDOWS 1\n";
-        for (const auto* role : kRoles) {
-            const auto found = settings.find(std::string("window.") + role);
-            if (found == settings.end()) throw std::runtime_error(std::string("window.") + role + " is missing");
-            text += std::string(role) + ' ' + found->second + '\n';
-        }
-        c.windows = parse_windows(text);
-        c.placed = true;
-    } else if (std::filesystem::exists(data / "cabinet-windows.txt", error)) {
-        const auto bytes = alien_crush::core::read_file(data / "cabinet-windows.txt", 16384);
-        c.windows = parse_windows(std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
-        c.placed = true;
-    }
-    return c;
-}
-
-// `settings` with every field of `c` in it; what else it had stays.
-void store_config(CabinetSettings& settings, const Config& c)
-{
-    alien_crush::host::store_play_settings(settings, c.play);
-    const auto& n = c.nudge;
-    settings["input.nudge.enabled"] = n.enabled ? "1" : "0";
-    settings["input.nudge.device"] = n.device;
-    settings["input.nudge.axis_x"] = std::to_string(n.axis_x);
-    settings["input.nudge.axis_y"] = std::to_string(n.axis_y);
-    settings["input.nudge.threshold"] = std::to_string(n.threshold);
-    settings["input.nudge.release"] = std::to_string(n.release);
-    settings["input.nudge.cooldown_ms"] = std::to_string(n.cooldown_ms);
-
-    const auto& p = c.plunger;
-    std::string device;
-    constexpr char hex[] = "0123456789ABCDEF";
-    for (const unsigned char ch : p.device) {
-        if (ch == '%' || ch == '=' || ch == '\r' || ch == '\n') {
-            device += '%';
-            device += hex[ch >> 4];
-            device += hex[ch & 15];
-        } else {
-            device += static_cast<char>(ch);
-        }
-    }
-    settings["input.plunger.device"] = device;
-    settings["input.plunger.axis"] = std::to_string(p.axis < 0 ? -1 : p.axis);
-    settings["input.plunger.rest"] = std::to_string(p.calibration.rest);
-    settings["input.plunger.drawn"] = std::to_string(p.calibration.drawn);
-    settings["input.plunger.deadzone"] = std::to_string(p.calibration.deadzone);
-    settings["input.plunger.release"] = std::to_string(p.calibration.release);
-
-    std::ostringstream buttons;
-    if (!c.buttons.device.empty()) {
-        buttons << "ACINPUTS2 " << std::quoted(c.buttons.device);
-        for (const int b : c.buttons.buttons) buttons << ' ' << b;
-    }
-    settings["input.buttons"] = buttons.str();
-
-    for (std::size_t i = 0; i < kRoles.size(); ++i) {
-        const std::string key = std::string("window.") + kRoles[i];
-        if (!c.placed) {
-            settings.erase(key);
-            continue;
-        }
-        const auto& w = c.windows[i];
-        std::ostringstream line;
-        line << std::quoted(w.name) << ' ' << w.x << ' ' << w.y << ' ' << w.w << ' ' << w.h << ' '
-             << (w.fullscreen ? 1 : 0) << ' ' << w.rotation;
-        settings[key] = line.str();
-    }
 }
 
 // --- fonts -------------------------------------------------------------------
@@ -874,7 +739,7 @@ std::vector<unsigned char> load_font(bool bold)
 
 // --- the launcher's state -------------------------------------------------------
 
-enum Part { P_ROW, P_DROP, P_OPTION, P_SLIDER, P_FIELD, P_BROWSE, P_DETECT, P_TAB, P_BUTTON };
+enum Part { P_ROW, P_DROP, P_OPTION, P_SLIDER, P_FIELD, P_BROWSE, P_CHIP, P_ADD, P_TAB, P_BUTTON };
 
 struct Hot {
     SDL_FRect r;
@@ -912,10 +777,8 @@ struct Ui {
     SDL_Texture* logo = nullptr;  // the heading, when there is one, `logo_n` times the ROM's size
     int logo_n = 0;
     Config cfg, def;
-    CabinetSettings rest;        // the file as it was read, for the fields not shown
     std::filesystem::path base;  // the launcher's own directory, where the game runs
-    std::filesystem::path data;  // portable-data, absolute
-    std::filesystem::path ini;   // its cabinet.ini
+    std::filesystem::path ini;   // absolute
     bool ini_exists = false;
     int tab = 0, focus = 0, button = UI_PLAY;
     bool on_buttons = false;
@@ -928,7 +791,6 @@ struct Ui {
     bool capturing = false;
     int capture_row = 0;
     Uint64 capture_end = 0;
-    Uint64 pad_quiet_until = 0;  // a detected press, again as a controller's
     int dragging = -1;
     // The open dropdown's row (-1: none), the option lit in it, the first one
     // in sight, and where its box was drawn.
@@ -947,7 +809,6 @@ struct Ui {
     bool redraw = true;
     RomCheck rom;
     HANDLE game = nullptr;  // the game that Play started, while it runs
-    std::vector<SDL_Joystick*> joysticks;  // open, so that their buttons can be detected
 };
 Ui ui;
 
@@ -1077,26 +938,22 @@ const RomCheck& rom_check()
 void load()
 {
     find_monitors();
-    ui.data = (ui.base / kDataRelative).lexically_normal();
     ui.ini = (ui.base / kConfigRelative).lexically_normal();
     std::error_code error;
     ui.ini_exists = std::filesystem::exists(ui.ini, error);
     ui.def = Config{};
     ui.cfg = Config{};
-    ui.rest.clear();
     const auto name = utf8_of(kConfigRelative);
-    try {
-        // What is missing reads as empty, and the older files beside it still
-        // count, as they do for the game.
-        auto settings = alien_crush::host::read_cabinet_settings(ui.ini);
-        ui.cfg = read_config(settings, ui.data);
-        ui.rest = std::move(settings);
-        if (ui.ini_exists) say(false, "Read %s", name.c_str());
-        else say(false, "There is no %s yet. Save or Play makes one here.", name.c_str());
-    } catch (const std::exception& e) {
-        ui.cfg = Config{};
+    const auto loaded = alien_crush::host::load_cabinet_config((ui.base / kDataRelative).lexically_normal());
+    if (loaded.loaded()) {
+        ui.cfg = loaded.config;
+        if (loaded.legacy) say(false, "Read the older %s. Save writes it in the current format.", name.c_str());
+        else say(false, "Read %s", name.c_str());
+    } else if (loaded.status == alien_crush::host::ConfigLoadStatus::not_found) {
+        say(false, "There is no %s yet. Save or Play makes one here.", name.c_str());
+    } else {
         say(true, "%s could not be read (%s), and the game would stop on it. The defaults are shown here; "
-            "Save replaces it.", name.c_str(), e.what());
+            "Save replaces it.", name.c_str(), loaded.message.c_str());
     }
     if (ui.cfg.play.rom.empty()) ui.cfg.play.rom = kRomDefault;
 }
@@ -1108,17 +965,12 @@ void drop_close();
 // to read the file at all. Said, and the tab that has it shown.
 bool check_before_saving()
 {
-    const auto& n = ui.cfg.nudge;
-    const auto& b = ui.cfg.buttons;
+    const auto& n = ui.cfg.input.nudge;
     const char* wrong = nullptr;
-    int tab = TAB_CABINET;
+    const int tab = TAB_CABINET;
     if (n.device.empty()) wrong = "The nudge board needs a device name.";
     else if (n.axis_x == n.axis_y) wrong = "The nudge board's X and Y axes are the same axis.";
     else if (n.release >= n.threshold) wrong = "The nudge board's release has to be below its threshold.";
-    else if (b.device.empty() && std::ranges::any_of(b.buttons, [](int v) { return v >= 0; })) {
-        wrong = "The buttons need the board's device name.";
-        tab = TAB_BUTTONS;
-    }
     if (wrong == nullptr) return true;
     if (ui.tab != tab) {
         ui.tab = tab;
@@ -1135,10 +987,7 @@ bool save()
     if (ui.editing) commit_edit();
     if (!check_before_saving()) return false;
     try {
-        auto settings = ui.rest;
-        store_config(settings, ui.cfg);
-        alien_crush::host::write_cabinet_settings(ui.ini, settings);
-        ui.rest = std::move(settings);
+        alien_crush::host::save_cabinet_config(ui.ini, ui.cfg);
     } catch (const std::exception& e) {
         say(true, "Could not write %s: %s", utf8_of(ui.ini).c_str(), e.what());
         return false;
@@ -1280,47 +1129,45 @@ void edit_insert(std::string_view s)
 
 void start_capture(int i)
 {
+    const Row* r = row_at(i);
+    if (r->kind == K_KEYS && keys_of(ui.cfg, r->id).size() >= kKeysMax) { say(true, "Four at most. Take one off first."); return; }
     ui.capturing = true;
     ui.capture_row = i;
     ui.capture_end = SDL_GetTicks() + 5000;
     ui.status.clear();
 }
 
-// Backspace, or West: the row's button off.
-void remove_binding(int i)
+// Backspace, or West: a key row's last key, or a flipper's last input. A
+// click on a key's x: that one.
+void remove_binding(int i, int which)
 {
     const Row* r = row_at(i);
-    if (r == nullptr || r->kind != K_BUTTON || setting_get(ui.cfg, r->id) < 0) return;
-    setting_set(ui.cfg, r->id, -1);
-    changed();
+    if (r == nullptr) return;
+    const auto take = [which](auto& list) {
+        const int n = static_cast<int>(list.size());
+        const int k = which < 0 ? n - 1 : which;
+        if (k < 0 || k >= n) return false;
+        list.erase(list.begin() + k);
+        return true;
+    };
+    if ((r->kind == K_KEYS && take(keys_of(ui.cfg, r->id))) || (r->kind == K_INPUTS && take(inputs_of(ui.cfg, r->id))))
+        changed();
 }
 
-// A button pressed on a joystick while one was waited for: its number, and
-// the board's name when there is none yet. A press on some other controller
-// is said, and changes nothing.
-void capture_button(SDL_JoystickID which, int button)
+// A key pressed while one was waited for, by the name the file keeps.
+void capture_key(SDL_Scancode sc)
 {
     const Row* r = row_at(ui.capture_row);
     ui.capturing = false;
-    // The same press, when the board is a gamepad too, comes again as the
-    // gamepad's, which would be taken as the launcher's own controls.
-    ui.pad_quiet_until = SDL_GetTicks() + 250;
-    const char* const found = SDL_GetJoystickNameForID(which);
-    const std::string name = found != nullptr ? found : "";
-    auto& device = ui.cfg.buttons.device;
-    if (device.empty()) {
-        if (name.empty()) {
-            say(true, "That controller has no name to find it by.");
-            return;
-        }
-        device = name;
-    } else if (SDL_strcasestr(name.c_str(), device.c_str()) == nullptr) {
-        say(true, "That was %s, which is not the board (%s).", name.c_str(), device.c_str());
+    const char* name = SDL_GetScancodeName(sc);
+    if (name == nullptr || *name == '\0' || SDL_GetScancodeFromName(name) != sc) {
+        say(true, "That key has no name cabinet.ini can hold.");
         return;
     }
-    setting_set(ui.cfg, r->id, button);
-    changed();
-    say(false, "%s is button %d on %s.", r->label, button, name.c_str());
+    auto& list = keys_of(ui.cfg, r->id);
+    for (const auto& k : list)
+        if (same_ignoring_case(k, name)) { say(false, "%s is already here.", name); return; }
+    if (list.size() < kKeysMax) { list.emplace_back(name); changed(); }
 }
 
 void move_focus(int d)
@@ -1356,9 +1203,9 @@ void set_tab(int t)
 constexpr int kDropShown = 10;
 
 // The values of a row with a fixed list, in the order the list shows them;
-// none for a row without one. A button's is Off and the first sixteen, and an
-// axis or a button the file had that is past the usual sixteen is in the list
-// in its place.
+// none for a row without one. An axis the file had that is past the usual
+// sixteen is in the list in its place. A flipper's list is the pad inputs it does not have yet, and
+// what is picked from it is added.
 std::vector<int> row_options(const Row& r)
 {
     std::vector<int> out;
@@ -1367,7 +1214,11 @@ std::vector<int> row_options(const Row& r)
         if (setting_get(ui.cfg, r.id) == kMonitorAbsent) out.push_back(kMonitorAbsent);
     } else if (r.kind == K_CHOICE) {
         for (int i = 0; i < r.count; ++i) out.push_back(r.choices[i].value);
-    } else if ((r.kind == K_RANGE && !r.slider) || r.kind == K_BUTTON) {
+    } else if (r.kind == K_INPUTS) {
+        const auto& have = inputs_of(ui.cfg, r.id);
+        for (std::size_t b = 0; b < kPadButtonCount; ++b)
+            if (std::ranges::find(have, static_cast<PadButton>(b)) == have.end()) out.push_back(static_cast<int>(b));
+    } else if (r.kind == K_RANGE && !r.slider) {
         const int shown_hi = r.hi > 15 ? 15 : r.hi;
         for (int v = r.lo; v <= shown_hi; v += r.step) out.push_back(v);
         const int cur = setting_get(ui.cfg, r.id);
@@ -1379,7 +1230,7 @@ std::vector<int> row_options(const Row& r)
 std::string option_text(const Row& r, int v)
 {
     if (is_monitor(r.id)) {
-        if (v == kMonitorAbsent) return ui.cfg.windows[static_cast<std::size_t>(window_of(r.id))].name + " (not connected)";
+        if (v == kMonitorAbsent) return ui.cfg.windows[static_cast<std::size_t>(window_of(r.id))].display_identity + " (not connected)";
         if (v >= 0 && v < static_cast<int>(monitors.labels.size())) return monitors.labels[static_cast<std::size_t>(v)];
         return "No monitor found";
     }
@@ -1388,6 +1239,7 @@ std::string option_text(const Row& r, int v)
             if (r.choices[k].value == v) return r.choices[k].label;
         return std::to_string(v);
     }
+    if (r.kind == K_INPUTS) return pad_names[static_cast<std::size_t>(v)];
     return range_text(r, v);
 }
 
@@ -1410,12 +1262,15 @@ void drop_open(int i)
     if (ui.editing) commit_edit();
     const Row* r = row_at(i);
     const auto opts = r != nullptr ? row_options(*r) : std::vector<int>{};
-    if (opts.empty()) return;
+    if (opts.empty()) {
+        if (r != nullptr && r->kind == K_INPUTS) say(false, "Every pad input is here already.");
+        return;
+    }
     ui.focus = i;
     ui.on_buttons = false;
     reveal(i);
     ui.drop_row = i;
-    ui.drop_sel = option_index(opts, setting_get(ui.cfg, r->id));
+    ui.drop_sel = r->kind == K_INPUTS ? 0 : option_index(opts, setting_get(ui.cfg, r->id));
     // The value in the middle of what shows, where there is room.
     ui.drop_shown = kDropShown;
     ui.drop_first = ui.drop_sel - kDropShown / 2;
@@ -1438,7 +1293,10 @@ void drop_pick()
     drop_close();
     if (ui.drop_sel < 0 || ui.drop_sel >= static_cast<int>(opts.size())) return;
     const int v = opts[static_cast<std::size_t>(ui.drop_sel)];
-    if (v != setting_get(ui.cfg, r->id)) {
+    if (r->kind == K_INPUTS) {
+        inputs_of(ui.cfg, r->id).push_back(static_cast<PadButton>(v));
+        changed();
+    } else if (v != setting_get(ui.cfg, r->id)) {
         setting_set(ui.cfg, r->id, v);
         changed();
     }
@@ -1451,7 +1309,7 @@ void change(int d)
         return;
     }
     const Row* r = row_at(ui.focus);
-    if (r == nullptr || (r->kind != K_CHOICE && r->kind != K_RANGE && r->kind != K_BUTTON)) return;
+    if (r == nullptr || (r->kind != K_CHOICE && r->kind != K_RANGE)) return;
     const int v = setting_get(ui.cfg, r->id);
     int nv = v;
     const auto opts = row_options(*r);
@@ -1477,11 +1335,6 @@ bool press_button(int b)
     case UI_DEFAULTS:
         for (const auto& r : tab_rows()) row_copy(ui.cfg, ui.def, r);
         if (ui.tab == TAB_GAME && ui.cfg.play.rom.empty()) ui.cfg.play.rom = kRomDefault;
-        // The windows go back to wherever the game first opens them.
-        if (ui.tab == TAB_VIDEO) {
-            ui.cfg.placed = false;
-            ui.cfg.windows = {};
-        }
         changed();
         say(false, "%s is back to its defaults. Nothing is written until Save or Play.", tab_names[ui.tab]);
         return false;
@@ -1500,7 +1353,8 @@ bool activate(bool from_pad)
     if (r == nullptr) return false;
     switch (r->kind) {
     case K_CHOICE:
-    case K_RANGE: drop_open(ui.focus); break;
+    case K_RANGE:
+    case K_INPUTS: drop_open(ui.focus); break;
     case K_PATH:
         if (from_pad) {
             std::string path;
@@ -1511,7 +1365,7 @@ bool activate(bool from_pad)
         break;
     case K_TEXT:
     case K_NUMBER: begin_edit(ui.focus); break;
-    case K_BUTTON: start_capture(ui.focus); break;
+    case K_KEYS: start_capture(ui.focus); break;
     default: break;
     }
     return false;
@@ -1602,7 +1456,7 @@ float wrap(const Font& f, float x, float y, float w, std::string_view s, SDL_Col
 SDL_Color option_color(const Row& r, int v)
 {
     if (r.choices == on_off) return v != 0 ? C_ACCENT : C_DIM;
-    if ((r.kind == K_BUTTON || r.id == S_PLUNGER_AXIS) && v < 0) return C_DIM;
+    if (r.id == S_PLUNGER_AXIS && v < 0) return C_DIM;
     return C_TEXT;
 }
 
@@ -1719,26 +1573,64 @@ void draw_field(int i, const Row& r, float x, float y, float w, float h, bool fo
     }
 }
 
-// A board's button: its number as a dropdown, or the wait for a press, and
-// Detect beside it, as Browse is beside the ROM.
-void draw_button_row(int i, const Row& r, float x, float y, float w, float h, bool focused)
+// A key's name as the file has it, as it is drawn: red when SDL knows no key
+// by that name, which the game reports and leaves unbound.
+void draw_chips(int i, const std::vector<std::string>& names, const std::vector<bool>& bad, float& cx, float y, float h)
 {
-    const float bw = L(96);
-    const float fw = w - bw - L(8);
+    for (std::size_t k = 0; k < names.size(); ++k) {
+        const float cw = text_width(ui.body, names[k]) + L(40);
+        fill(cx, y, cw, h, bad[k] ? SDL_Color{80, 18, 16, 255} : SDL_Color{36, 36, 36, 255});
+        text(ui.ren, ui.body, cx + L(10), y + (h - ui.body.height) / 2, names[k], bad[k] ? C_RED : C_TEXT);
+        text(ui.ren, ui.small, cx + cw - L(22), y + (h - ui.small.height) / 2, "\xC3\x97", C_DIM);
+        hot(cx + cw - L(28), y, L(28), h, P_CHIP, i, static_cast<int>(k));
+        cx += cw + L(8);
+    }
+}
+
+void draw_bindings(int i, const Row& r, float x, float y, float h, bool focused)
+{
+    float cx = x;
+    std::vector<std::string> names;
+    std::vector<bool> bad;
+    std::size_t most = kKeysMax;
+    if (r.kind == K_KEYS) {
+        for (const auto& k : keys_of(ui.cfg, r.id)) {
+            names.push_back(k);
+            bad.push_back(SDL_GetScancodeFromName(k.c_str()) == SDL_SCANCODE_UNKNOWN);
+        }
+    } else {
+        for (const auto b : inputs_of(ui.cfg, r.id)) {
+            names.emplace_back(pad_names[static_cast<std::size_t>(b)]);
+            bad.push_back(false);
+        }
+        most = kPadButtonCount;
+    }
+    draw_chips(i, names, bad, cx, y, h);
     if (ui.capturing && ui.capture_row == i) {
         const auto left = static_cast<int>((ui.capture_end - SDL_GetTicks() + 999) / 1000);
         char msg[64];
-        std::snprintf(msg, sizeof msg, "Press a button on the board... %d", left);
-        fill(x, y, fw, h, C_BLACK);
-        outline(x, y, fw, h, L(2), C_ACCENT);
-        text_tail(ui.body, x + L(14), y + (h - ui.body.height) / 2, fw - L(28), msg, C_ACCENT);
-    } else {
-        draw_dropdown(i, r, x, y, fw, h, focused);
+        std::snprintf(msg, sizeof msg, "Press a key... %d", left);
+        const float cw = text_width(ui.body, msg) + L(20);
+        outline(cx, y, cw, h, L(2), C_ACCENT);
+        text(ui.ren, ui.body, cx + L(10), y + (h - ui.body.height) / 2, msg, C_ACCENT);
+    } else if (names.size() < most) {
+        if (names.empty()) {
+            const float e = text(ui.ren, ui.body, cx, y + (h - ui.body.height) / 2,
+                                 r.kind == K_INPUTS ? "The cartridge's own" : "None", C_DIM);
+            cx = e + L(12);
+        }
+        outline(cx, y, h, h, L(1), focused ? C_DIM : C_FAINT);
+        const float pw = text_width(ui.bold, "+");
+        text(ui.ren, ui.bold, cx + (h - pw) / 2, y + (h - ui.bold.height) / 2, "+", focused ? C_ACCENT : C_DIM);
+        hot(cx, y, h, h, P_ADD, i, 0);
+        // A flipper's list opens from its +.
+        if (r.kind == K_INPUTS && ui.drop_row == i) {
+            ui.drop_x = cx;
+            ui.drop_y = y;
+            ui.drop_w = L(200);
+            ui.drop_h = h;
+        }
     }
-    outline(x + fw + L(8), y, bw, h, L(1), focused ? C_DIM : C_FAINT);
-    const float lw = text_width(ui.body, "Detect");
-    text(ui.ren, ui.body, x + fw + L(8) + (bw - lw) / 2, y + (h - ui.body.height) / 2, "Detect", C_TEXT);
-    hot(x + fw + L(8), y, bw, h, P_DETECT, i, 0);
 }
 
 // The title's logo as the heading, if the launcher was built with it, LOGO_H
@@ -1859,7 +1751,7 @@ void draw()
         case K_PATH: draw_field(i, r, cx, ry, cw_full, rh, focused); break;
         case K_TEXT:
         case K_NUMBER: draw_field(i, r, cx, ry, cw, rh, focused); break;
-        default: draw_button_row(i, r, cx, ry, cw, rh, focused); break;
+        default: draw_bindings(i, r, cx, ry, rh, focused); break;
         }
     }
     SDL_SetRenderClipRect(ui.ren, nullptr);
@@ -1888,12 +1780,17 @@ void draw()
             const auto& rom = rom_check();
             if (!rom.found) warn = "Not found: " + utf8_of(rom.resolved);
             else if (!rom.supported) warn = "Not the supported ROM: " + utf8_of(rom.resolved);
+        } else if (r->kind == K_KEYS) {
+            for (const auto& k : keys_of(ui.cfg, r->id))
+                if (SDL_GetScancodeFromName(k.c_str()) == SDL_SCANCODE_UNKNOWN) {
+                    warn = "'" + k + "' is not the name of a key, and binds nothing.";
+                    break;
+                }
         } else {
             // A device named that nothing connected now answers to.
             const std::string* device = nullptr;
-            if (r->id == S_NUDGE_DEVICE && ui.cfg.nudge.enabled) device = &ui.cfg.nudge.device;
-            else if (r->id == S_PLUNGER_DEVICE && ui.cfg.plunger.axis >= 0) device = &ui.cfg.plunger.device;
-            else if (r->id == S_BUTTONS_DEVICE || r->kind == K_BUTTON) device = &ui.cfg.buttons.device;
+            if (r->id == S_NUDGE_DEVICE && ui.cfg.input.nudge.enabled) device = &ui.cfg.input.nudge.device;
+            else if (r->id == S_PLUNGER_DEVICE && ui.cfg.input.plunger.axis >= 0) device = &ui.cfg.input.plunger.device;
             if (device != nullptr && !device->empty() && !controller_named(*device))
                 warn = "No controller connected now has '" + *device + "' in its name.";
         }
@@ -2015,7 +1912,11 @@ bool click(float mx, float my)
         if (browse(path)) set_text(row_at(at.row)->id, path);
         break;
     }
-    case P_DETECT: start_capture(at.row); break;
+    case P_CHIP: remove_binding(at.row, at.index); break;
+    case P_ADD:
+        if (row_at(at.row)->kind == K_INPUTS) drop_open(at.row);
+        else start_capture(at.row);
+        break;
     default: break;
     }
     return false;
@@ -2059,11 +1960,6 @@ bool handle(const SDL_Event& e)
         return false;
     case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
     case SDL_EVENT_JOYSTICK_BUTTON_UP:
-        // A board's buttons are the launcher's only while one is waited for.
-        if (ui.capturing && e.type == SDL_EVENT_JOYSTICK_BUTTON_DOWN) {
-            capture_button(e.jbutton.which, e.jbutton.button);
-            return false;
-        }
         ui.redraw = false;
         return false;
     case SDL_EVENT_MOUSE_MOTION:
@@ -2074,29 +1970,19 @@ bool handle(const SDL_Event& e)
     default: break;
     }
 
-    // A button being waited for: a key or a click stops the wait. A
-    // controller's own press is the board's, and comes as a joystick's above.
+    // A key being waited for takes what comes first, and a click or a
+    // controller's button stops the wait.
     if (ui.capturing) {
-        if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat)) {
+        if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
             ui.capturing = false;
-            say(false, "Nothing was pressed on the board; the button is as it was.");
             return false;
         }
-        if (e.type != SDL_EVENT_QUIT && e.type != SDL_EVENT_JOYSTICK_ADDED && e.type != SDL_EVENT_JOYSTICK_REMOVED)
-            return false;
+        if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) capture_key(e.key.scancode);
+        if (e.type != SDL_EVENT_QUIT) return false;
     }
 
     switch (e.type) {
     case SDL_EVENT_QUIT: return true;
-    case SDL_EVENT_JOYSTICK_ADDED:
-        if (SDL_Joystick* joystick = SDL_OpenJoystick(e.jdevice.which)) ui.joysticks.push_back(joystick);
-        return false;
-    case SDL_EVENT_JOYSTICK_REMOVED:
-        if (SDL_Joystick* joystick = SDL_GetJoystickFromID(e.jdevice.which)) {
-            std::erase(ui.joysticks, joystick);
-            SDL_CloseJoystick(joystick);
-        }
-        return false;
     case SDL_EVENT_DISPLAY_ADDED:
     case SDL_EVENT_DISPLAY_REMOVED:
     case SDL_EVENT_DISPLAY_MOVED:
@@ -2169,7 +2055,6 @@ bool handle(const SDL_Event& e)
         if (SDL_Gamepad* pad = SDL_GetGamepadFromID(e.gdevice.which)) SDL_CloseGamepad(pad);
         return false;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-        if (SDL_GetTicks() < ui.pad_quiet_until) return false;
         if (ui.editing) commit_edit();
         switch (e.gbutton.button) {
         case SDL_GAMEPAD_BUTTON_DPAD_UP: hold(DIR_UP); break;
@@ -2179,7 +2064,7 @@ bool handle(const SDL_Event& e)
         case SDL_GAMEPAD_BUTTON_SOUTH: return activate(true);
         case SDL_GAMEPAD_BUTTON_EAST: drop_close(); break;
         case SDL_GAMEPAD_BUTTON_WEST:
-            if (!ui.on_buttons) remove_binding(ui.focus);
+            if (!ui.on_buttons) remove_binding(ui.focus, -1);
             break;
         case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: set_tab(ui.tab - 1); break;
         case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: set_tab(ui.tab + 1); break;
@@ -2284,7 +2169,7 @@ bool handle(const SDL_Event& e)
         case SDLK_SPACE: return activate(false);
         case SDLK_BACKSPACE:
         case SDLK_DELETE:
-            if (!ui.on_buttons) remove_binding(ui.focus);
+            if (!ui.on_buttons) remove_binding(ui.focus, -1);
             break;
         case SDLK_ESCAPE: return press_button(UI_QUIT);
         default: break;
@@ -2353,6 +2238,10 @@ int main(int argc, char* argv[])
             return 2;
         }
     }
+    // SDL drops the click that brings the window forward; a click on a row or
+    // a button behind another window should do what it says the first time.
+    // The pointer already lights what it is over, focused or not.
+    SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD)) {
         std::fprintf(stderr, "error: %s\n", SDL_GetError());
         return 1;
@@ -2475,7 +2364,6 @@ int main(int argc, char* argv[])
     font_free(ui.bold);
     font_free(ui.title);
     if (ui.logo != nullptr) SDL_DestroyTexture(ui.logo);
-    for (SDL_Joystick* joystick : ui.joysticks) SDL_CloseJoystick(joystick);
     SDL_DestroyRenderer(ui.ren);
     SDL_DestroyWindow(ui.win);
     SDL_Quit();

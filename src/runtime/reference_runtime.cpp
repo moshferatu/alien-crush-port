@@ -3,6 +3,8 @@
 #include "alien_crush/runtime/reference_launcher.hpp"
 #include "alien_crush/core/rom_image.hpp"
 #include "alien_crush/input/nudge_multiplier.hpp"
+#include "alien_crush/core/files.hpp"
+#include "music_voice_overlay.hpp"
 #include <libretro.h>
 #include <array>
 #include <atomic>
@@ -20,6 +22,8 @@ extern "C" bool ac_copy_cpu_snapshot(unsigned short*,unsigned char*);
 extern "C" bool ac_copy_video_snapshot(unsigned short*,unsigned short*,unsigned short*,unsigned short*);
 extern "C" void ac_set_continuous_handoff(bool);
 extern "C" void ac_set_cabinet_controls(bool);
+extern "C" void ac_set_flipper_masks(unsigned char,unsigned char);
+extern "C" bool ac_set_music_voice_overlay(bool,const unsigned char*,unsigned);
 extern "C" void ac_set_nudge_motion(unsigned short (*)(unsigned short,unsigned short));
 #endif
 
@@ -31,7 +35,8 @@ class Reference final : public ReferenceRuntime {
     HandoffMode handoff;
     ControlMode controls;
     double nudge_multiplier;
-    std::string nudge_revision;
+    input::FlipperMasks flippers;
+    std::string custom_revision;
     inline static std::atomic<Reference*> active{};
     std::thread::id owner = std::this_thread::get_id();
     bool initialized{}, loaded{}, failed{}, core_started{};
@@ -84,6 +89,7 @@ class Reference final : public ReferenceRuntime {
     void check_loaded() const { check_thread(); if(!loaded) throw std::logic_error("No ROM loaded"); }
     void close() noexcept {
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
+        if(loaded) ac_set_music_voice_overlay(false,nullptr,0);
         ac_set_display_observer(nullptr);
         ac_set_palette_observer(nullptr,nullptr);
 #endif
@@ -165,19 +171,28 @@ class Reference final : public ReferenceRuntime {
         return (mask&bit)?1:0;
     }
 public:
-    explicit Reference(HandoffMode mode,ControlMode input_mode,double multiplier) : handoff(mode),controls(input_mode),nudge_multiplier(multiplier) {
-        const auto suffix=input::nudge_revision_suffix(multiplier);
+    explicit Reference(HandoffMode mode,ControlMode input_mode,double multiplier,input::FlipperMasks masks) :
+        handoff(mode),controls(input_mode),nudge_multiplier(multiplier),flippers(masks) {
+        if(controls!=ControlMode::cabinet && flippers!=input::FlipperMasks{})
+            throw std::runtime_error("Flipper inputs apply to cabinet controls only");
+        // The nudge factor is last: recorded_nudge_multiplier reads to the end.
+        const auto suffix=input::flipper_revision_suffix(flippers)+input::nudge_revision_suffix(multiplier);
         if(!suffix.empty()) {
-            auto base=std::string(revision());
+            const auto base=std::string(revision());
             // Save headers allow 64 bytes. Keep the pinned revision prefix and
-            // all mode markers, with room for a lossless double representation.
-            base.erase(15,32);
-            nudge_revision=base+suffix;
+            // all mode markers, with room for a lossless double representation:
+            // eight characters of the revision, fewer only if that is too long.
+            const auto hash_end=7+std::string_view(AC_BEETLE_REVISION).size();
+            const auto markers=base.substr(hash_end);
+            std::size_t keep=8;
+            while(keep>1 && 7+keep+markers.size()+suffix.size()>64) --keep;
+            custom_revision=base.substr(0,7+keep)+markers+suffix;
         }
 #ifndef AC_REFERENCE_VIDEO_OBSERVER
         if(mode==HandoffMode::continuous) throw std::runtime_error("Continuous handoff requires the video-enabled backend");
         if(controls==ControlMode::cabinet) throw std::runtime_error("Cabinet controls require the video-enabled backend");
         if(multiplier!=1) throw std::runtime_error("Nudge multiplier requires the video-enabled backend");
+        if(flippers!=input::FlipperMasks{}) throw std::runtime_error("Flipper inputs require the video-enabled backend");
 #endif
         pixels.reserve(2048U*264U); audio.reserve(131072);
         Reference* empty=nullptr;
@@ -205,6 +220,7 @@ public:
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
         ac_set_continuous_handoff(handoff==HandoffMode::continuous);
         ac_set_cabinet_controls(controls==ControlMode::cabinet);
+        ac_set_flipper_masks(flippers.left,flippers.right);
         ac_set_nudge_motion(nudge_multiplier==1?nullptr:+[](unsigned short motion,unsigned short impulse) -> unsigned short {
             return input::scale_nudge_motion(motion,impulse,active.load()->nudge_multiplier);
         });
@@ -224,7 +240,7 @@ public:
     double frames_per_second() const override { return av.timing.fps; }
     int sample_rate() const override { return static_cast<int>(av.timing.sample_rate+0.5); }
     std::string_view revision() const override {
-        if(!nudge_revision.empty()) return nudge_revision;
+        if(!custom_revision.empty()) return custom_revision;
 #ifdef AC_REFERENCE_STATE_EXTENSION
         if(controls==ControlMode::cabinet) return handoff==HandoffMode::continuous?
             "beetle-" AC_BEETLE_REVISION "-s1-h1-controls1":"beetle-" AC_BEETLE_REVISION "-s1-controls1";
@@ -263,6 +279,23 @@ public:
         auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
         if(!memory || size<8192) return false;
         return cancel_reference_launcher_draw({memory,8192});
+    }
+    void music_voice_overlay(bool enabled) override {
+        check_loaded();
+#ifdef AC_REFERENCE_VIDEO_OBSERVER
+        std::vector<std::byte> waveforms;
+        if(enabled) {
+            // The driver's waveforms, as it uploads them to the PSG.
+            const auto rom=core::read_file(core::path_from_utf8(rom_path));
+            constexpr auto offset=audio::MusicVoiceOverlay::kWaveformOffset,size=audio::MusicVoiceOverlay::kWaveformTableSize;
+            if(rom.size()<offset+size) throw std::runtime_error("The ROM has no sound driver waveforms");
+            waveforms.assign(rom.begin()+offset,rom.begin()+offset+size);
+        }
+        if(!ac_set_music_voice_overlay(enabled,reinterpret_cast<const unsigned char*>(waveforms.data()),static_cast<unsigned>(waveforms.size())))
+            throw std::runtime_error("The music voice overlay could not start");
+#else
+        if(enabled) throw std::runtime_error("The music voice overlay requires the video-enabled backend");
+#endif
     }
     bool supports_display_observation() const override {
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
@@ -339,5 +372,5 @@ public:
     }
 };
 }
-std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls,double multiplier) { return std::make_unique<Reference>(mode,controls,multiplier); }
+std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls,double multiplier,input::FlipperMasks flippers) { return std::make_unique<Reference>(mode,controls,multiplier,flippers); }
 }

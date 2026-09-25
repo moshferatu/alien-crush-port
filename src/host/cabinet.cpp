@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "cabinet.hpp"
 #include "window_layout.hpp"
-#include "cabinet_settings.hpp"
 #include "alien_crush/render/title_logo.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include <algorithm>
-#include <iomanip>
-#include <sstream>
 #include <stdexcept>
 #include <vector>
 namespace alien_crush::host {
@@ -33,65 +30,36 @@ std::vector<Monitor> monitors(bool required=true) {
     if(result.empty() && required) throw std::runtime_error("No usable cabinet displays available");
     return result;
 }
-constexpr std::array<const char*,3> roles{"playfield","backglass","score"};
-struct Placement { std::string name; int x{},y{},w{},h{},fullscreen{},rotation{}; };
-std::array<Placement,3> read(const std::filesystem::path& path) {
-    std::string text;
-    if(path.extension()==".ini") {
-        const auto settings=read_cabinet_settings(path);
-        text="ACWINDOWS 1\n";
-        for(const auto* role:roles) text+=std::string(role)+' '+settings.at(std::string("window.")+role)+'\n';
-    } else {
-        const auto bytes=core::read_file(path,16384);
-        text.assign(reinterpret_cast<const char*>(bytes.data()),bytes.size());
-    }
-    std::istringstream stream(text);
-    std::string magic; int version{};
-    if(!(stream>>magic>>version) || magic!="ACWINDOWS" || version!=1) throw std::runtime_error("Unsupported cabinet window configuration");
-    std::array<Placement,3> placements;
-    for(std::size_t i=0;i<placements.size();++i) {
-        std::string role; auto& p=placements[i];
-        if(!(stream>>role>>std::quoted(p.name)>>p.x>>p.y>>p.w>>p.h>>p.fullscreen>>p.rotation) || role!=roles[i] ||
-            p.name.size()>1024 || p.x<-100000 || p.x>100000 || p.y<-100000 || p.y>100000 ||
-            p.w<64 || p.w>32768 || p.h<64 || p.h>32768 || (p.fullscreen!=0 && p.fullscreen!=1) ||
-            p.rotation<0 || p.rotation>270 || p.rotation%90!=0)
-            throw std::runtime_error("Invalid cabinet window configuration");
-    }
-    stream>>std::ws;
-    if(!stream.eof()) throw std::runtime_error("Unexpected cabinet window configuration fields");
-    return placements;
 }
-}
-Cabinet::Cabinet(Presentation& playfield,const std::filesystem::path& data,std::span<const std::byte> rom)
-    : windows_{&playfield,&backglass_,&score_},path_(data/"cabinet.ini"),score_panel_(render::ScorePanel::from_rom(rom)),
+Cabinet::Cabinet(Presentation& playfield,const std::array<WindowPlacement,kCabinetWindowCount>& placements,
+    const std::filesystem::path& data,std::span<const std::byte> rom)
+    : windows_{&playfield,&backglass_,&score_},score_panel_(render::ScorePanel::from_rom(rom)),
       backglass_image_(load_backglass(data/"backglass.bmp")) {
     if(!backglass_image_) backglass_animation_.emplace(rom);
     const auto displays=monitors();
-    const auto settings=read_cabinet_settings(path_);
-    const auto source=settings.contains("window.playfield")?path_:data/"cabinet-windows.txt";
-    const bool saved=std::filesystem::exists(source);
-    const auto placements=saved?read(source):std::array<Placement,3>{};
     for(std::size_t i=0;i<windows_.size();++i) {
         auto* output=windows_[i]; auto* window=output->window();
         checked(SDL_SetWindowMinimumSize(window,64,64));
         const auto& p=placements[i];
+        const auto& g=p.geometry;
+        const bool saved=g.valid();
         auto selected=std::min(i,displays.size()-1);
         if(saved) {
             // Geometry distinguishes identical monitor names; missing monitors
             // fall back to a connected display and clamp back into view.
-            for(std::size_t j=0;j<displays.size();++j) if(displays[j].name==p.name) {
+            for(std::size_t j=0;j<displays.size();++j) if(displays[j].name==p.display_identity) {
                 selected=j;
                 const auto& b=displays[j].bounds;
-                if(p.x>=b.x && p.x<b.x+b.w && p.y>=b.y && p.y<b.y+b.h) break;
+                if(g.x>=b.x && g.x<b.x+b.w && g.y>=b.y && g.y<b.y+b.h) break;
             }
         }
         const auto& b=displays[selected].bounds;
         int w{},h{}; checked(SDL_GetWindowSize(window,&w,&h));
-        w=std::min(saved?p.w:w,b.w); h=std::min(saved?p.h:h,b.h);
-        const int x=std::clamp(saved?p.x:b.x+static_cast<int>(i)*40,b.x,b.x+b.w-w);
-        const int y=std::clamp(saved?p.y:b.y+static_cast<int>(i)*40,b.y,b.y+b.h-h);
+        w=std::min(saved?std::max(g.width,64):w,b.w); h=std::min(saved?std::max(g.height,64):h,b.h);
+        const int x=std::clamp(saved?g.x:b.x+static_cast<int>(i)*40,b.x,b.x+b.w-w);
+        const int y=std::clamp(saved?g.y:b.y+static_cast<int>(i)*40,b.y,b.y+b.h-h);
         checked(SDL_SetWindowSize(window,w,h)); checked(SDL_SetWindowPosition(window,x,y));
-        output->rotation(p.rotation);
+        output->rotation(p.artwork_rotation);
         if(p.fullscreen) checked(SDL_SetWindowFullscreen(window,true));
         output->reveal();
     }
@@ -175,17 +143,20 @@ void Cabinet::show(std::span<const std::byte> ram,bool smoothing,double fraction
     const auto image=score_panel_.compose(state);
     score_.show({0,image.width,image.height,image.pixels,{}},8,3);
 }
-void Cabinet::save() const {
-    auto settings=read_cabinet_settings(path_);
+std::array<WindowPlacement,kCabinetWindowCount> Cabinet::placements() const {
+    std::array<WindowPlacement,kCabinetWindowCount> result;
     for(std::size_t i=0;i<windows_.size();++i) {
-        std::ostringstream stream;
-        auto* window=windows_[i]->window(); int x{},y{},w{},h{};
-        checked(SDL_GetWindowPosition(window,&x,&y)); checked(SDL_GetWindowSize(window,&w,&h));
-        const auto* name=SDL_GetDisplayName(SDL_GetDisplayForWindow(window));
-        stream<<std::quoted(name?name:"Unnamed display")<<' '<<x<<' '<<y<<' '<<w<<' '<<h<<' '
-            <<((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)?1:0)<<' '<<windows_[i]->rotation();
-        settings[std::string("window.")+roles[i]]=stream.str();
+        auto* window=windows_[i]->window();
+        auto& p=result[i];
+        auto& g=p.geometry;
+        checked(SDL_GetWindowPosition(window,&g.x,&g.y)); checked(SDL_GetWindowSize(window,&g.width,&g.height));
+        const auto display=SDL_GetDisplayForWindow(window);
+        const auto* name=SDL_GetDisplayName(display);
+        p.display_identity=name?name:"Unnamed display";
+        p.rotation=display_rotation(SDL_GetCurrentDisplayOrientation(display));
+        p.fullscreen=(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0;
+        p.artwork_rotation=windows_[i]->rotation();
     }
-    write_cabinet_settings(path_,settings);
+    return result;
 }
 }

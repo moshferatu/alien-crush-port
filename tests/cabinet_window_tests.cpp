@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "cabinet.hpp"
 #include "startup_display.hpp"
-#include "cabinet_settings.hpp"
 #include "window_layout.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/render/pce_graphics.hpp"
@@ -200,16 +199,14 @@ int main(int argc,char** argv) {
             SDL_DestroySurface(capture);
         }
         // A known fixture makes repeated test runs independent of saved geometry.
-        {
-            host::write_cabinet_settings(data/"cabinet.ini",{{"input.plunger.axis","2"},{"input.buttons",""}});
-            std::ofstream config(data/"cabinet-windows.txt");
-            config<<"ACWINDOWS 1\nplayfield \"Test\" 0 0 320 240 0 0\n"
-                  <<"backglass \"Test\" 0 0 320 240 0 0\nscore \"Test\" 0 0 320 240 0 0\n";
-        }
+        host::CabinetConfig fixture;
+        fixture.input.plunger.axis=2;
+        for(auto& window:fixture.windows) window.display_identity="Test",window.geometry={0,0,320,240};
+        host::save_cabinet_config(data/"cabinet.ini",fixture);
         {
             const auto rom=core::read_file(core::path_from_utf8(argv[1]));
             host::Presentation playfield("Test playfield",320,240,true);
-            host::Cabinet cabinet(playfield,data,rom);
+            host::Cabinet cabinet(playfield,host::load_cabinet_config(data).config.windows,data,rom);
             int count{};auto** all=SDL_GetWindows(&count);
             require(all && count==3,"Three cabinet windows");
             std::array<SDL_WindowID,3> ids{};
@@ -268,25 +265,24 @@ int main(int argc,char** argv) {
                 require(SDL_GetWindowPosition(window,&r.x,&r.y) && SDL_GetWindowSize(window,&r.w,&r.h),"Read stable geometry");
                 require(SDL_RectsEqual(&r,&recovered[i]),"Repeated notification leaves visible windows unchanged");
             }
-            cabinet.save();
+            auto saved=host::load_cabinet_config(data).config;
+            saved.windows=cabinet.placements();
+            host::save_cabinet_config(data/"cabinet.ini",saved);
         }
         {
-            const auto settings=host::read_cabinet_settings(data/"cabinet.ini");
-            require(settings.at("input.plunger.axis")=="2" && settings.contains("input.buttons"),"Window saves preserve shared inputs");
+            const auto loaded=host::load_cabinet_config(data);
+            require(loaded.loaded() && !loaded.legacy,"Read the saved cabinet.ini");
+            require(loaded.config.input.plunger.axis==2,"Window saves preserve shared inputs");
             const std::array<int,3> expected{90,90,270};
-            unsigned index=0;
-            for(const auto* role:{"playfield","backglass","score"}) {
-                const auto rotation=expected[index++];
-                std::istringstream config(settings.at(std::string("window.")+role));
-                std::string name;int x{},y{},w{},h{},fullscreen{},actual{};
-                config>>std::quoted(name)>>x>>y>>w>>h>>fullscreen>>actual;
-                require(static_cast<bool>(config) && actual==rotation && fullscreen==0,"Save each role's rotation and fullscreen");
+            for(std::size_t i=0;i<expected.size();++i) {
+                const auto& window=loaded.config.windows[i];
+                require(window.artwork_rotation==expected[i] && !window.fullscreen && window.geometry.valid(),
+                    "Save each role's rotation and fullscreen");
             }
             const auto rom=core::read_file(core::path_from_utf8(argv[1]));
             host::Presentation playfield("Restored playfield",320,240,true);
-            host::Cabinet cabinet(playfield,data,rom);
+            host::Cabinet cabinet(playfield,loaded.config.windows,data,rom);
             require(playfield.rotation()==90,"Restore configured rotation");
-            cabinet.save();
         }
         SDL_Quit();
         std::cout<<"PASS: cabinet window selection, rotation, display recovery, fullscreen and persistence\n";

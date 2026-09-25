@@ -4,6 +4,7 @@
 #include "alien_crush/core/high_scores.hpp"
 #include "alien_crush/diagnostics/display_trace.hpp"
 #include "alien_crush/diagnostics/reference_snapshot.hpp"
+#include "alien_crush/input/flipper_masks.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -65,10 +66,15 @@ public:
     // Explicit optional cabinet bridge; never used by canonical pad replays.
     virtual bool apply_plunger_draw(std::uint8_t percent) = 0;
     virtual bool cancel_plunger_draw() = 0;
+    // The music's voices kept while sound effects play, on a second PSG that
+    // only adds to the output (src/runtime/music_voice_overlay.hpp). Live sound
+    // only: the machine and its states are untouched. After load; a new load
+    // turns it off. Throws where the backend cannot.
+    virtual void music_voice_overlay(bool enabled) = 0;
 };
 enum class HandoffMode { original, continuous };
 enum class ControlMode { original, cabinet };
 // Mode is fixed for the lifetime of a runtime and included in its state identity.
 std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode=HandoffMode::original,
-    ControlMode controls=ControlMode::original,double nudge_multiplier=1.0);
+    ControlMode controls=ControlMode::original,double nudge_multiplier=1.0,input::FlipperMasks flippers={});
 }

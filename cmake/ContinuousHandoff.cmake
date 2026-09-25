@@ -26,6 +26,9 @@ static bool ac_cabinet_controls = false;
 static unsigned short (*ac_nudge_motion)(unsigned short,unsigned short) = nullptr;
 extern "C" void ac_set_nudge_motion(unsigned short (*callback)(unsigned short,unsigned short)) { ac_nudge_motion=callback; }
 extern "C" void ac_set_cabinet_controls(bool enabled) { ac_cabinet_controls=enabled; }
+static unsigned char ac_left_flipper_mask = 0x80, ac_right_flipper_mask = 0x30;
+extern "C" void (*ac_music_overlay_step)(unsigned,unsigned,unsigned,unsigned);
+extern "C" void ac_set_flipper_masks(unsigned char left,unsigned char right) { ac_left_flipper_mask=left; ac_right_flipper_mask=right; }
 static unsigned long long ac_handoff_packets = 0, ac_handoff_waits = 0;
 extern "C" void ac_set_continuous_handoff(bool enabled) {
     ac_continuous_handoff=enabled; ac_handoff_packets=ac_handoff_waits=0;

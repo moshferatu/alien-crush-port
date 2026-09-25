@@ -6,11 +6,9 @@
 #include "cabinet_input.hpp"
 #include "cabinet_nudge.hpp"
 #include "cabinet_plunger.hpp"
-#include "cabinet_settings.hpp"
-#include "play_settings.hpp"
+#include "cabinet_config.hpp"
 #include <iomanip>
 #include <algorithm>
-#include <sstream>
 #include "game_input.hpp"
 #include "high_score_autosave.hpp"
 #include "alien_crush/runtime/reference_launcher.hpp"
@@ -37,11 +35,13 @@ void open_pad(PadDevice& device) {
     if(count>0) device.pad=SDL_OpenGamepad(ids[0]);
     SDL_free(ids);
 }
-PadInput read_input(SDL_Gamepad* pad) {
+PadInput read_input(host::KeyboardInput& keyboard,SDL_Gamepad* pad,const host::FlipperInputs& flippers,bool in_shooter) {
     int count{};const bool* keys=SDL_GetKeyboardState(&count);
     std::array<bool,SDL_GAMEPAD_BUTTON_COUNT> buttons{};
     for(int i=0;pad && i<SDL_GAMEPAD_BUTTON_COUNT;++i) buttons[static_cast<std::size_t>(i)]=SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(i));
-    return host::device_game_input({keys,static_cast<std::size_t>(count)},buttons);
+    auto input=keyboard.read({keys,static_cast<std::size_t>(count)},in_shooter);
+    input.player_one|=host::gamepad_game_input(buttons,flippers).player_one;
+    return input;
 }
 }
 int main(int argc,char** argv) {
@@ -51,7 +51,7 @@ int main(int argc,char** argv) {
         std::optional<double> requested_nudge_multiplier;
         double refresh_override=0;
         // Flags beat cabinet.ini's play settings, which fill in what they leave unsaid.
-        std::optional<bool> smoothing_override,cabinet_override;
+        std::optional<bool> smoothing_override,cabinet_override,overlay_override;
         bool probe=false,probe_plunger=false,no_vsync=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
@@ -67,6 +67,8 @@ int main(int argc,char** argv) {
             else if(arg=="--no-vsync") no_vsync=true;
             else if(arg=="--no-smooth") smoothing_override=false;
             else if(arg=="--smooth") smoothing_override=true;
+            else if(arg=="--music-voice-overlay") overlay_override=true;
+            else if(arg=="--no-music-voice-overlay") overlay_override=false;
             else if(arg=="--refresh") {
                 const auto text=value();
                 const auto parsed=std::from_chars(text.data(),text.data()+text.size(),refresh_override);
@@ -81,7 +83,23 @@ int main(int argc,char** argv) {
             else if(arg=="--input-probe") probe=true;
             else if(arg=="--cabinet-plunger-probe") probe_plunger=true;
             else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
-            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\nEnter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper; Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm. F5/F9 quick save/load, F11 fullscreen, Escape exit.\nCabinet: move/resize three windows; F11 toggles the focused window, R rotates the full stitched playfield. Layout saves on normal exit.\nCabinet settings: windows, input.buttons, input.nudge.* and input.plunger.* share portable-data/cabinet.ini (see README).\n--no-cabinet: one window, whatever cabinet.ini says.\nWith no options, normal play takes game.rom, game.cabinet, video.smoothing and input.nudge_multiplier\nfrom portable-data/cabinet.ini, which alien-crush-launcher.exe edits; a flag beats the file for that run.\n--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F7 toggles.\n--refresh <Hz>: override the detected playfield refresh rate; --no-vsync uses timer pacing.\n--nudge-multiplier <factor>: nudge force from 0 to 16 (default 1); applies to keyboard, buttons and physical nudges.\n--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n--plunger-config <path>: reuse a Devil's Crush cabinet.ini; otherwise local cabinet.ini, then legacy cabinet-plunger.txt.\n--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
+            else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\n"
+                "Keys (rebindable under input. in portable-data/cabinet.ini): Enter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper;\n"
+                "Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm.\n"
+                "F5/F9 quick save/load, F11 fullscreen, Escape exit.\n"
+                "Cabinet: move/resize three windows; F11 toggles the focused window, R rotates it, F10 moves it to the next monitor. Layout saves on normal exit.\n"
+                "portable-data/cabinet.ini holds every setting in Devil's Crush's format: windows, keys, flipper inputs, launch keys, cabinet buttons,\n"
+                "nudge, plunger and the play settings below (see README). alien-crush-launcher.exe edits it.\n"
+                "With no options, normal play takes game.rom, game.cabinet, audio.music_voice_overlay, video.smoothing and\n"
+                "input.nudge_multiplier from it; a flag beats the file for that run.\n"
+                "--no-cabinet: one window, whatever cabinet.ini says.\n"
+                "--music-voice-overlay / --no-music-voice-overlay: keep the music's voices while effects play (default on).\n"
+                "--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F7 toggles.\n"
+                "--refresh <Hz>: override the detected playfield refresh rate; --no-vsync uses timer pacing.\n"
+                "--nudge-multiplier <factor>: nudge force from 0 to 16 (default 1); applies to keyboard, buttons and physical nudges.\n"
+                "--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n"
+                "--plunger-config <path>: take the plunger from another cabinet.ini, such as Devil's Crush's.\n"
+                "--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
             else throw std::runtime_error("Unknown option "+arg);
         }
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
@@ -94,9 +112,22 @@ int main(int argc,char** argv) {
         const auto base=core::path_from_utf8(SDL_GetBasePath());
         if(data_path.empty()) data_path=base/"portable-data";
         // Normal play takes what the flags leave unsaid from cabinet.ini, where
-        // the launcher keeps it. Replays and --frames runs stay reproducible.
-        host::PlaySettings play;
-        if(replay_path.empty() && !limit) play=host::parse_play_settings(host::read_cabinet_settings(data_path/"cabinet.ini"));
+        // the launcher keeps it. Replays and --frames runs stay reproducible:
+        // --frames reads only its devices, and a replay only where the
+        // cabinet's windows go, which is presentation and not the game.
+        host::CabinetConfig config;
+        std::array<host::WindowPlacement,host::kCabinetWindowCount> placements;
+        {
+            auto loaded=host::load_cabinet_config(data_path);
+            if(replay_path.empty()) {
+                if(loaded.status==host::ConfigLoadStatus::invalid || loaded.status==host::ConfigLoadStatus::io_error)
+                    throw std::runtime_error(loaded.message);
+                if(loaded.legacy) std::cout<<"Cabinet settings read from the older format; a cabinet session's exit rewrites them\n";
+                config=std::move(loaded.config);
+                placements=config.windows;
+            } else if(loaded.loaded()) placements=loaded.config.windows;
+        }
+        const auto play=replay_path.empty() && !limit?config.play:host::PlaySettings{};
         if(rom_path.empty() && !play.rom.empty()) {
             const auto chosen=core::path_from_utf8(play.rom);
             rom_path=chosen.is_absolute()?chosen:base/chosen;
@@ -104,23 +135,21 @@ int main(int argc,char** argv) {
         if(rom_path.empty()) rom_path=base/"Alien Crush.pce";
         const bool cabinet_mode=cabinet_override.value_or(play.cabinet);
         bool smoothing=smoothing_override.value_or(play.smoothing),smoothing_toggled=false;
+        // The overlay is live sound only; replays and --frames keep the original's.
+        const bool music_voice_overlay=overlay_override.value_or(replay_path.empty() && !limit && play.music_voice_overlay);
         if(!requested_nudge_multiplier && play.nudge_multiplier!=1) requested_nudge_multiplier=play.nudge_multiplier;
+        const auto& bindings=config.input;
+        const bool cabinet_devices=cabinet_mode && replay_path.empty();
         const bool external_plunger=!plunger_path.empty();
-        if(plunger_path.empty()) {
-            const auto settings=cabinet_mode && replay_path.empty()?host::read_cabinet_settings(data_path/"cabinet.ini"):host::CabinetSettings{};
-            const bool has_plunger=std::any_of(settings.begin(),settings.end(),[](const auto& item){return item.first.starts_with("input.plunger.");});
-            plunger_path=has_plunger?data_path/"cabinet.ini":data_path/"cabinet-plunger.txt";
-        }
-        else if(!std::filesystem::exists(plunger_path)) throw std::runtime_error("Plunger configuration file does not exist");
-        const auto buttons=cabinet_mode && replay_path.empty()?
-            host::load_cabinet_buttons(data_path/"cabinet-inputs.txt"):host::CabinetButtons{};
-        const auto plunger=cabinet_mode && replay_path.empty()?
-            host::load_cabinet_plunger(plunger_path):input::PlungerBinding{};
-        auto nudge=host::parse_cabinet_nudge(cabinet_mode && replay_path.empty()?host::read_cabinet_settings(data_path/"cabinet.ini"):host::CabinetSettings{});
-        nudge.enabled=nudge.enabled && cabinet_mode && replay_path.empty();
+        if(external_plunger && !std::filesystem::exists(plunger_path)) throw std::runtime_error("Plunger configuration file does not exist");
+        const auto plunger=!cabinet_devices?input::PlungerBinding{}:
+            external_plunger?host::load_cabinet_plunger(plunger_path):bindings.plunger;
+        auto nudge=bindings.nudge;
+        nudge.enabled=nudge.enabled && cabinet_devices;
         host::CabinetNudge cabinet_nudge(nudge);
-        host::CabinetInput cabinet_input(buttons);
+        host::CabinetInput cabinet_input(cabinet_devices?bindings.buttons:host::CabinetButtons{},bindings.flippers);
         host::CabinetPlunger cabinet_plunger(plunger);
+        host::KeyboardInput keys(bindings);
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) playback=recording::read(replay_path);
         const auto mode=playback?((playback->initial.core_revision.find("-handoff1")!=std::string::npos || playback->initial.core_revision.find("-h1-")!=std::string::npos)?HandoffMode::continuous:HandoffMode::original):
@@ -129,8 +158,14 @@ int main(int argc,char** argv) {
         const auto multiplier=playback?input::recorded_nudge_multiplier(playback->initial.core_revision):requested_nudge_multiplier.value_or(1);
         if(playback && requested_nudge_multiplier && *requested_nudge_multiplier!=multiplier)
             throw std::runtime_error("Nudge multiplier differs from the recorded session");
-        auto runtime=make_reference_runtime(mode,controls,multiplier); runtime->load(rom_path);
+        // Which pad inputs each flipper piece answers to, as cabinet.ini says,
+        // or as the recording was made.
+        const auto flipper_masks=playback?input::recorded_flipper_masks(playback->initial.core_revision):
+            input::FlipperMasks{host::flipper_input_mask(bindings.flippers.left),host::flipper_input_mask(bindings.flippers.right)};
+        auto runtime=make_reference_runtime(mode,controls,multiplier,flipper_masks); runtime->load(rom_path);
         if(multiplier!=1) std::cout<<"Nudge force multiplier: "<<multiplier<<"x\n";
+        if(music_voice_overlay) runtime->music_voice_overlay(true);
+        std::cout<<"Music voice overlay: "<<(music_voice_overlay?"on":"off")<<'\n';
         std::optional<host::HighScoreAutosave> high_scores;
         if(!playback) high_scores.emplace(*runtime,data_path/"alien-crush.hiscore");
         const bool table_raster=cabinet_mode && runtime->supports_display_observation();
@@ -146,7 +181,7 @@ int main(int argc,char** argv) {
         const bool vsync=!no_vsync && display.enable_vsync();
         if(!no_vsync && !vsync) std::cerr<<"Playfield VSync unavailable; using timer pacing: "<<SDL_GetError()<<'\n';
         std::unique_ptr<host::Cabinet> cabinet;
-        if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,data_path,core::read_file(rom_path));
+        if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,placements,data_path,core::read_file(rom_path));
         std::unique_ptr<render::TablePlayfield> table;
         std::optional<diagnostics::ReferenceSnapshot> previous_video;
         std::array<std::byte,8192> previous_actor_ram{};
@@ -160,7 +195,7 @@ int main(int argc,char** argv) {
         if(!audio.stream) throw std::runtime_error(SDL_GetError());
         if(!SDL_ResumeAudioStreamDevice(audio.stream)) throw std::runtime_error(SDL_GetError());
         PadDevice gamepad; open_pad(gamepad);
-        host::GameInputRouter input_router;
+        host::GameInputRouter input_router(bindings.flippers);
         bool running=true,focused=true,display_layout_changed=false;
         const auto frame_ns=static_cast<std::uint64_t>(1e9/runtime->frames_per_second());
         auto deadline=SDL_GetTicksNS();
@@ -249,7 +284,7 @@ int main(int argc,char** argv) {
             // A mapped raw cabinet board must not also trigger SDL's default gamepad buttons.
             auto* standard_pad=gamepad.pad && SDL_GetGamepadID(gamepad.pad)!=cabinet_input.id() &&
                 SDL_GetGamepadID(gamepad.pad)!=cabinet_plunger.id()?gamepad.pad:nullptr;
-            auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(standard_pad);
+            auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(keys,standard_pad,bindings.flippers,reference_launcher_active(runtime->work_ram()));
             if(!playback && focused) input.player_one|=cabinet_input.read().player_one;
             if(cabinet_mode && !playback && cabinet_nudge.read(SDL_GetTicks(),focused && host::nudge_play_active(runtime->work_ram())))
                 input.player_one|=Pad::button_ii;
@@ -372,33 +407,18 @@ int main(int argc,char** argv) {
         std::cout<<"Playfield presentation: "<<display.pictures()<<" pictures, "<<display.smoothed_pictures()
             <<" with animation smoothing; "<<count<<" simulation frames\n";
         if(!record_path.empty()) recording::write(record_path,recorded);
-        // Keep the last usable layout if the user exits during a display outage.
-        if(cabinet && !display_layout_changed) cabinet->save();
-        if(cabinet && !playback) {
-            auto settings=host::read_cabinet_settings(data_path/"cabinet.ini");
-            std::ostringstream mapping;
-            if(!buttons.device.empty()) {
-                mapping<<"ACINPUTS2 "<<std::quoted(buttons.device);
-                for(const auto button:buttons.buttons) mapping<<' '<<button;
-            }
-            settings.try_emplace("input.buttons",mapping.str());
-            // F7 is remembered, as each window's rotation is.
-            if(smoothing_toggled) settings["video.smoothing"]=smoothing?"1":"0";
-            if(!external_plunger) {
-                std::string name;
-                constexpr char hex[]="0123456789ABCDEF";
-                for(const unsigned char c:plunger.device) {
-                    if(c=='%' || c=='=' || c=='\r' || c=='\n') {name+='%';name+=hex[c>>4];name+=hex[c&15];}
-                    else name+=static_cast<char>(c);
-                }
-                settings.try_emplace("input.plunger.device",name);
-                settings.try_emplace("input.plunger.axis",std::to_string(plunger.axis));
-                settings.try_emplace("input.plunger.rest",std::to_string(plunger.calibration.rest));
-                settings.try_emplace("input.plunger.drawn",std::to_string(plunger.calibration.drawn));
-                settings.try_emplace("input.plunger.deadzone",std::to_string(plunger.calibration.deadzone));
-                settings.try_emplace("input.plunger.release",std::to_string(plunger.calibration.release));
-            }
-            host::write_cabinet_settings(data_path/"cabinet.ini",settings);
+        if(cabinet) {
+            // The whole file, as it is on disk now, with where the windows were
+            // left and what F7 was; a file in the older format becomes this one.
+            // A replay keeps its window layout too, and changes nothing else.
+            auto saved=host::load_cabinet_config(data_path);
+            if(saved.loaded() || saved.status==host::ConfigLoadStatus::not_found) {
+                // Keep the last usable layout if the user exits during a display outage.
+                if(!display_layout_changed) saved.config.windows=cabinet->placements();
+                if(smoothing_toggled && !playback) saved.config.play.smoothing=smoothing;
+                host::save_cabinet_config(data_path/"cabinet.ini",saved.config);
+                if(saved.legacy) std::cout<<"cabinet.ini rewritten in the current format\n";
+            } else std::cerr<<"cabinet.ini was not updated: "<<saved.message<<'\n';
         }
         // Count simulated session frames, not VSync repeats or restored frame
         // numbers. Cabinet presentation is native; the reference backend has

@@ -2,6 +2,7 @@
 #pragma once
 #include "presentation.hpp"
 #include "backglass.hpp"
+#include "cabinet_config.hpp"
 #include "alien_crush/render/score_panel.hpp"
 #include "alien_crush/render/title_logo.hpp"
 #include <array>
@@ -12,19 +13,22 @@ class Cabinet {
     Presentation backglass_{"Alien Crush - Backglass",640,360,true};
     Presentation score_{"Alien Crush - Score",640,200,true};
     std::array<Presentation*,3> windows_;
-    std::filesystem::path path_;
     render::ScorePanel score_panel_;
     std::optional<render::Image> backglass_image_;
     std::optional<render::TitleLogoAnimation> backglass_animation_;
     std::uint64_t backglass_tick_{};
 public:
-    Cabinet(Presentation& playfield,const std::filesystem::path& data,std::span<const std::byte> rom);
+    // Opens each window where `placements` (cabinet.ini) left it; one never
+    // placed opens on the monitor of its turn. `data` holds backglass.bmp.
+    Cabinet(Presentation& playfield,const std::array<WindowPlacement,kCabinetWindowCount>& placements,
+        const std::filesystem::path& data,std::span<const std::byte> rom);
     void show(std::span<const std::byte> ram,bool smoothing=false,double fraction=1);
     void repeat(double fraction) {backglass_.repeat(fraction);}
     bool owns(SDL_Window*) const;
     bool handle_key(const SDL_KeyboardEvent&);
     // False means the display topology is temporarily unavailable; retry later.
     bool recover_displays();
-    void save() const;
+    // Where each window is now, in the game's order, for cabinet.ini.
+    std::array<WindowPlacement,kCabinetWindowCount> placements() const;
 };
 }

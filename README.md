@@ -58,22 +58,62 @@ and starts the game, then comes back when the game closes.
 | --- | --- |
 | Game | The ROM, and cabinet or desktop mode |
 | Video | Smoothing, and for the cabinet: which monitor each window is on, its rotation, and whether it is fullscreen |
+| Audio | The music voice overlay |
 | Cabinet | The nudge strength and nudge board, and the analog plunger |
-| Buttons | The cabinet board's name and the button for each input; Detect waits for a press on the board |
+| Keyboard | The keys for each PC Engine pad input, the launch keys, and each flipper's pad inputs |
 
 It is worked by mouse, keyboard or controller: Up and Down move, Left and
-Right change a value, Enter opens a list, starts editing or waits for a board
-button, Tab (or L1 and R1) turns the tabs, Ctrl+S saves, and Ctrl+Enter, F5 or
-Start plays. The ROM can also be chosen with Browse or dropped on the window.
-Keyboard controls are fixed (see [Play](#play)) and are not on a tab.
+Right change a value, Enter opens a list, starts editing, or waits for a key, Tab (or L1 and R1) turns the tabs, Ctrl+S saves, and
+Ctrl+Enter, F5 or Start plays. The ROM can also be chosen with Browse or
+dropped on the window. A click on the launcher acts even when another window
+has the focus.
 
 With no options the game plays as `portable-data/cabinet.ini` says, which is
-what the launcher edits: `game.rom`, `game.cabinet`, `video.smoothing` and
-`input.nudge_multiplier`, beside the window, button, nudge and plunger fields
-described below. An option on the command line beats the file for that run
-(`--rom`, `--cabinet` or `--no-cabinet`, `--smooth` or `--no-smooth`,
-`--nudge-multiplier`), and replays and `--frames` runs ignore these four. F7
-is remembered in `video.smoothing` when a cabinet session exits normally.
+what the launcher edits: `game.rom`, `game.cabinet`,
+`audio.music_voice_overlay`, `video.smoothing` and `input.nudge_multiplier`,
+beside the window, key, button, nudge and plunger fields described below. An
+option on the command line beats the file for that run (`--rom`, `--cabinet`
+or `--no-cabinet`, `--music-voice-overlay` or `--no-music-voice-overlay`,
+`--smooth` or `--no-smooth`, `--nudge-multiplier`), and replays and `--frames`
+runs ignore these five. F7 is remembered in `video.smoothing` when a cabinet
+session exits normally.
+
+`cabinet.ini` is in Devil's Crush's format, with Devil's Crush's keys wherever
+the two games share a setting, so its window, key, flipper, launch, nudge and
+plunger lines read the same in either game:
+
+```text
+version=1
+playfield.display=Main monitor
+playfield.x=0
+playfield.y=0
+playfield.width=540
+playfield.height=720
+playfield.rotation=1
+playfield.fullscreen=0
+input.one=Return
+input.right=Right Shift,Right
+input.left_flipper=left
+input.right_flipper=right,up
+input.launch=Return
+game.cabinet=1
+audio.music_voice_overlay=1
+```
+
+Every line is `key=value`, values are percent-escaped (`%2C` is a comma in a
+name), and a file with a repeated key or a value the game cannot read is
+reported and left alone rather than replaced; unknown keys are ignored. The
+score window is `dmd`, as the display that shows the score is in Devil's
+Crush. Each window has `display`, `x`, `y`, `width`, `height`, `rotation` (the
+monitor's own orientation, as SDL numbers it) and `fullscreen`, all or none;
+a window with none, or no size, opens where the game first puts it. What only
+Alien Crush has is added in the same style: `<window>.artwork_rotation` for
+each window (Devil's Crush has only the playfield's), and `input.buttons.*`
+for a cabinet board's buttons. The file before this format, with its
+`window.*` and `input.buttons=ACINPUTS...` lines, and the separate
+`cabinet-windows.txt`, `cabinet-inputs.txt` and `cabinet-plunger.txt` before
+that, are still read; the launcher's Save, or a cabinet session's exit,
+rewrites them in this format.
 
 The launcher's icon and heading are the title screen's logo, decoded from the
 ROM at build time (`tools/make_launcher_art.cpp`), since nothing of the ROM's
@@ -139,7 +179,7 @@ copy any desired bindings or artwork to the cabinet manually once.
 .\out\build\windows-vs2022\Release\alien-crush.exe --rom '.\Alien Crush.pce'
 ```
 
-Live play uses the Devil's Crush cabinet control layout:
+Live play uses the Devil's Crush cabinet control layout (the keys are [rebindable](#keys)):
 
 | Input | Action |
 | --- | --- |
@@ -166,6 +206,50 @@ letter and press Enter to accept it and advance. The third press submits the
 name. Gamepad Start and a cabinet Run button follow the same behavior; the
 dedicated Launch / gamepad south button also accepts letters.
 Pause and the cartridge's tilt gates remain active. Z is no longer a flipper key.
+
+### Keys
+
+The keys above are the defaults, and each is rebindable, as in Devil's Crush:
+on the launcher's Keyboard tab, or under `input.` in `portable-data/cabinet.ini`.
+Each of the eight PC Engine pad inputs (`input.one`, `two`, `select`, `run`,
+`up`, `right`, `down`, `left`) takes up to four keys by their SDL names,
+comma-separated; an empty value leaves the input unbound. A name SDL does not
+know is reported and skipped, and the input's other keys still work.
+
+```text
+input.one=Return
+input.run=Return
+input.left=Left Shift,Left
+input.right=Right Shift,Right
+input.launch=Return
+input.left_flipper=left
+input.right_flipper=right,up
+```
+
+`input.launch` lists keys that send button I alone while the ball is seated in
+the shooter, so a key that is also Run launches there rather than pausing; a
+held launch stays one until it is let go. `input.left_flipper` and
+`input.right_flipper` are the pad inputs each flipper answers to during play,
+by name (`one`, `two`, `select`, `run`, `up`, `right`, `down`, `left`); empty
+leaves the cartridge's own. The right flipper's Up is its stand-in while both
+flippers are held, since the pad cannot send Left and Right at once. Gamepad
+shoulders and a cabinet board's flipper buttons send the first input on their
+flipper's list. Flipper inputs other than the defaults are part of the
+runtime's identity, as a nudge multiplier is: recordings replay with the
+flippers they were made with, and quick states need the same ones.
+
+### Music voice overlay
+
+The sound driver has six channels, and a sound effect takes a channel from
+the music while it plays: the music's voice there keeps going, unheard, until
+the effect ends. The music voice overlay plays those voices on a second sound
+generator, so the music keeps all of its parts under the flippers, bumpers and
+aliens, as Devil's Crush does. It is on by default; turn it off on the
+launcher's Audio tab, with `audio.music_voice_overlay=0`, or for one run with
+`--no-music-voice-overlay`. It only adds to the sound: the game, its
+recordings and its quick states are the same either way, and replays and
+`--frames` runs play the original's sound unless `--music-voice-overlay` asks.
+See [docs/MUSIC_VOICE_OVERLAY.md](docs/MUSIC_VOICE_OVERLAY.md).
 
 Desktop quick states live beside the executable in `portable-data/alien-crush.desktop-controls.state`.
 Live cabinet mode uses `alien-crush.cabinet-controls.state` and a distinct runtime identity.
@@ -200,9 +284,10 @@ area, and retain its rotation and fullscreen setting. F10 does nothing when only
 one monitor is connected. Keyboard repeats do not repeat setup actions.
 Placement, monitor names and rotation save on normal exit to
 `portable-data/cabinet.ini` (or your `--data-dir`). This single file also holds
-button mappings and plunger calibration. Older separate settings files are
-imported when the corresponding settings are absent and retained as backups;
-normal exit saves the combined configuration. Missing monitors fall
+the keys, button mappings and plunger calibration, in the format described under
+[Launcher](#launcher). A file in the older format, and the older separate settings
+files, are read and kept as backups; normal exit rewrites the configuration in the
+current format. A replay keeps its window layout too, and reads nothing else. Missing monitors fall
 back to connected displays with the windows clamped into view. Moving focus
 between cabinet windows keeps the game running; switching away pauses it.
 Live monitor connection, position, orientation and resolution changes also recover
@@ -289,24 +374,37 @@ and raw axis readings. Pull the plunger to identify its axis and rest/full-pull
 endpoints; these readings are diagnostic and do not control launch power yet.
 Escape closes the probe. `--frames N` limits it to N samples at 100ms intervals.
 
-Edit `input.buttons` in `portable-data/cabinet.ini` using the observed
-controller name and button numbers:
+A cabinet whose buttons arrive as key presses needs none of this: bind the keys
+on the launcher's Keyboard tab. For a board that reports its buttons as a
+joystick instead, set them under `input.buttons.` in `portable-data/cabinet.ini`
+(they are not on a launcher tab) using the observed controller name and button
+numbers:
 
 ```text
-input.buttons=ACINPUTS1 "PinOne" 0 1 2 3 4 -1 -1 -1
+input.buttons.device=PinOne
+input.buttons.left_flipper=0
+input.buttons.right_flipper=1
+input.buttons.nudge=2
+input.buttons.run=3
+input.buttons.select=4
+input.buttons.up=-1
+input.buttons.down=-1
+input.buttons.right=-1
+input.buttons.launch=5
 ```
 
-The eight numbers map, in order, to left flipper, right flipper, nudge,
-start/launch/confirm/pause, select, up, down and right/menu. The second button
-now operates only the right flipper. The fourth launches while the ball is seated.
-For an additional dedicated launch/confirm button, use `ACINPUTS2` with a ninth
-index (for example `0 1 2 3 4 -1 -1 -1 5`). Existing eight-entry `ACINPUTS1`
-files remain readable. **The numbers above are examples, not
-verified PinOne defaults.** Use `-1` to disable a mapping; valid indices are 0â€“255.
+`left_flipper` and `right_flipper` send their flipper's first input (see
+[Keys](#keys)); `nudge` is II, `run` starts, confirms and pauses and launches
+while the ball is seated, `select`, `up`, `down` and `right` are those pad
+inputs, and `launch` is a dedicated launch/confirm button (I). **The numbers
+above are examples, not verified PinOne defaults.** Use `-1` to disable a
+mapping; valid indices are 0–255. The older `input.buttons=ACINPUTS1 "PinOne"
+0 1 2 3 4 -1 -1 -1` line (or `ACINPUTS2` with a ninth, launch, index) is still
+read, and rewritten in these keys.
 The name is a nonempty case-insensitive substring; the first matching device with
 all configured buttons is selected. Choose a distinctive name when several boards
 are connected. Settings load at startup in `--cabinet` mode.
-An empty `input.buttons=` leaves raw buttons disabled; malformed settings report an error.
+An empty `input.buttons.device=` leaves raw buttons disabled; malformed settings report an error.
 Keyboard controls and other gamepads remain available. The selected board's default
 gamepad mapping is suppressed to prevent duplicate actions.
 
@@ -397,7 +495,8 @@ settings to paste into `cabinet.ini`; it does not change existing calibration.
 
 Restart after editing. Explicit `--plunger-config` takes precedence, followed by
 the data directory's `cabinet.ini`. The older `cabinet-plunger.txt` format below
-is imported only when the INI has no plunger settings:
+is read only while `cabinet.ini` is still in the older format and has no plunger
+settings, and the next save moves it into `cabinet.ini`:
 
 ```text
 ACPLUNGER1

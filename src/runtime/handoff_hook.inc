@@ -13,6 +13,10 @@
             const unsigned short scaled=ac_nudge_motion(motion,impulse);
             WrMem(0x3780,scaled&255);WrMem(0x37c0,scaled>>8);
         }
+        // The sound driver in bank $19, for the music voice overlay
+        // (src/runtime/music_voice_overlay.hpp): each instruction from the push
+        // to the end of the commit, with the registers its store will use.
+        if(ac_music_overlay_step && MPR[5]==0x19 && PC>=0xa139 && PC<0xa7d3) ac_music_overlay_step(PC,A,X,Y);
         // Original flipper routines, after initialization and before their
         // ordinary motion/collision code. Only live, initialized flipper actors
         // in table scenes may use these masks or bypass the shooter/ball gate.
@@ -20,7 +24,12 @@
             MPR[1]==0xf8 && MPR[2]==1 && X>=4 && X<64 &&
             RdMem(0x2079)<=2 && !RdMem(0x2076) && (RdMem(0x2068)&1) &&
             (RdMem(0x3540+X)&0x80) && (RdMem(0x3500+X)==2 || RdMem(0x3500+X)==3)) {
-            if(PC==0x4b7b) WrMem(0x3900+X,RdMem(0x3500+X)==2?0x80:0x30);
+            // Each side's pad-input mask (input.left_flipper/right_flipper); zero
+            // leaves the cartridge's own.
+            if(PC==0x4b7b) {
+                const unsigned char mask=RdMem(0x3500+X)==2?ac_left_flipper_mask:ac_right_flipper_mask;
+                if(mask) WrMem(0x3900+X,mask);
+            }
             // Keep the original pause/tilt gates at 4BA1..4BA7. Remove the
             // lower-table launch-state restriction and the ball-present gate.
             if(PC==0x4b95) PC=0x4ba1;
