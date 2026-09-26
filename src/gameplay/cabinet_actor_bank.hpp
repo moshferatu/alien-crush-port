@@ -45,10 +45,12 @@ struct Rom {
 class Bank {
 public:
     // `legacy`: the -aliens1 runtimes, whose aliens ran in the ball's half
-    // too, finishing their sound calls last.
-    Bank(const Rom& rom,std::span<std::byte> ram,bool active,bool legacy=false)
-        :rom_(rom),ram_(ram),base_(active?0x1500:0x200),active_(active),legacy_(legacy) {}
+    // too, finishing their sound calls last. `lowers_riser`: the stored half
+    // lowers the upper riser with its points and rules (-actors2 on).
+    Bank(const Rom& rom,std::span<std::byte> ram,bool active,bool legacy=false,bool lowers_riser=false)
+        :rom_(rom),ram_(ram),base_(active?0x1500:0x200),active_(active),legacy_(legacy),lowers_riser_(lowers_riser) {}
     bool legacy() const {return legacy_;}
+    bool lowers_riser() const {return lowers_riser_;}
     // Each update starts its own log and its own private random draws.
     void begin() {log_.clear();draws_=0;}
     bool active() const {return active_;}
@@ -212,10 +214,11 @@ public:
     }
 
     // 00:FA27 adds hundreds of points unless scoring is off ($9C bit 0);
-    // FAB6 caps the score at 999,999,900. Points belong to the ball's half.
-    void score(unsigned hundreds) {
-        if(!active_) throw Wait{};
-        set_global(0x06,hundreds);set_global(0x07,hundreds>>8);
+    // FAB6 caps the score at 999,999,900. Points belong to the ball's half,
+    // unless `stored` says this update scores from the stored one.
+    void score(unsigned hundreds,bool stored=false) {
+        if(!active_ && !stored) throw Wait{};
+        scratch(0x06,hundreds);scratch(0x07,hundreds>>8);
         if(global(0x9c)&1) return;
         const unsigned total=((global(0x322a)<<16)|(global(0x3224)<<8)|global(0x321e))+hundreds;
         unsigned capped=total&0xffffff;
@@ -308,7 +311,7 @@ private:
     const Rom& rom_;
     std::span<std::byte> ram_;
     std::size_t base_;
-    bool active_,legacy_;
+    bool active_,legacy_,lowers_riser_;
     unsigned draws_{};
     std::vector<std::pair<std::size_t,std::byte>> log_;
 };

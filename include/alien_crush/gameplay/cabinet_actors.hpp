@@ -34,8 +34,9 @@ public:
     // in both halves.
     enum class Scope {aliens,table};
     // `stored_half` false leaves the stored half to the original too, for
-    // verification.
-    CabinetActors(std::span<const std::byte> rom,Scope scope,bool stored_half=true);
+    // verification. `lowers_riser` false keeps the upper riser up until the
+    // ball returns, as runtimes marked -actors1 did.
+    CabinetActors(std::span<const std::byte> rom,Scope scope,bool stored_half=true,bool lowers_riser=true);
     ~CabinetActors();
     CabinetActors(const CabinetActors&)=delete;
     CabinetActors& operator=(const CabinetActors&)=delete;
@@ -71,7 +72,7 @@ public:
 private:
     std::unique_ptr<cabinet::Rom> rom_;
     Scope scope_;
-    bool stored_half_;
+    bool stored_half_,lowers_riser_;
     std::array<std::uint64_t,64> inactive_frame_{};
     std::array<std::byte,8192> prediction_{};
     unsigned predicted_slot_{},predicted_type_{},predicted_pc_{};

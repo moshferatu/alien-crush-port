@@ -77,7 +77,9 @@ changes nothing the original would not:
 - An actor that would score, touch the ball, run the game's rules (03:911B,
   9415, 94DD, 01:499E and others) or draw on the ball's table waits, unchanged,
   until its half is the ball's again. The ROM then carries on from where it
-  waited. So does an actor with an unprocessed hit.
+  waited. So does an actor with an unprocessed hit. The upper skull guard
+  and riser never read theirs (they only clear it once down), so a touch
+  just before the ball left does not hold them.
 - Lamps of the stored table change only their bits (`$D6..$D9`); the table
   redraws them from those bits when it is loaded (03:9415).
 
@@ -99,12 +101,18 @@ actors the stored-half pass has already updated that frame.
   group of aliens or brain orbs respawns 300 ticks later, while the ball is
   still away. The upper table's first five orbs are there from the start.
 - Actors that would score or call the game's rules wait for the ball instead:
-  a riser lowering after its flag clears, the brain relighting the lamps, the
-  lower mouth releasing its flyers.
-- Runtimes with cabinet actors carry `-actors1` in their revision. Recordings
-  made with `-aliens1` replay with only the lower aliens native, as they were
-  made; older cabinet recordings replay with none. Either way, the stored
-  half's other actors are drawn frozen. Earlier cabinet quick states don't load.
+  a lower riser lowering after its flag clears, the brain relighting the
+  lamps, the lower mouth releasing its flyers.
+- The exception is the upper riser (type 32), the hand that lets the ball back
+  into the launcher. The ball clears its flag (`$6F` bit 5, 01:496C) as it
+  leaves the upper table, usually on its way to the launcher, and the riser
+  drops then instead of on the ball's return. Its 20 points and upper progress
+  step (5AC8, 03:911B's upper branch) are awarded then too.
+- Runtimes with cabinet actors carry `-actors2` in their revision. Recordings
+  made with `-actors1` replay with the upper riser waiting for the ball, and
+  those made with `-aliens1` with only the lower aliens native, as they were
+  made; older cabinet recordings replay with none, and the stored half's other
+  actors are drawn frozen. Quick states from other revisions don't load.
 
 ## Verification
 
@@ -118,8 +126,9 @@ actors the stored-half pass has already updated that frame.
   upstairs) and 21 edited states that set off the rarer sequences (10,020
   frames): 144 type and action states over 50 types, no difference.
 - The stored half on synthetic RAM: cocoons hatch aliens that fly off, the
-  lower mouth holds and closes with its lamp off, a guard and a riser wait for
-  the ball rather than score, a pending hit waits, the orbs' controller brings
+  lower mouth holds and closes with its lamp off, a guard and a lower riser
+  wait for the ball rather than score, the upper riser drops with its points
+  and progress step (and waits under `-actors1`), a pending hit waits, the orbs' controller brings
   five back, bouncing and brain orbs keep moving, palette scripts step only the
   stored half. Nothing touches the ball's bank, the game's RNG, score, sound or
   temporaries.

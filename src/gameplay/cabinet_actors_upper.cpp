@@ -32,6 +32,25 @@ void over_ball(Actor& a,std::uint16_t pc) {
     b.put(0x3c40,x,b(0x3c40,x)-1);
     if(b(0x3c40,x)&0x80) b.put(0x3c40,x,b(0x3c40,x)+1);
 }
+// 03:911B for an upper table actor ($79 = 1, 913F): a step of the upper
+// progress. Nine lit steps light lamp $17 + $4B, advance $4B and set $6B bit
+// 7, which raises the riser again (01:496C).
+void upper_progress(Bank& b) {
+    if(b.global(0x4a)!=9) {b.set_global(0x4a,b.global(0x4a)+1);b.set_global(0x55,1);return;}
+    if(b.global(0x4b)==6) return;
+    b.set_global(0x4a,0);
+    b.lamp(true,0x17+b.global(0x4b)); // 9210
+    b.set_global(0x4b,b.global(0x4b)+1);b.set_bits(0x6b,0x80);
+}
+// 01:5AC8, stored half only: the riser starts down once its flag clears.
+// The ball clears it leaving the upper table (01:496C), usually for the
+// launcher, so the riser drops then rather than on the ball's return; its 20
+// points and progress step are the ones the ROM gives on that return.
+void lower_riser(Actor& a) {
+    Bank& b=a.b;const unsigned x=a.x;
+    a.next();b.score(0x14,true);upper_progress(b);
+    if(!a.reversing()) reverse(b,x);
+}
 // 01:51FE: velocity towards the bumper destination for layout A, target
 // $A9, in 16 updates; $A9 moves on.
 void bumper_course(Actor& a,unsigned layout) {
@@ -435,12 +454,16 @@ bool upper_actor(Bank& b,unsigned type,unsigned x) {
         }
         switch(a.action()) {
         case 1:
-            if(!(b.global(0x6f)&0x20)) b.resume(0x5abf);
+            if(!(b.global(0x6f)&0x20)) {
+                if(b.active() || !b.lowers_riser()) b.resume(0x5abf);
+                a.next();lower_riser(a);return true;
+            }
             if(a.reversing()) {a.next();return true;}
             over_ball(a,0x5aab);return true;
         case 2:
             if(b.global(0x6f)&0x20) return true;
-            b.resume(0x5ac8);
+            if(b.active() || !b.lowers_riser()) b.resume(0x5ac8);
+            lower_riser(a);return true;
         case 3:
             if(!a.resting()) {b.animate(x);b.push(0x5afa);return true;}
             a.action(0);b.put(0x3ac0,x,0);b.lamp(false,0x0f);return true;

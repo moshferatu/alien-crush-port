@@ -260,6 +260,41 @@ void stored_half(std::span<const std::byte> rom) {
         swap(ram);set(ram,0x79,0);
         require(!actors.update_active(ram,guard,frame).has_value(),"The ROM does not run the ball's half");
     }
+    // The upper riser drops once the ball leaves the upper table and its flag
+    // ($6F bit 5) clears, with the 20 points and progress step the ROM gives
+    // on the ball's return (5AC8, 03:911B); -actors1 runtimes wait.
+    for(const bool lowers:{true,false}) for(const unsigned progress:{3u,9u}) {
+        gameplay::CabinetActors actors(rom,Scope::table,true,lowers);
+        Ram ram{};set(ram,0x79,0);set(ram,0x4a,progress);set(ram,0xd7,0x80);set(ram,0x121e,0x40);
+        const unsigned riser=7;
+        put(ram,false,0x3500,riser,32);put(ram,false,0x3540,riser,0x88);put(ram,false,0x3840,riser,2);
+        put(ram,false,0x3a40,riser,4);put(ram,false,0x3b80,riser,0x20);put(ram,false,0x3c40,riser,3);
+        put(ram,false,0x3ac0,riser,0x80); // Touched before the ball left.
+        const auto up=ram;
+        actors.update_inactive(ram,frame++);
+        if(!lowers) {require(ram==up,"-actors1 riser did not wait for the ball");continue;}
+        require(field(ram,false,0x3840,riser)==3 && field(ram,false,0x3bc0,riser)==0xff && get(ram,0x121e)==0x54,
+            "Stored riser did not start down with its points");
+        if(progress==9) require(get(ram,0x4a)==0 && get(ram,0x4b)==1 && (get(ram,0x6b)&0x80) && get(ram,0xd8)!=0,
+            "Stored riser's ninth progress step did not light its lamp");
+        else require(get(ram,0x4a)==4 && get(ram,0x55)==1,"Stored riser did not step the upper progress");
+        for(unsigned i=0;i<20;++i) actors.update_inactive(ram,frame++);
+        require(field(ram,false,0x3840,riser)==0 && !(get(ram,0xd7)&0x80) && !field(ram,false,0x3ac0,riser),
+            "Stored riser did not come down with its lamp off");
+    }
+    // The upper skull guard drops as the ball leaves (03:8A26 sets $70 bit 1),
+    // even when the ball touched it on the way out: 02:63DB never reads the
+    // hit, it only clears it.
+    {
+        gameplay::CabinetActors actors(rom,Scope::table);
+        Ram ram{};set(ram,0x79,0);set(ram,0x70,0x0a);
+        const unsigned guard=8;
+        put(ram,false,0x3500,guard,14);put(ram,false,0x3540,guard,0xa0);put(ram,false,0x3840,guard,2);
+        put(ram,false,0x3ac0,guard,0x80);
+        actors.update_inactive(ram,frame++);
+        require(field(ram,false,0x3840,guard)==0 && (field(ram,false,0x3540,guard)&0x60)==0x60 && !(get(ram,0x70)&0x0a),
+            "Stored skull guard touched on the way out did not drop");
+    }
     // A pending hit is the ball's half's.
     {
         gameplay::CabinetActors actors(rom,Scope::table);

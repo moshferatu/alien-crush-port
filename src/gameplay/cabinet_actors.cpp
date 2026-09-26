@@ -161,8 +161,8 @@ void run(Bank& b,unsigned x) {
         throw std::runtime_error("Cabinet actor update for an actor it does not own");
 }
 }
-CabinetActors::CabinetActors(std::span<const std::byte> rom,Scope scope,bool stored_half)
-    :rom_(std::make_unique<cabinet::Rom>()),scope_(scope),stored_half_(stored_half) {
+CabinetActors::CabinetActors(std::span<const std::byte> rom,Scope scope,bool stored_half,bool lowers_riser)
+    :rom_(std::make_unique<cabinet::Rom>()),scope_(scope),stored_half_(stored_half),lowers_riser_(lowers_riser) {
     if(!rom::matches_supported_rom(rom.size(),rom::compute_digests(rom))) throw std::runtime_error("Unsupported ROM for cabinet actors");
     for(unsigned bank=0;bank<rom_->banks.size();++bank)
         std::copy_n(rom.begin()+bank*0x2000,0x2000,rom_->banks[bank].begin());
@@ -243,14 +243,16 @@ void CabinetActors::update_inactive(std::span<std::byte> ram,std::uint64_t frame
     inactive_table_=2;
     if(table>1 || !stored_half_) return;
     inactive_table_=1-table;
-    Bank bank(*rom_,ram,false,scope_==Scope::aliens);
+    Bank bank(*rom_,ram,false,scope_==Scope::aliens,lowers_riser_);
     // The dispatcher reads each type as it goes, so actors spawned into later
     // slots run in the same pass, and removed ones do not.
     for(unsigned x=4;x<64;++x) {
         const unsigned type=bank(0x3500,x),action=bank(0x3840,x);
         if(!owns(static_cast<std::uint8_t>(type))) continue;
-        // A touch or hit from the ball waits for the ball's half.
-        const bool hit=(bank(0x3ac0,x)&0x80)!=0;
+        // A touch or hit from the ball waits for the ball's half. The upper
+        // skull guard (02:63DB) and riser (01:5A43) never read theirs, only
+        // clear it once down, so a touch before the ball left holds nothing.
+        const bool hit=(bank(0x3ac0,x)&0x80)!=0 && type!=14 && type!=32;
         if(hit && (!alien(type) || (type==15 && action==3) || (type==21 && action==2) ||
             ((type==16 || type==22) && action==1))) continue;
         bank.begin();
