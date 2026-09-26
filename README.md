@@ -251,6 +251,18 @@ recordings and its quick states are the same either way, and replays and
 `--frames` runs play the original's sound unless `--music-voice-overlay` asks.
 See [docs/MUSIC_VOICE_OVERLAY.md](docs/MUSIC_VOICE_OVERLAY.md).
 
+### Cabinet aliens
+
+The cartridge runs only the half of the table the ball is in. The cabinet
+shows both, so in cabinet mode the port runs the lower table's orange and
+green aliens itself, in both halves: they keep moving while the ball is
+upstairs, a cleared group respawns there, and what is drawn is what the ball
+hits. While the ball stays downstairs, play is the original's to the byte;
+after its first trip upstairs, the aliens are wherever their cycles have taken
+them. Desktop mode runs the cartridge's own aliens. Cabinet recordings and
+quick states made before this change play without it or don't load. See
+[docs/CABINET_ALIENS.md](docs/CABINET_ALIENS.md).
+
 Desktop quick states live beside the executable in `portable-data/alien-crush.desktop-controls.state`.
 Live cabinet mode uses `alien-crush.cabinet-controls.state` and a distinct runtime identity.
 Recordings select their recorded runtime automatically: existing reference recordings

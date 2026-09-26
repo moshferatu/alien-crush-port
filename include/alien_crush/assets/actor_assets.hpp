@@ -26,8 +26,9 @@ public:
     // Dynamic stream selected by 16:A0DF; callers establish the pending bit/epoch.
     ActorPatternTransfer pattern_transfer(std::uint8_t type,std::uint8_t selection,std::uint16_t pattern_base) const;
     // Visual-only continuation of the ROM's FD35/FD8F animation oscillator,
-    // orb bob/respawn/explosion, orange alien emerge/retreat and indicator
-    // open/hold/close routines. Indicators read live group state from the copy.
+    // orb bob/respawn/explosion and indicator open/hold/close routines.
+    // Indicators read live group state from the copy. The lower aliens that
+    // gameplay::CabinetAliens owns are left as they are.
     // Input uses the active actor layout but must be a private presentation copy.
     // Full-table mode extends lower slingshot flight bounds above the seam;
     // default mode retains ROM bounds for authoritative-change prediction.

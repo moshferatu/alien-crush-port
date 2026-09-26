@@ -4,6 +4,7 @@
 #include "alien_crush/core/rom_image.hpp"
 #include "alien_crush/input/nudge_multiplier.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/gameplay/cabinet_aliens.hpp"
 #include "music_voice_overlay.hpp"
 #include <libretro.h>
 #include <array>
@@ -25,6 +26,7 @@ extern "C" void ac_set_cabinet_controls(bool);
 extern "C" void ac_set_flipper_masks(unsigned char,unsigned char);
 extern "C" bool ac_set_music_voice_overlay(bool,const unsigned char*,unsigned);
 extern "C" void ac_set_nudge_motion(unsigned short (*)(unsigned short,unsigned short));
+extern "C" void ac_set_cabinet_aliens(unsigned (*)(unsigned,unsigned,unsigned));
 #endif
 
 namespace alien_crush {
@@ -36,10 +38,13 @@ class Reference final : public ReferenceRuntime {
     ControlMode controls;
     double nudge_multiplier;
     input::FlipperMasks flippers;
+    AlienMode alien_mode;
+    std::unique_ptr<gameplay::CabinetAliens> aliens;
     std::string custom_revision;
     inline static std::atomic<Reference*> active{};
     std::thread::id owner = std::this_thread::get_id();
     bool initialized{}, loaded{}, failed{}, core_started{};
+    bool aliens_failed{};
     std::string rom_path, directory;
     retro_system_av_info av{};
     PadInput input{};
@@ -55,6 +60,28 @@ class Reference final : public ReferenceRuntime {
     std::vector<render::RasterWrite> observed_memory=std::vector<render::RasterWrite>(65536);
     std::size_t memory_count{};
     bool observation_failed{};
+    // The dispatcher (01:45A8) starting, or entering an owned alien routine
+    // with its return, 45C7, on the stack. Returns the next PC, or 0 for the
+    // ROM to continue.
+    static unsigned cabinet_aliens(unsigned pc,unsigned x,unsigned caller) noexcept {
+        auto* self=active.load();
+        auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
+        if(!self || !self->aliens || !memory || retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM)<8192) return 0;
+        const std::span<std::byte> ram{memory,8192};
+        try {
+            if(pc==0x45a8) {
+                // The table's game loops: live 01:4098, demo 01:4035, and the
+                // loops at 00:FDD0 and 00:FEC7 that run the table between balls.
+                if(caller==0x409a || caller==0x4037 || caller==0xfdd2 || caller==0xfec9)
+                    self->aliens->update_inactive(ram,self->frame_number);
+                return 0;
+            }
+            if(caller!=0x45c7 || x<4 || x>=64 ||
+                gameplay::CabinetAliens::entry(std::to_integer<std::uint8_t>(ram[0x1500+x]))!=pc) return 0;
+            const auto next=self->aliens->update_active(ram,x,self->frame_number);
+            return next?next:0x45e1; // The RTS at 01:45E1 returns to the dispatcher.
+        } catch(...) {self->aliens_failed=true;return 0;}
+    }
     static void observe_row(unsigned row,unsigned control,unsigned burst,const unsigned short* vram) noexcept {
         auto* self=active.load();
         if(!self) return;
@@ -92,6 +119,7 @@ class Reference final : public ReferenceRuntime {
         if(loaded) ac_set_music_voice_overlay(false,nullptr,0);
         ac_set_display_observer(nullptr);
         ac_set_palette_observer(nullptr,nullptr);
+        ac_set_cabinet_aliens(nullptr);
 #endif
         observed_count=0; palette_count=0; observation_failed=false;
         if(loaded) retro_unload_game();
@@ -171,12 +199,15 @@ class Reference final : public ReferenceRuntime {
         return (mask&bit)?1:0;
     }
 public:
-    explicit Reference(HandoffMode mode,ControlMode input_mode,double multiplier,input::FlipperMasks masks) :
-        handoff(mode),controls(input_mode),nudge_multiplier(multiplier),flippers(masks) {
+    explicit Reference(HandoffMode mode,ControlMode input_mode,double multiplier,input::FlipperMasks masks,AlienMode alien_ownership) :
+        handoff(mode),controls(input_mode),nudge_multiplier(multiplier),flippers(masks),alien_mode(alien_ownership) {
         if(controls!=ControlMode::cabinet && flippers!=input::FlipperMasks{})
             throw std::runtime_error("Flipper inputs apply to cabinet controls only");
+        if(alien_mode==AlienMode::cabinet && handoff!=HandoffMode::continuous)
+            throw std::runtime_error("Cabinet aliens require continuous handoff");
         // The nudge factor is last: recorded_nudge_multiplier reads to the end.
-        const auto suffix=input::flipper_revision_suffix(flippers)+input::nudge_revision_suffix(multiplier);
+        const auto suffix=std::string(alien_mode==AlienMode::cabinet?kCabinetAliensRevision:std::string_view{})+
+            input::flipper_revision_suffix(flippers)+input::nudge_revision_suffix(multiplier);
         if(!suffix.empty()) {
             const auto base=std::string(revision());
             // Save headers allow 64 bytes. Keep the pinned revision prefix and
@@ -193,6 +224,7 @@ public:
         if(controls==ControlMode::cabinet) throw std::runtime_error("Cabinet controls require the video-enabled backend");
         if(multiplier!=1) throw std::runtime_error("Nudge multiplier requires the video-enabled backend");
         if(flippers!=input::FlipperMasks{}) throw std::runtime_error("Flipper inputs require the video-enabled backend");
+        if(alien_mode==AlienMode::cabinet) throw std::runtime_error("Cabinet aliens require the video-enabled backend");
 #endif
         pixels.reserve(2048U*264U); audio.reserve(131072);
         Reference* empty=nullptr;
@@ -217,7 +249,9 @@ public:
         const retro_game_info game{rom_path.c_str(),nullptr,0,nullptr};
         if(!retro_load_game(&game)) { close(); throw std::runtime_error("Beetle rejected Alien Crush ROM"); }
         loaded=true;
+        if(alien_mode==AlienMode::cabinet) aliens=std::make_unique<gameplay::CabinetAliens>(core::read_file(path));
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
+        ac_set_cabinet_aliens(aliens?&cabinet_aliens:nullptr);
         ac_set_continuous_handoff(handoff==HandoffMode::continuous);
         ac_set_cabinet_controls(controls==ControlMode::cabinet);
         ac_set_flipper_masks(flippers.left,flippers.right);
@@ -230,11 +264,12 @@ public:
         retro_get_system_av_info(&av);
         if(av.timing.fps<=0 || av.timing.sample_rate<=0) throw std::runtime_error("Invalid reference timing");
     }
-    void reset() override { check_loaded(); retro_reset(); input={}; frame_number=0; pixels.clear(); audio.clear(); width=height=0; failed=false; observed_count=0; palette_count=0; observation_failed=false; }
+    void reset() override { check_loaded(); retro_reset(); if(aliens) aliens->reset(); input={}; frame_number=0; pixels.clear(); audio.clear(); width=height=0; failed=false; observed_count=0; palette_count=0; observation_failed=false; }
     Frame advance(PadInput buttons) override {
-        check_loaded(); input=buttons; audio.clear(); failed=false;
+        check_loaded(); input=buttons; audio.clear(); failed=false; aliens_failed=false;
         observed_count=0; palette_count=0; observation_failed=false; retro_run(); core_started=true; ++frame_number;
         if(failed) throw std::runtime_error("Invalid video/audio received from reference core");
+        if(aliens_failed) throw std::runtime_error("Cabinet alien update failed");
         return {frame_number,width,height,pixels,audio};
     }
     double frames_per_second() const override { return av.timing.fps; }
@@ -367,10 +402,11 @@ public:
             if(!retro_unserialize(rollback.core_state.data(),rollback.core_state.size())) { close(); throw std::runtime_error("Quick state and rollback failed; runtime closed"); }
             throw std::runtime_error("Reference rejected quick state; previous state restored");
         }
+        if(aliens) aliens->reset();
         frame_number=saved.frame_number; input={}; pixels.clear(); audio.clear(); width=height=0; failed=false;
         observed_count=0; palette_count=0; observation_failed=false;
     }
 };
 }
-std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls,double multiplier,input::FlipperMasks flippers) { return std::make_unique<Reference>(mode,controls,multiplier,flippers); }
+std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls,double multiplier,input::FlipperMasks flippers,AlienMode aliens) { return std::make_unique<Reference>(mode,controls,multiplier,flippers,aliens); }
 }

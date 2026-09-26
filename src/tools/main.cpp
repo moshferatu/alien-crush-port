@@ -53,7 +53,8 @@ std::vector<std::string> capture(const std::filesystem::path& rom_path,std::uint
     auto runtime=make_reference_runtime(playback && (playback->initial.core_revision.find("-handoff1")!=std::string::npos || playback->initial.core_revision.find("-h1-")!=std::string::npos)?HandoffMode::continuous:HandoffMode::original,
         playback && playback->initial.core_revision.find("-controls1")!=std::string::npos?ControlMode::cabinet:ControlMode::original,
         playback?input::recorded_nudge_multiplier(playback->initial.core_revision):1,
-        playback?input::recorded_flipper_masks(playback->initial.core_revision):input::FlipperMasks{}); runtime->load(rom_path);
+        playback?input::recorded_flipper_masks(playback->initial.core_revision):input::FlipperMasks{},
+        playback && playback->initial.core_revision.find(kCabinetAliensRevision)!=std::string::npos?AlienMode::cabinet:AlienMode::original); runtime->load(rom_path);
     const bool table_raster=stitched && runtime->supports_display_observation();
     if(compare_display || table_raster) runtime->observe_display(true);
     if(playback) runtime->restore(playback->initial);

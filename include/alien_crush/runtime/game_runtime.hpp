@@ -74,7 +74,13 @@ public:
 };
 enum class HandoffMode { original, continuous };
 enum class ControlMode { original, cabinet };
+// Cabinet: the port runs the lower table's aliens in both halves
+// (src/gameplay/cabinet_aliens.cpp). Requires continuous handoff.
+enum class AlienMode { original, cabinet };
+// Marks a cabinet-alien runtime's revision, and so its recordings and states.
+inline constexpr std::string_view kCabinetAliensRevision="-aliens1";
 // Mode is fixed for the lifetime of a runtime and included in its state identity.
 std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode=HandoffMode::original,
-    ControlMode controls=ControlMode::original,double nudge_multiplier=1.0,input::FlipperMasks flippers={});
+    ControlMode controls=ControlMode::original,double nudge_multiplier=1.0,input::FlipperMasks flippers={},
+    AlienMode aliens=AlienMode::original);
 }

@@ -144,18 +144,6 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
         run(r,1000);require(r[0x1844]==std::byte{} && r[0x1c44]==std::byte{},"Rebound failed to damp to idle");settled(r);
         r=fixture(9,4,action,action==1?0:1024,0);run(r,1);require(r[0x1844]==std::byte{},"Zero-speed rebound failed to settle");
     }
-    for(unsigned type:{72u,73u}) for(unsigned paired_type:{25u,33u}) {
-        auto r=fixture(type,4,0,0,0);r[0x1884]=std::byte{14};r[0x18c4]=std::byte{5};
-        r[0x15c4]=r[0x1684]=std::byte{100};
-        r[0x1505]=static_cast<std::byte>(paired_type);r[0x1545]=std::byte{0xc0};
-        run(r,14);require(r[0x1844]==std::byte{1} && r[0x1684]==std::byte{100},"Defeat wait changed position");
-        run(r,11);require(r[0x1684]==static_cast<std::byte>(type==72?89:122),"Defeat motion endpoint");
-        run(r,1);for(unsigned field=0;field<32;++field)
-            require(r[0x1504+field*64]==std::byte{},"Defeat effect failed to clear actor");
-        require(r[0x1505]==static_cast<std::byte>(type==73 && paired_type==25?0:paired_type),"Defeat removed wrong paired actor");
-        r=fixture(type,4,4,0,0);r[0x1544]=std::byte{};
-        run(r,26);require(r[0x1504]==std::byte{},"Newly defeated actor froze before initialization");
-    }
     for(unsigned type:{52u,53u,55u,56u}) {
         auto r=fixture(type,3,type<54?1:0,0,32);
         r[0x15c4]=r[0x1684]=std::byte{100};r[0x1744]=r[0x17c4]=std::byte{1};
@@ -263,7 +251,7 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
     }
     // Unlike frozen-bank swap tests, the ROM may dispatch an actor on the
     // very frame the viewport changes. Retain the independently advanced pose.
-    for(unsigned type:{21u,22u,15u,19u,20u,33u,9u,10u,8u,14u,70u,71u}) {
+    for(unsigned type:{19u,20u,33u,9u,10u,8u,14u,70u,71u}) {
         const unsigned count=type==33?6:type==10 || type==8 || type==20?3:type==19 || type>=70?2:type==14?1:4;
         auto source_actor=fixture(type,count,1,0,32);
         source_actor[0x1684]=source_actor[0x15c4]=std::byte{120};
@@ -292,10 +280,11 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
             require(timeline->actors(0)[0x1504+field*64]==expected[0x1504+field*64],
                 "Departing actor dispatch at seam reset a private animation");
     }
-    // Independent runtime RNG chooses a different ordinary wait on return.
-    // This must not rewind motion, while real hits and type changes still win.
-    for(unsigned type:{21u,15u,19u}) {
-        auto source_actor=fixture(type,4,type==21?1:type==15?2:0,0,32);
+    // Independent runtime RNG chooses a different ordinary brain-orb wait on
+    // return. This must not rewind motion, while real hits and type changes still win.
+    {
+        const unsigned type=19;
+        auto source_actor=fixture(type,4,0,0,32);
         source_actor[0x1884]=std::byte{1};source_actor[0x1684]=std::byte{120};
         source_actor[0x1784]=std::byte{0x80};source_actor[0x17c4]=std::byte{0xff};
         auto timeline=std::make_unique<render::TableAnimation>(rom);
@@ -303,7 +292,7 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
         for(unsigned i=0;i<17;++i) timeline->update(actors,source_actor,true);
         auto expected=timeline->actors(0);actors.advance_animation(expected);
         actors.advance_animation(source_actor);
-        source_actor[0x1884]=static_cast<std::byte>(type==19?4:239);
+        source_actor[0x1884]=std::byte{4};
         timeline->update(actors,source_actor,true);
         for(unsigned field=0;field<32;++field)
             require(timeline->actors(0)[0x1504+field*64]==expected[0x1504+field*64],
@@ -316,10 +305,9 @@ void finite_animation_checks(const assets::ActorAssets& actors,std::span<const s
     }
     // Frozen runtime banks are replayed across repeated seams. Completed
     // effects must not resurrect, and finite phases must not restart.
-    auto source=fixture(73,4,0,0,0);source[0x1884]=std::byte{14};source[0x18c4]=std::byte{5};
-    source[0x1505]=std::byte{25};source[0x1545]=std::byte{0xc0};
+    auto source=fixture(59,4,0,0,64);source[0x1544]=std::byte{};
     unsigned slot=6;
-    for(unsigned type:{9u,10u,8u,14u,72u,55u}) {
+    for(unsigned type:{9u,10u,8u,14u,55u}) {
         auto actor=fixture(type,type==9?4:3,type==55?0:1,0,32);
         actor[0x1884]=std::byte{12};actor[0x1784]=std::byte{0x80};
         actor[0x17c4]=std::byte{0xff};actor[0x1684]=std::byte{100};actor[0x15c4]=std::byte{100};

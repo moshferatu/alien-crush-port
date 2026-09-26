@@ -1,5 +1,14 @@
 # Cabinet actor animation audit
 
+## Lower aliens are native (2026-09-25)
+
+The orange and green aliens, their silver variants, the green bases, both
+group controllers and the defeat effects (types 15, 16, 21, 22, 25, 67, 68,
+72, 73) are no longer animated here. Cabinet gameplay runs them in both halves
+(docs/CABINET_ALIENS.md), and the presentation draws them from the banks as
+they are. The sections below marked "superseded" describe the cosmetic copy
+that drifted from the game's aliens; `green_continuity` went with it.
+
 ## Flying-alien explosions (2026-09-15)
 
 Mouth flyers (type 56) become type 59 on a hit (`01:5650..5666`).
@@ -30,7 +39,7 @@ capture, and `ActorAssets::advance_animation`. Addresses below are bank:PC.
 This is a code audit, not a claim that every possible gameplay event has been
 visually exercised. Bonus-stage actors do not need inactive-half animation.
 
-## Green aliens: implemented
+## Green aliens (superseded 2026-09-25)
 
 - Type 21 (`02:619D`): wait, rise 24 pixels over 48 ticks, animate while
   raised for 120–239 ticks, lower 24 pixels over 48 ticks, repeat. The lowered
@@ -59,7 +68,7 @@ motion and holds the intended endpoint instead of oscillating indefinitely.
 | Rebound actor 9 | `02:669D..6761`: FD2B plus signed step damping and a final idle pose | Dampen on the correct reflection endpoint in either direction, then settle; handle zero-speed states as well. |
 | Hit target 10 | `01:51A3..51AE`: return to idle when phase reaches 2 | Stop and retain the final pose. |
 | Targets 8 / 37 / 38 / 39 | `01:591F..5999`: select BECF or BF38 from timer, stop at the appropriate reflection endpoint | Select the correct sequence for each variant; stop opening/closing at the original endpoints. |
-| Green defeat effects 72 / 73 | `02:6552..65FC`: wait 14 ticks, move for 12 ticks, remove | Initialize newly defeated actors, finish the wait/flight, and clear all actor fields. Type 73 removes its saved type-25 base; a slot reused for another actor is protected. |
+| Green defeat effects 72 / 73 (superseded 2026-09-25) | `02:6552..65FC`: wait 14 ticks, move for 12 ticks, remove | Initialize newly defeated actors, finish the wait/flight, and clear all actor fields. Type 73 removes its saved type-25 base; a slot reused for another actor is protected. |
 
 The same dispatch scan found transient movement in types 51, 52, 53, 55 and
 56 (`01:51B5`, `56AA`, `575D`, `559C`, `5600`). Initialized type 51 now finishes
@@ -95,7 +104,7 @@ dispatch and removal, expiration, and visible pixels above the seam.
 
 ## Existing coverage and audit limits
 
-Silver orange aliens (2026-09-25): the orange group's controller (`01:5DA5`)
+Silver orange aliens (2026-09-25, superseded the same day by native aliens): the orange group's controller (`01:5DA5`)
 respawns a cleared group as type 15, or as type 16 when a lane sensor sets
 `$82` bit 1 during its wait. Type 16 (`02:60E1..6162`) is the silver variant.
 It starts in its hole and emerges once over 48 FADA ticks (action 0). Then it
@@ -124,7 +133,7 @@ hits. Rendered fixtures verify both cocoons return while the upper half stays
 active and the lower source bank remains unchanged; previews are written to
 `inactive-previews/cocoons-{hidden,restored}-upstairs.bmp` by `inactive_animation`.
 
-Dedicated presentation behavior already covers orange aliens (15), brain-side
+Dedicated presentation behavior already covers brain-side
 orbs (19), bouncing orbs (70/71), orb explosions (60), indicators (42/45/46/47),
 flipper mirroring (2/3), and the table's palette scripts (including tentacles
 and fleshy borders). Last-chance digits (43) are deliberately runtime-owned.

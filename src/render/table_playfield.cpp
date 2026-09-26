@@ -228,17 +228,6 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
             visual=incoming;
         } else {
             auto expected=source_[half];
-            // Group enables can force a waiting green/orange alien to rise
-            // before its timer expires. Predict that ordinary transition
-            // without restarting the independently running cosmetic cycle.
-            for(unsigned x=4;x<64;++x) {
-                const auto type=std::to_integer<unsigned>(expected[0x1500+x]);
-                const auto action=std::to_integer<unsigned>(expected[0x1840+x]);
-                const unsigned trigger=type==21?0x40:type==15?0x80:0;
-                if(trigger && (std::to_integer<unsigned>(ram[0xb0]|source_[half][0xb0])&trigger) &&
-                    std::to_integer<unsigned>(incoming[0x1840+x])==(type==21?1u:2u) &&
-                    (action==0 || (type==15 && action==1))) expected[0x1880+x]=std::byte{1};
-            }
             // Predict ordinary local animation to distinguish it from a hit,
             // spawn, drain or other authoritative gameplay change.
             // Either bank can receive its last/first actor dispatch on the
@@ -253,14 +242,14 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
                 const auto type=b(source_[half],0x1500),from=b(source_[half],0x1840),to=b(expected,0x1840);
                 const auto wait=b(incoming,0x1880);
                 // Cosmetic RNG deliberately runs independently. A normal
-                // randomized wait is not a hit, spawn or position correction.
-                // Ignore only that timer, only at a known state transition;
-                // all other fields (including collision and type) still match.
+                // randomized brain-orb wait is not a hit, spawn or position
+                // correction. Ignore only that timer, only at a known state
+                // transition; all other fields (including collision and type)
+                // still match. The lower aliens are never cosmetic: they draw
+                // exactly what the bank holds (gameplay::CabinetAliens).
                 const bool random_wait=(b(source_[half],0x1540)&0x80) &&
                     !(b(source_[half],0x1ac0)&0x80) && !(b(incoming,0x1ac0)&0x80) &&
-                    ((type==21 && ((from==1 && to==2 && wait>=120 && wait<240) || (from==3 && to==0))) ||
-                     (type==15 && ((from==2 && to==3 && wait>=120 && wait<240) || (from==4 && to==1))) ||
-                     (type==19 && ((from==0 && to==1 && wait>=1 && wait<=4) || (from==1 && to==0 && wait<128))));
+                    type==19 && ((from==0 && to==1 && wait>=1 && wait<=4) || (from==1 && to==0 && wait<128));
                 for(unsigned field=0;field<32;++field) {
                     const unsigned p=0x1500+field*64+x;
                     // One-shot VRAM upload flags are not actor lifecycle events.

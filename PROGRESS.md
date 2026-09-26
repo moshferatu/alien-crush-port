@@ -1,5 +1,22 @@
 # Progress
 
+Native cabinet aliens (2026-09-25):
+
+- Balls passed through drawn lower-table aliens because the cabinet drew a
+  cosmetic copy that drifted from the game's: over 12,000 scripted frames the
+  drawn orange aliens disagreed with the game's on being solid 30% of the time.
+- Cabinet gameplay now runs the orange and green aliens, their silver variants,
+  bases, group controllers and defeat effects natively, in both halves
+  (`gameplay::CabinetAliens`, docs/CABINET_ALIENS.md). A CPU hook replaces the
+  ROM routines in the ball's half; the other half runs once per game loop with
+  private randomness. The presentation draws them from the banks as they are.
+  The cosmetic copy and `green_continuity` are gone.
+- `cabinet_aliens` checks every routine, 5,291 frames of scripted play and
+  1,560 frames of edited-state hits, clears and silver respawns byte for byte
+  against the original while the ball stays downstairs, and 12,000 frames of
+  native play where every drawn alien equals the game's. 50 of 51 tests pass;
+  `cabinet_plunger` fails only because a DualSense controller is connected.
+
 Slingshot alien flight across the cabinet seam (2026-09-14):
 
 - Continue spawned types 40/41 through emergence and deterministic launch to

@@ -55,6 +55,9 @@ data as decoded assets, never an instruction representation masquerading as nati
 - Synchronize sprite, scroll, and state capture; handle palette animation, hidden actors,
   dynamic slot reuse, transitions, and effects explicitly.
 - Preserve the original off-screen simulation schedule; presentation never advances actors.
+  Exception (2026-09-25): cabinet gameplay runs the lower table's aliens in both halves
+  natively, so the drawn aliens are the ones the ball hits (docs/CABINET_ALIENS.md).
+  Cabinet mode may differ from the original where showing both halves requires it.
 - Auxiliary windows do not own input focus or application lifetime.
 - PinOne pull/rest endpoints and axis are calibrated; no automatic thumbstick/plunger guess.
 - High scores and settings are backend-independent; quick saves are backend/version-specific.

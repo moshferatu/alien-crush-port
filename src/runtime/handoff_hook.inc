@@ -2,6 +2,15 @@
 // Only the two main-table handoff call trees, from live play or attract mode. No persistent execution
 // phase exists outside the serialized CPU/RAM state; IRQs fail the stack guard.
         {
+        // Cabinet aliens (src/gameplay/cabinet_aliens.cpp): the actor dispatcher
+        // starting at 01:45A8, or entering an alien routine with its return to
+        // the dispatcher (45C7) on top of the stack.
+        if(ac_cabinet_aliens && (PC==0x45a8 || PC==0x5da5 || PC==0x5e70 || PC==0x5f82 || PC==0x60e1 ||
+            PC==0x619d || PC==0x630c || PC==0x63cd || PC==0x6552 || PC==0x65ab) &&
+            MPR[1]==0xf8 && MPR[2]==1 && MPR[3]==2 && MPR[4]==3 && MPR[7]==0) {
+            const unsigned ac_caller=RdMem(0x2100+((S+1)&255))|(RdMem(0x2100+((S+2)&255))<<8);
+            if(const unsigned ac_next=ac_cabinet_aliens(PC,X,ac_caller)) PC=ac_next;
+        }
         // 01:4443 is the return after the original signed half-impulse was
         // added to ball Y velocity. The early-return branches also land here,
         // so repeat their ball/action gates before reading the scratch impulse.

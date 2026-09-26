@@ -2,6 +2,7 @@
 #include "alien_crush/assets/actor_assets.hpp"
 #include "alien_crush/core/rom_image.hpp"
 #include "alien_crush/assets/table_assets.hpp"
+#include "alien_crush/gameplay/cabinet_aliens.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <string>
@@ -191,6 +192,9 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
     };
     for(unsigned x=4;x<64;++x) {
         const auto type=b(0x1500+x);
+        // Cabinet play runs the lower aliens natively in both halves
+        // (src/gameplay/cabinet_aliens.cpp); their bank is already current.
+        if(gameplay::CabinetAliens::owns(static_cast<std::uint8_t>(type))) continue;
         const bool explosion=type==50 || type==59 || type==60;
         // 02:77E4/7826/7854: explosions use action zero and expire after one
         // complete FD2B reflection. Finish effects already spawned by gameplay.
@@ -296,33 +300,6 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
             }
             continue;
         }
-        // 02:6552/65AB: defeated green actors wait, fly away, then expire.
-        // Only remove a saved type-25 base, never an unrelated reused slot.
-        if(type==72 || type==73) {
-            if(!(b(0x1540+x)&0x80)) {
-                put(0x1540+x,b(0x1540+x)|0xc0);put(0x1a00+x,type==72?0x23:0x21);
-                put(0x1880+x,14);put(0x1840+x,0);
-            }
-            const auto action=b(0x1840+x);
-            if(action>1) continue;
-            if(action==1) {if(type==72) move(x,true);move(x,false);}
-            put(0x1880+x,b(0x1880+x)-1);
-            if(!b(0x1880+x)) {
-                if(action==0) {
-                    if(type==72) {
-                        put(0x1700+x,0);put(0x1740+x,1);put(0x1580+x,0);
-                        put(0x1640+x,0xc0);
-                    }
-                    put(0x1780+x,0);put(0x17c0+x,type==72?0xff:2);
-                    put(0x1880+x,12);put(0x1840+x,1);
-                } else {
-                    const auto pair=b(0x18c0+x);
-                    if(type==73 && pair>=4 && pair<64 && b(0x1500+pair)==25) remove(pair);
-                    remove(x);
-                }
-            }
-            continue;
-        }
         // 02:6FA3..700A / 70C5..7225: indicators open once, hold while their group
         // is enabled, then close once. They are not continuous oscillators.
         if(type==42 || (type>=45 && type<=47)) {
@@ -392,88 +369,6 @@ void ActorAssets::advance_animation(std::span<std::byte> ram,bool full_table) co
                 }
             }
             continue;
-        }
-        // Orange side aliens: 01:5F82..02:60B1. Their visible animation is
-        // a quarter-pixel diagonal emerge/wait/retreat cycle, not FD35.
-        // Use fixed cosmetic waits inside the ROM's ranges instead of consuming
-        // gameplay RNG. Preserve the saved first wait and never process hits.
-        if(type==15 && (b(0x1540+x)&0x80)) {
-            const auto action=b(0x1840+x);
-            if(action>4) continue;
-            if(action==2 || action==4) {
-                for(unsigned axis=0;axis<2;++axis) {
-                    const unsigned p=axis?0x1640:0x1580,v=axis?0x1780:0x1700;
-                    const unsigned velocity=b(v+x)|(b(v+64+x)<<8);
-                    const int delta=velocity<0x8000?static_cast<int>(velocity):static_cast<int>(velocity)-65536;
-                    const unsigned position=b(p+x)|(b(p+64+x)<<8)|(b(p+128+x)<<16);
-                    const unsigned next=(position+static_cast<unsigned>(delta))&0xffffff;
-                    put(p+x,next);put(p+64+x,next>>8);put(p+128+x,next>>16);
-                }
-            }
-            put(0x1880+x,b(0x1880+x)-1);
-            if(b(0x1880+x)) continue;
-            if(action<=1) {
-                put(0x1840+x,2);put(0x1700+x,0xc0);put(0x1740+x,0xff);
-                put(0x1580+x,0xc0);put(0x1780+x,0x40);put(0x17c0+x,0);
-                put(0x1640+x,0);put(0x1880+x,action==0?48:32);
-            } else if(action==2) {
-                put(0x1840+x,3);put(0x1880+x,180);
-                put(0x1ac0+x,0);put(0x1540+x,b(0x1540+x)&0xbf);
-            } else if(action==3) {
-                put(0x1840+x,4);put(0x1700+x,0x40);put(0x1740+x,0);
-                put(0x1580+x,0);put(0x1780+x,0xc0);put(0x17c0+x,0xff);
-                put(0x1640+x,0xc0);put(0x1880+x,32);
-                put(0x1540+x,b(0x1540+x)|0x40);
-            } else {put(0x1840+x,1);put(0x1880+x,16);}
-            continue;
-        }
-        // Silver orange aliens: 02:60E1..6162. A respawned group may be this
-        // variant. It emerges once, over 48 FADA ticks, and then waits out of
-        // its hole for a hit without calling FD2B. Finish a saved emergence;
-        // hits, the color reveal and group counts remain runtime-owned.
-        if(type==16 && (b(0x1540+x)&0x80)) {
-            if(!b(0x1840+x)) {
-                move(x,true);move(x,false);put(0x1880+x,b(0x1880+x)-1);
-                if(!b(0x1880+x)) {
-                    put(0x1840+x,1);put(0x1ac0+x,0);put(0x1540+x,b(0x1540+x)&0xbf);
-                }
-            }
-            continue;
-        }
-        // Green side aliens: 02:61FE..6286. Only the raised wait calls
-        // FD2B; rising/lowering use 48 half-pixel Y steps. Type 22 is the
-        // related rise-and-stay variant (02:635E..6380). Use private RNG
-        // for idle waits, never process collisions or group/sound writes.
-        if((type==21 || type==22) && (b(0x1540+x)&0x80)) {
-            const auto action=b(0x1840+x);
-            if(action>(type==21?3u:1u)) continue;
-            const bool moving=type==21?(action==1 || action==3):action==0;
-            const bool raised=type==21?action==2:action==1;
-            if(moving) {
-                const unsigned velocity=b(0x1780+x)|(b(0x17c0+x)<<8);
-                const int delta=velocity<0x8000?static_cast<int>(velocity):static_cast<int>(velocity)-65536;
-                const unsigned y=b(0x1640+x)|(b(0x1680+x)<<8)|(b(0x16c0+x)<<16);
-                const unsigned next=(y+static_cast<unsigned>(delta))&0xffffff;
-                put(0x1640+x,next);put(0x1680+x,next>>8);put(0x16c0+x,next>>16);
-            }
-            if(type==21 || !raised) {
-                put(0x1880+x,b(0x1880+x)-1);
-                if(!b(0x1880+x)) {
-                    if(type==22 || action==1) {
-                        put(0x1840+x,type==21?2:1);
-                        if(type==21) put(0x1880+x,120+(visual_random(ram)*120>>8));
-                        put(0x1ac0+x,0);put(0x1540+x,b(0x1540+x)&0xbf);
-                    } else if(action==0 || action==2) {
-                        put(0x1840+x,action+1);put(0x1780+x,0x80);
-                        put(0x17c0+x,action==0?0xff:0);put(0x1880+x,48);
-                        if(action==2) put(0x1540+x,b(0x1540+x)|0x40);
-                    } else {
-                        put(0x1840+x,0);put(0x1880+x,visual_random(ram)+16);
-                    }
-                    continue;
-                }
-            }
-            if(!raised) continue;
         }
         // The little bouncing orbs (02:7892/7988) do not use FD35.
         // Continue their respawn timer and vertical bob in the private bank,
