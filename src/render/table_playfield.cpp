@@ -742,22 +742,34 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         const auto flight=render::sprites(sprites_[half].vram,palette,flight_sat,0);
         // The ordinary half composition already draws the local portion with
         // its correct ordering. Add only pixels clipped by that old viewport.
+        // Smoothing moves these pieces with the rest of their actor: the same
+        // group and anchor as its ordinary layers, one identity per piece.
+        std::array<unsigned,64> ordinal{};
         for(auto it=pieces.rbegin();it!=pieces.rend();++it) {
             const auto& sprite=flight[it->slot];
-            AnimationLayer extension{0x200000u+half*0x10000u+it->actor*256u+it->descriptor,
+            const auto word=[&](unsigned lo,unsigned hi) {
+                return std::to_integer<unsigned>(projected[lo+it->actor])|(std::to_integer<unsigned>(projected[hi+it->actor])<<8);
+            };
+            const auto type=std::to_integer<unsigned>(projected[0x1500+it->actor]);
+            const MotionPosition anchor{double(static_cast<std::int16_t>(word(0x15c0,0x1600)))-32,
+                double(static_cast<std::int16_t>(word(0x1680,0x16c0)))-64};
+            AnimationLayer extension{0x200000u+half*0x10000u+it->actor*256u+ordinal[it->actor]++,
                 {double(sprite.x),double(sprite.y)},
                 {sprite.width,sprite.height,std::vector<std::uint32_t>(sprite.image.pixels.size())}};
+            extension.pose_offset={sprite.x-anchor.x,sprite.y-anchor.y};
+            extension.actor_group=(half*0x10000u+it->actor*256u)|(static_cast<std::uint64_t>(type)<<32);
+            bool drawn=false;
             for(int y=0;y<sprite.height;++y) for(int x=0;x<sprite.width;++x) {
                 const int dx=sprite.x+x,dy=sprite.y+y;
                 if(dx<0 || dx>=256 || dy<0 || dy>=table_playfield_height ||
                     (!half?dy>=table_half_offset:dy<240)) continue;
                 const auto color=sprite.image.pixels[y*sprite.width+x];
                 if(color>>24) {
-                    result.pixels[dy*256+dx]=color;
+                    result.pixels[dy*256+dx]=color;drawn=true;
                     if(capture) extension.image.pixels[y*sprite.width+x]=color;
                 }
             }
-            if(capture) animation_scene_->layers.push_back(std::move(extension));
+            if(capture && drawn) animation_scene_->layers.push_back(std::move(extension));
         }
     }
     return result;

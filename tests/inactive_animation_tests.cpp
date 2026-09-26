@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <stdexcept>
 using namespace alien_crush;
 namespace {
@@ -138,6 +139,34 @@ void slingshot_rendering(std::span<const std::byte> rom,const diagnostics::Refer
         for(unsigned p=0;p<256*render::table_half_offset;++p) changed+=with->pixels[p]!=without->pixels[p];
         require(changed>20,"Flying alien is not drawn above the seam");
         if(type==52) preview(*with,"slingshot-above-seam");
+
+        // Smoothing: a frame later the flyer is a pixel further on in its
+        // next pose. Each piece above the seam keeps its own identity and
+        // moves with its actor's anchor, never with another piece's.
+        auto smoothed=std::make_unique<render::TablePlayfield>(rom);smoothed->capture_animation(true);
+        render::TableTransitionHold smoothed_hold;
+        auto next=std::make_unique<diagnostics::ReferenceSnapshot>(*current);++next->frame;
+        const std::array poses=type==52?std::array{32u,33u}:std::array{115u,116u};
+        source[0x1804]=static_cast<std::byte>(poses[0]);
+        require(smoothed->cabinet_frame(*current,nullptr,source,nullptr,smoothed_hold).has_value(),"Missing smoothed flyer");
+        const auto before=*smoothed->animation_scene();
+        source[0x1804]=static_cast<std::byte>(poses[1]);source[0x15c4]=std::byte{159};source[0x1684]=std::byte{0xdf};
+        require(smoothed->cabinet_frame(*next,current.get(),source,nullptr,smoothed_hold).has_value(),"Missing smoothed flyer");
+        const auto after=*smoothed->animation_scene();
+        unsigned pieces=0;
+        std::set<std::uint64_t> identities;
+        for(const auto& layer:after.layers) {
+            if(layer.id<0x200000 || layer.id>=0x300000) continue;
+            ++pieces;
+            require(identities.insert(layer.id).second,"Pieces above the seam share an identity");
+            require(layer.actor_group!=0,"A piece above the seam is not part of its actor");
+            const auto old=std::find_if(before.layers.begin(),before.layers.end(),[&](const auto& c){return c.actor_group==layer.actor_group;});
+            require(old!=before.layers.end(),"A piece above the seam lost its actor across a pose change");
+            require(layer.position.x-layer.pose_offset.x==old->position.x-old->pose_offset.x-1 &&
+                layer.position.y-layer.pose_offset.y==old->position.y-old->pose_offset.y-1,
+                "A piece above the seam does not move with its actor");
+        }
+        require(pieces>1,"The flyer above the seam has too few pieces for the check");
     }
 }
 }
