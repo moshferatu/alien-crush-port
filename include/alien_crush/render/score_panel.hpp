@@ -23,4 +23,13 @@ public:
     // `ball` is the BallNumber; zero takes it from the balls left alone.
     Image compose(const diagnostics::AlienState&,unsigned ball=0) const;
 };
+// What the DMD shows. While the game reloads for the title (title_transition)
+// it keeps its last picture, as a cabinet's display would, instead of going
+// dark with the screen between the rankings and the title.
+class PanelHold {
+    Image image_;
+public:
+    const Image& update(const ScorePanel&,const diagnostics::AlienState&,BallNumber&);
+    void reset() {image_={};}
+};
 }

@@ -121,7 +121,10 @@ int main(int argc,char** argv) {
         runtime->restore(qualifying);
         recording::Recording ranked;ranked.initial=qualifying;
         previous.reset();
-        unsigned ranked_frames=0,visible_frames=0;
+        unsigned ranked_frames=0,visible_frames=0,exit_frames=0;
+        render::PanelHold dmd;
+        render::BallNumber ball;
+        render::Image rankings;
         bool confirmed=false,returned=false;
         alien_crush::host::GameInputRouter initials_router;
         for(unsigned n=0;n<2200;++n) {
@@ -149,10 +152,18 @@ int main(int argc,char** argv) {
                 confirmed|=ram[0x120c]==std::byte{0x80};
                 if(confirmed) require(ram[0x122b]==std::byte{0x41},"Normal-game initials can be edited and confirmed");
             }
+            const auto& shown=dmd.update(panel,state,ball);
+            if(state.high_score_menu) rankings=shown;
+            if(ranked_frames && !state.high_score_menu && !state.title_menu) {
+                ++exit_frames;
+                require(state.title_transition,"Every ranking-to-title frame is recognized");
+                require(shown.pixels==rankings.pixels,"DMD keeps the rankings until the title");
+            }
             previous=video;
             if(ranked_frames && state.title_menu) {returned=true;break;}
         }
         require(ranked_frames>200 && visible_frames>100 && confirmed && returned,"Visible normal-game initials entry, confirmation and title return");
+        require(exit_frames>=20,"Regression covers the table reload and title reset");
         output=prefix;output+=".ranking.acrec";recording::write(output,ranked);
         std::cout<<"Three drains, 771 game-over frames, title return; "<<stitched_frames<<" stitched frames; exact restore passed\n";
         return 0;

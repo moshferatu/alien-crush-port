@@ -358,8 +358,9 @@ The cabinet also shows the ranked table during normal-game and bonus-practice
 name entry. Name editing remains on the original playfield screen.
 After an attract demo finishes, the original high-score table appears on the
 playfield and all five rankings appear on the DMD before returning to the title.
-The playfield and DMD stay black during the ROM's brief graphics reload and
-title reset, preventing a flash of table art or gameplay counters.
+During the ROM's brief graphics reload and title reset, after a demo, a normal
+game or bonus practice, the playfield stays black and the DMD keeps showing the
+rankings, so neither flashes table art or gameplay counters.
 A qualifying replay checks a 1,505,700-point score, name confirmation and
 retention when starting another game in the same session.
 Put your artwork at `portable-data/backglass.bmp` (or in

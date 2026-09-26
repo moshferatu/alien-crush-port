@@ -95,6 +95,10 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
     number(state.bonus_room?state.bonus_room:ball?ball:BallNumber{}.update(state),216,73,1);
     return result;
 }
+const Image& PanelHold::update(const ScorePanel& panel,const diagnostics::AlienState& state,BallNumber& ball) {
+    if(!state.title_transition || image_.pixels.empty()) image_=panel.compose(state,ball.update(state));
+    return image_;
+}
 unsigned BallNumber::update(const diagnostics::AlienState& state) {
     if(state.title_menu || state.title_transition || state.demo_play || state.high_score_menu) {ball_=0;return 0;}
     // Three-ball game: 3/2/1 remaining becomes BALL 1/2/3. Keep BALL 3

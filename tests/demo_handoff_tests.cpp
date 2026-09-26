@@ -89,6 +89,9 @@ int main(int argc,char** argv) {
         const auto panel=render::ScorePanel::from_rom(rom);
         render::TableTransitionHold ranking_hold;
         host::GameInputRouter ranking_input;
+        render::PanelHold dmd_hold;
+        render::BallNumber dmd_ball;
+        render::Image rankings;
         for(;frames<6500;++frames) {
             const auto frame=runtime->advance({});
             samples+=frame.stereo.size()/2;
@@ -97,6 +100,10 @@ int main(int argc,char** argv) {
                 fingerprints.push_back(recording::fingerprint(frame,runtime->work_ram()));
             }
             const auto scene=diagnostics::observe_alien_state(runtime->work_ram());
+            const auto& shown=dmd_hold.update(panel,scene,dmd_ball);
+            if(scene.high_score_menu) rankings=shown;
+            if(ranking_frames && !scene.high_score_menu && !scene.title_menu)
+                require(shown.pixels==rankings.pixels,"DMD keeps the rankings until the title");
             if(scene.high_score_menu) {
                 ++ranking_frames;
                 require(scene.demo_play,"Natural attract rankings retain demo selector");

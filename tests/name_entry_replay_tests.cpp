@@ -41,7 +41,10 @@ int main(int argc,char** argv) {
     std::vector<std::uint32_t> final_pixels;
     std::vector<std::int16_t> final_audio;
     bool title_seen=false,new_game=false;
-    unsigned first_ranked=0,viewer_frames=0;
+    unsigned first_ranked=0,viewer_frames=0,exit_frames=0;
+    render::PanelHold hold;
+    render::BallNumber ball;
+    render::Image rankings;
     host::GameInputRouter input_router;
     for(unsigned n=5500;n<10500;++n) {
         const auto input=input_router.route(input_at(n,diagnostics::observe_alien_state(runtime->work_ram())),runtime->work_ram());
@@ -64,6 +67,14 @@ int main(int argc,char** argv) {
         }
         if(n>=9700 && n<9900) require(state.high_score_menu,"Ranking layout spans name editing and confirmation pause");
         viewer_frames+=state.high_score_menu;
+        const auto& shown=hold.update(panel,state,ball);
+        if(state.high_score_menu) rankings=shown;
+        if(n>=9900 && !state.high_score_menu && !state.title_menu && !title_seen) {
+            // Practice ends one call deeper (01:448D) than a normal game.
+            ++exit_frames;
+            require(state.title_transition,"Every practice ranking-to-title frame is recognized");
+            require(shown.pixels==rankings.pixels,"DMD keeps the rankings until the title");
+        }
         if(n==9803 || n==9807) require(ram[0x120c]!=std::byte{0x80},"First two held Enter presses advance without submitting");
         if(n==9810) require(ram[0x120c]==std::byte{0x80},"Third Enter press confirms name entry");
         if(n==9899) require(state.high_score_menu,"Confirmation keeps ranked-score layout");
@@ -75,6 +86,7 @@ int main(int argc,char** argv) {
         if(n==10499) {final_ram.assign(ram.begin(),ram.end());final_pixels=pixels;final_audio=audio;}
     }
     require(first_ranked==9656 && title_seen && new_game,"Qualification, confirmation, title and new game covered");
+    require(exit_frames>=20,"Regression covers the practice table reload and title reset");
     runtime->restore(replay.initial);
     for(unsigned i=0;i<replay.inputs.size();++i) {
         const auto frame=recording::advance(*runtime,replay.inputs[i]);
