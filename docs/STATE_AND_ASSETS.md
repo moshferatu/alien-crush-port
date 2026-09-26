@@ -634,7 +634,8 @@ false leaves RAM intact. It is tested through the runtime API but not yet wired
 to general native gameplay. The SDL and recording bridges described below now support these operations.
 
 The seat gate requires the active lower table, mode `$67=1`, demo selector `$76=0`,
-clear scene bytes `$53/$54`, no death/game-over bits `$78 & $13`, active bit
+`$53` non-negative (the launcher's own test; a completed lane set leaves `$54` at
+1..3 and can set `$53` bit 6 while the ball is seated), no death/game-over bits `$78 & $13`, active bit
 `$68 & 1`, zero camera, and a visible type-1 ball. Exactly one active-table type-6
 actor must have flags `$88`, phase 0..3, normal descriptor mode, limit 9, travel
 0..2048 and descriptor 23..31 consistent with integer travel. The ball's contact

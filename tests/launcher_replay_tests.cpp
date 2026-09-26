@@ -47,12 +47,19 @@ int main(int argc,char** argv) {
         std::array<std::byte,8192> seated{};
         std::copy(runtime->work_ram().begin(),runtime->work_ram().end(),seated.begin());
         for(const auto [offset,value]:std::array<std::pair<unsigned,unsigned>,15>{{
-            {0x79,1},{0x76,1},{0x53,128},{0x54,128},{0x78,16},{0x68,0},
+            {0x79,1},{0x76,1},{0x53,128},{0x53,0xc0},{0x78,16},{0x68,0},
             {0xf6,2},{0x1500,28},{0x1846,4},{0x1a40,0},{0x1680,100},
             {0x1507,6},{0x1806,31},{0x1fe,0},{0x1ff,0}}}) {
             auto invalid=seated;invalid[offset]=static_cast<std::byte>(value);
             const auto before=invalid;
             require(!apply_reference_launcher_draw(invalid,50) && invalid==before,"Rejected adapter input changed RAM");
+        }
+        // A completed lane set leaves $54 at 1..3 and can set $53 bit 6; the
+        // ROM launcher (01:4E5C) tests only $53's sign, so the ball stays seated.
+        for(const auto [lanes,scene]:std::array<std::pair<unsigned,unsigned>,3>{{{1,0},{2,0x40},{3,0}}}) {
+            auto lane=seated;lane[0x54]=static_cast<std::byte>(lanes);lane[0x53]=static_cast<std::byte>(scene);
+            require(reference_launcher_active(lane) && reference_launcher_seat(lane).has_value() &&
+                apply_reference_launcher_draw(lane,50),"Completed lane set hid the seated ball");
         }
         for(const auto percent:{0U,101U}) {
             auto invalid=seated;
@@ -157,7 +164,7 @@ int main(int argc,char** argv) {
         auto pinned=seated;
         require(apply_reference_launcher_draw(pinned,50),"Cancellation rejection setup failed");
         for(const auto [offset,value]:std::array<std::pair<unsigned,unsigned>,15>{{
-            {0x79,1},{0x76,1},{0x53,128},{0x54,128},{0x78,16},{0x68,0},
+            {0x79,1},{0x76,1},{0x53,128},{0x53,0xc0},{0x78,16},{0x68,0},
             {0x1500,28},{0x1846,4},{0x1a40,0},{0x1680,100},{0x1507,6},
             {0x1806,31},{0x1fe,0},{0x1b86,64},{0x1bc6,255}}}) {
             auto invalid=pinned;invalid[offset]=static_cast<std::byte>(value);

@@ -11,7 +11,10 @@ std::optional<ReferenceLauncherSeat> launcher_seat(std::span<const std::byte> ra
     if(ram.size()!=8192) return {};
     auto b=[&](unsigned at){return std::to_integer<unsigned>(ram[at]);};
     auto word=[&](unsigned lo,unsigned hi){return b(lo)|(b(hi)<<8);};
-    if(b(0x79)!=0 || b(0x67)!=1 || b(0x76)!=0 || b(0x53)!=0 || b(0x54)!=0 ||
+    // 01:4E5C refuses a launch only while $53 is negative. A completed lane
+    // set (01:490B) leaves $54 at 1..3 and can set $53 bit 6, and the ball
+    // still launches then.
+    if(b(0x79)!=0 || b(0x67)!=1 || b(0x76)!=0 || (b(0x53)&0x80)!=0 ||
         (b(0x78)&0x13)!=0 || (b(0x68)&1)==0 || (!suspended && (b(0xf6)&2)!=0) ||
         word(0x16,0x17)!=0 || b(0x1500)!=1 || b(0x1540)!=0x80) return {};
     // The outermost JSR is the normal 01:4086 frame wait (return $4088).
@@ -43,7 +46,7 @@ bool reference_launcher_active(std::span<const std::byte> ram) {
     // 1 through the shot's departure, whereas the exact seat/descriptor gate
     // can fail for a single frame at full draw or during return motion.
     if(b(0x79)!=0 || b(0x67)!=1 || b(0x76)!=0 || !(b(0x68)&1) ||
-        (b(0x78)&0x13) || (b(0xf6)&2) || b(0x53)!=0 || b(0x54)!=0 ||
+        (b(0x78)&0x13) || (b(0xf6)&2) || (b(0x53)&0x80) ||
         b(0x1500)!=1 || b(0x1540)!=0x80) return false;
     for(unsigned slot=4;slot<64;++slot)
         if(b(0x1500+slot)==6 && b(0x1540+slot)==0x88) return true;
