@@ -239,7 +239,7 @@ int main(int argc,char** argv) {
                             if(event.key.scancode==SDL_SCANCODE_F5) {
                                 if(cabinet_plunger.owns_draw()) throw std::runtime_error("Release the plunger before saving a quick state");
                                 core::write_file_atomic(path,state::encode(runtime->save()));
-                            } else { auto decoded=state::decode(core::read_file(path)); if(!decoded.decoded) throw std::runtime_error(decoded.message); runtime->restore(decoded.container); previous_video.reset(); transition.reset(); display.reset_smoothing(); cabinet_input.rearm();cabinet_nudge.rearm(); cabinet_plunger.restored(); SDL_ClearAudioStream(audio.stream); }
+                            } else { auto decoded=state::decode(core::read_file(path)); if(!decoded.decoded) throw std::runtime_error(decoded.message); runtime->restore(decoded.container); previous_video.reset(); transition.reset(); display.reset_smoothing(); cabinet_input.rearm();cabinet_nudge.rearm(); cabinet_plunger.restored(); if(cabinet) cabinet->restored(); SDL_ClearAudioStream(audio.stream); }
                             SDL_SetWindowTitle(display.window(),"Alien Crush");
                         } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; SDL_SetWindowTitle(display.window(),e.what()); }
                     }

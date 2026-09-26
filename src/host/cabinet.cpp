@@ -140,7 +140,7 @@ void Cabinet::show(std::span<const std::byte> ram,bool smoothing,double fraction
             false,{},nullptr,nullptr,{},fraction,smoothing && backglass_animation_?&animation:nullptr);
     } else backglass_.panel("ALIEN CRUSH");
     const auto state=diagnostics::observe_alien_state(ram);
-    const auto image=score_panel_.compose(state);
+    const auto image=score_panel_.compose(state,ball_.update(state));
     score_.show({0,image.width,image.height,image.pixels,{}},8,3);
 }
 std::array<WindowPlacement,kCabinetWindowCount> Cabinet::placements() const {

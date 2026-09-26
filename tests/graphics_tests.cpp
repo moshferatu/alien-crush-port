@@ -45,6 +45,25 @@ int main() {
                 const auto ball=panel.compose(state);
                 require(ball.pixels[74*256+208]==0xff100000+(remaining?4-remaining:3),"DMD counts balls up and retains ball three after final drain");
             }
+            {
+                // Like a cabinet, an extra ball is played under the same number.
+                render::BallNumber ball;
+                diagnostics::AlienState game;
+                const auto after=[&](unsigned left,std::uint32_t score) {
+                    game.ball_counter=static_cast<std::uint8_t>(left);game.score_points=score;
+                    const auto number=ball.update(game);
+                    require(!number || game.bonus_room || panel.compose(game,number).pixels[74*256+208]==0xff100000+number,"DMD shows the tracked ball");
+                    return number;
+                };
+                require(after(3,0)==1 && after(3,500)==1 && after(2,900)==2,"Balls count up as they drain");
+                require(after(3,1200)==2 && after(4,2000)==2,"Extra balls keep the ball number");
+                require(after(3,2100)==2 && after(2,2200)==2 && after(1,2300)==3,"Only the last extra ball's drain moves on");
+                require(after(2,2400)==3 && after(1,2500)==3 && after(0,2600)==3,"The last ball keeps its number to the end");
+                game.bonus_room=2;require(after(0,2600)==3,"A bonus room leaves the count alone");game.bonus_room=0;
+                game.title_menu=true;after(0,2600);game.title_menu=false;
+                require(after(3,0)==1,"A new game starts at ball 1");
+                after(1,300);ball.reset();require(after(2,400)==2,"A restored state starts from the balls left");
+            }
             for(unsigned x=0;x<256;++x) require(image.pixels[x]==0xff000000 && image.pixels[95*256+x]==0xff000000,"Score outer black border");
             state={};const auto zero=panel.compose(state);
             require(zero.pixels[20*256+112]==0xff100000,"Zero score is visible");

@@ -14,6 +14,7 @@ class Cabinet {
     Presentation score_{"Alien Crush - Score",640,200,true};
     std::array<Presentation*,3> windows_;
     render::ScorePanel score_panel_;
+    render::BallNumber ball_;
     std::optional<render::Image> backglass_image_;
     std::optional<render::TitleLogoAnimation> backglass_animation_;
     std::uint64_t backglass_tick_{};
@@ -24,6 +25,8 @@ public:
         const std::filesystem::path& data,std::span<const std::byte> rom);
     void show(std::span<const std::byte> ram,bool smoothing=false,double fraction=1);
     void repeat(double fraction) {backglass_.repeat(fraction);}
+    // After a quick state: the ball number starts again from the balls left.
+    void restored() {ball_.reset();}
     bool owns(SDL_Window*) const;
     bool handle_key(const SDL_KeyboardEvent&);
     // False means the display topology is temporarily unavailable; retry later.

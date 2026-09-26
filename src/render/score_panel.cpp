@@ -50,7 +50,7 @@ ScorePanel ScorePanel::from_rom(std::span<const std::byte> rom) {
     for(unsigned i=0;i<10;++i) digits[i]=decoded[i].image;
     return ScorePanel(std::move(digits));
 }
-Image ScorePanel::compose(const diagnostics::AlienState& state) const {
+Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) const {
     Image result{256,96,std::vector<std::uint32_t>(256*96,0xff000000)};
     auto number=[&](std::uint32_t value,int center,int y,int scale,unsigned places=0) {
         auto text=std::to_string(value);
@@ -92,10 +92,18 @@ Image ScorePanel::compose(const diagnostics::AlienState& state) const {
         label(result,"HIGH",77,61);number(state.high_scores[0],88,73,1);
     }
     label(result,state.bonus_room?"BONUS":"BALL",state.bonus_room?202:205,61);
+    number(state.bonus_room?state.bonus_room:ball?ball:BallNumber{}.update(state),216,73,1);
+    return result;
+}
+unsigned BallNumber::update(const diagnostics::AlienState& state) {
+    if(state.title_menu || state.title_transition || state.demo_play || state.high_score_menu) {ball_=0;return 0;}
     // Three-ball game: 3/2/1 remaining becomes BALL 1/2/3. Keep BALL 3
     // during the final drain/results, and bound extra-ball reserves at BALL 1.
-    const auto ball=4-std::clamp(static_cast<unsigned>(state.ball_counter),1u,3u);
-    number(state.bonus_room?state.bonus_room:ball,216,73,1);
-    return result;
+    const auto left=4-std::clamp(static_cast<unsigned>(state.ball_counter),1u,3u);
+    // A bonus room shows its own number and leaves the count alone; a game
+    // that has not scored yet is a new one.
+    if(state.bonus_room) return ball_?ball_:left;
+    ball_=state.score_points?std::max(ball_,left):left;
+    return ball_;
 }
 }
