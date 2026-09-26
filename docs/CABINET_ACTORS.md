@@ -92,7 +92,10 @@ actors the stored-half pass has already updated that frame.
   play and the original part ways.
 - Some finished sequences settle while the ball is away. A mouth whose
   600-tick hold ends closes; a skull guard reset by the ball leaving the upper
-  table (`$70` bit 1) resets at once instead of on the next visit. A cleared
+  table (`$70` bit 1) resets at once instead of on the next visit. The same
+  crossing (03:8A24) sets `$70` bit 0, which shuts the left mouth (type 13,
+  02:6C47): in the original it is already closed when the ball returns, while
+  the cabinet shows it closing as the ball drops. A cleared
   group of aliens or brain orbs respawns 300 ticks later, while the ball is
   still away. The upper table's first five orbs are there from the start.
 - Actors that would score or call the game's rules wait for the ball instead:
