@@ -26,8 +26,16 @@ static bool ac_cabinet_controls = false;
 static unsigned short (*ac_nudge_motion)(unsigned short,unsigned short) = nullptr;
 extern "C" void ac_set_nudge_motion(unsigned short (*callback)(unsigned short,unsigned short)) { ac_nudge_motion=callback; }
 extern "C" void ac_set_cabinet_controls(bool enabled) { ac_cabinet_controls=enabled; }
-static unsigned (*ac_cabinet_aliens)(unsigned,unsigned,unsigned) = nullptr;
-extern "C" void ac_set_cabinet_aliens(unsigned (*callback)(unsigned,unsigned,unsigned)) { ac_cabinet_aliens=callback; }
+static unsigned (*ac_cabinet_actors)(unsigned,unsigned,unsigned,int*) = nullptr;
+static unsigned char ac_cabinet_actor_pcs[8192] = {};
+static int ac_cabinet_watch_pc = -1;
+extern "C" void ac_set_cabinet_watch(int pc) { ac_cabinet_watch_pc=pc; }
+extern "C" void ac_set_cabinet_actors(unsigned (*callback)(unsigned,unsigned,unsigned,int*),const unsigned short* pcs,unsigned count) {
+    for(auto& bits:ac_cabinet_actor_pcs) bits=0;
+    for(unsigned i=0;callback && i<count;++i) ac_cabinet_actor_pcs[pcs[i]>>3]|=static_cast<unsigned char>(1u<<(pcs[i]&7));
+    ac_cabinet_actors=callback;
+    ac_cabinet_watch_pc=-1;
+}
 static unsigned char ac_left_flipper_mask = 0x80, ac_right_flipper_mask = 0x30;
 extern "C" void (*ac_music_overlay_step)(unsigned,unsigned,unsigned,unsigned);
 extern "C" void ac_set_flipper_masks(unsigned char left,unsigned char right) { ac_left_flipper_mask=left; ac_right_flipper_mask=right; }

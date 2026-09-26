@@ -136,7 +136,7 @@ Optional input.nudge.* settings adjust sensitivity; see README.md.
 For stronger ball nudges, run Launch-Cabinet.cmd --nudge-multiplier 2.
 The factor accepts 0 through 16 (default 1); it changes force, not shake detection.
 The music keeps all its voices while sound effects play (--no-music-voice-overlay turns it off).
-The lower table's aliens keep moving while the ball is upstairs, and the ball hits what is drawn.
+Both halves of the table keep moving wherever the ball is, and the ball meets what is drawn.
 Cabinet quick states from before that change don't load.
 Sprite movement, animation poses, palette effects and title scrolling are smoothed on high-refresh playfield monitors.
 F7 toggles smoothing; Launch-Cabinet.cmd --no-smooth disables it at startup.

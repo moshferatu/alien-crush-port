@@ -74,13 +74,23 @@ public:
 };
 enum class HandoffMode { original, continuous };
 enum class ControlMode { original, cabinet };
-// Cabinet: the port runs the lower table's aliens in both halves
-// (src/gameplay/cabinet_aliens.cpp). Requires continuous handoff.
-enum class AlienMode { original, cabinet };
-// Marks a cabinet-alien runtime's revision, and so its recordings and states.
+// Cabinet: the port runs the table's actors in both halves
+// (src/gameplay/cabinet_actors.cpp). Cabinet aliens: only the lower table's
+// aliens, as runtimes marked -aliens1 did; kept to replay their recordings.
+// Verify: the port's actors in the ball's half only, which plays the original
+// to the byte. All but original require continuous handoff.
+enum class ActorMode { original, cabinet, cabinet_aliens, verify };
+// Mark a cabinet runtime's revision, and so its recordings and states.
+inline constexpr std::string_view kCabinetActorsRevision="-actors1";
 inline constexpr std::string_view kCabinetAliensRevision="-aliens1";
+// The actor mode a recording or state was made with, by its revision.
+inline ActorMode recorded_actor_mode(std::string_view revision) {
+    if(revision.find(kCabinetActorsRevision)!=std::string_view::npos) return ActorMode::cabinet;
+    if(revision.find(kCabinetAliensRevision)!=std::string_view::npos) return ActorMode::cabinet_aliens;
+    return ActorMode::original;
+}
 // Mode is fixed for the lifetime of a runtime and included in its state identity.
 std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode=HandoffMode::original,
     ControlMode controls=ControlMode::original,double nudge_multiplier=1.0,input::FlipperMasks flippers={},
-    AlienMode aliens=AlienMode::original);
+    ActorMode actors=ActorMode::original);
 }

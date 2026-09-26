@@ -1,13 +1,14 @@
 # Cabinet actor animation audit
 
-## Lower aliens are native (2026-09-25)
+## Superseded by native cabinet actors (2026-09-25)
 
-The orange and green aliens, their silver variants, the green bases, both
-group controllers and the defeat effects (types 15, 16, 21, 22, 25, 67, 68,
-72, 73) are no longer animated here. Cabinet gameplay runs them in both halves
-(docs/CABINET_ALIENS.md), and the presentation draws them from the banks as
-they are. The sections below marked "superseded" describe the cosmetic copy
-that drifted from the game's aliens; `green_continuity` went with it.
+Everything below describes the cosmetic copy the cabinet used to animate for
+the stored half: `ActorAssets::advance_animation`, brain-orb seeding and the
+skull reset projection. It drifted from the game's state, so the ball met
+actors other than the ones drawn. Cabinet gameplay now runs the stored half's
+actors and palette scripts natively (docs/CABINET_ACTORS.md) and the cabinet
+draws the banks as they are; this code and its fixtures are gone. The ROM
+analysis below still holds and informed the native routines.
 
 ## Flying-alien explosions (2026-09-15)
 

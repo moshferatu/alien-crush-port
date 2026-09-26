@@ -25,22 +25,12 @@ public:
     std::vector<BackgroundWrite> background(std::uint8_t descriptor,std::uint8_t high_override=0) const;
     // Dynamic stream selected by 16:A0DF; callers establish the pending bit/epoch.
     ActorPatternTransfer pattern_transfer(std::uint8_t type,std::uint8_t selection,std::uint16_t pattern_base) const;
-    // Visual-only continuation of the ROM's FD35/FD8F animation oscillator,
-    // orb bob/respawn/explosion and indicator open/hold/close routines.
-    // Indicators read live group state from the copy. The lower aliens that
-    // gameplay::CabinetAliens owns are left as they are.
-    // Input uses the active actor layout but must be a private presentation copy.
-    // Full-table mode extends lower slingshot flight bounds above the seam;
-    // default mode retains ROM bounds for authoritative-change prediction.
-    void advance_animation(std::span<std::byte> ram,bool full_table=false) const;
-    // Populate the pending first brain-orb group in a private inactive bank.
-    void seed_brain_orbs(std::span<std::byte> ram,unsigned half) const;
+    // The stored half's flippers in the pose the controls give the ball's
+    // half's (01:4B29..4B76 sequences); the cartridge leaves them frozen.
     void mirror_flippers(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half) const;
 private:
     std::array<std::byte,16384> banks_{};
     std::array<std::byte,8192> sequences_{};
-    std::array<std::byte,20> brain_orb_positions_{};
-    std::array<std::byte,54> target_positions_{};
 };
 struct ActorSprite {
     std::uint8_t actor{},descriptor{},slot{};
@@ -53,8 +43,6 @@ std::vector<ActorSprite> assemble_table_actors(const ActorAssets& assets,std::sp
 // Presentation-only projection of the inactive bank swapped by 01:46FD..4740.
 // Slots 0..3 (including the ball) remain absent. Never writes runtime RAM.
 std::array<std::byte,8192> inactive_table_actor_ram(std::span<const std::byte> ram);
-// Apply pending gameplay invalidations to a private dormant actor projection.
-void apply_inactive_table_events(std::span<std::byte> projected,std::span<const std::byte> live,unsigned half);
 // Background actor types 7/20 explicitly redraw on table return (RAM 68 bit 1).
 // Accepts active-layout RAM, including a presentation projection of the stored bank.
 // Other actors can retain stale descriptors and are deliberately excluded.

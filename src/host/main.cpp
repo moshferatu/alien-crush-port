@@ -162,10 +162,10 @@ int main(int argc,char** argv) {
         // or as the recording was made.
         const auto flipper_masks=playback?input::recorded_flipper_masks(playback->initial.core_revision):
             input::FlipperMasks{host::flipper_input_mask(bindings.flippers.left),host::flipper_input_mask(bindings.flippers.right)};
-        // Cabinet play runs the lower aliens natively; a replay, as recorded.
-        const auto aliens=(playback?playback->initial.core_revision.find(kCabinetAliensRevision)!=std::string::npos:cabinet_mode)?
-            AlienMode::cabinet:AlienMode::original;
-        auto runtime=make_reference_runtime(mode,controls,multiplier,flipper_masks,aliens); runtime->load(rom_path);
+        // Cabinet play runs the table's actors natively; a replay, as recorded.
+        const auto actors=playback?recorded_actor_mode(playback->initial.core_revision):
+            cabinet_mode?ActorMode::cabinet:ActorMode::original;
+        auto runtime=make_reference_runtime(mode,controls,multiplier,flipper_masks,actors); runtime->load(rom_path);
         if(multiplier!=1) std::cout<<"Nudge force multiplier: "<<multiplier<<"x\n";
         if(music_voice_overlay) runtime->music_voice_overlay(true);
         std::cout<<"Music voice overlay: "<<(music_voice_overlay?"on":"off")<<'\n';

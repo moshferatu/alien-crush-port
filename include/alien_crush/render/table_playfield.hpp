@@ -60,20 +60,23 @@ public:
         unsigned table,unsigned camera,std::span<const std::byte> ram,
         const TableBallBackdrop* backdrop=nullptr,const Sprite* ball=nullptr);
 };
-// Persistent visual timelines for both original actor banks. Gameplay changes
-// reconcile per actor; swapping banks alone never replaces a visual timeline.
+// What the cabinet draws for both table halves: each actor bank as it is (the
+// port runs the stored half's actors in cabinet play, gameplay::CabinetActors),
+// held at the last coherent banks while the game exchanges them, with the
+// stored half's flippers following the controls, and the colors of each half's
+// running palette scripts.
 class TableAnimation {
     std::array<std::array<std::byte,8192>,2> source_{},actors_{};
     std::array<std::array<std::uint16_t,512>,2> colors_{};
     std::array<std::array<bool,512>,2> color_owned_{};
     std::array<std::byte,16384> palette_rom_{};
     std::array<std::byte,256> palette_tables_{};
+    std::array<std::byte,8> actor_offsets_{};
     bool valid_{};
-    void palette_step(std::span<std::byte> ram,unsigned half) const;
 public:
     explicit TableAnimation(std::span<const std::byte> rom);
     void reset() {valid_=false;}
-    void update(const assets::ActorAssets&,std::span<const std::byte> ram,bool advance);
+    void update(const assets::ActorAssets&,std::span<const std::byte> ram);
     const auto& actors(unsigned half) const {return actors_[half];}
     void apply_palette(unsigned half,std::span<std::uint16_t> palette) const;
     bool owns_color(unsigned half,unsigned color) const {return color_owned_[half][color];}

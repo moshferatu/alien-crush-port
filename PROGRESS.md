@@ -1,5 +1,29 @@
 # Progress
 
+Native cabinet actors (2026-09-25):
+
+- The lower aliens were not alone: every actor the cabinet animated as a
+  private copy drifted from the game's. In the ball's half the bouncing orbs
+  were drawn in the wrong place 87-89% of the time and the brain's orbs 27%;
+  mouths, eyes and lane sensors showed wrong poses.
+- Cabinet gameplay now runs the stored half's actors natively: about 50 types
+  on both tables (`gameplay::CabinetActors`, docs/CABINET_ACTORS.md), and the
+  stored half's palette scripts each vblank. Anything that would score, touch
+  the ball, run the game's rules or draw on the ball's table waits for the
+  ball. The cosmetic animation (`advance_animation`, brain-orb seeding, skull
+  reset projection) and its tests are gone; the cabinet draws the banks as
+  they are.
+- The ball's half runs the ROM again, aliens included. Native updates take no
+  emulated cycles, which removed the upper table's original slowdown in a
+  trial. `-aliens1` recordings still replay with native aliens in both halves.
+- `cabinet_actors` predicts each ROM update in the ball's half from the port's
+  routines and requires a byte-for-byte match: 36,000 route frames and 10,020
+  frames of 21 edited states, 144 type/action states over 50 types. It checks
+  the stored half's rules on synthetic RAM, and 12,000 frames of cabinet play
+  in which every drawn actor equals the game's (1,355,044 checks).
+  `inactive_animation` now renders cabinet play. 50 of 51 tests pass;
+  `cabinet_plunger` fails only because a DualSense controller is connected.
+
 Native cabinet aliens (2026-09-25):
 
 - Balls passed through drawn lower-table aliens because the cabinet drew a

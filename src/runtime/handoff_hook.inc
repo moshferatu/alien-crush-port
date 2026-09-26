@@ -2,14 +2,27 @@
 // Only the two main-table handoff call trees, from live play or attract mode. No persistent execution
 // phase exists outside the serialized CPU/RAM state; IRQs fail the stack guard.
         {
-        // Cabinet aliens (src/gameplay/cabinet_aliens.cpp): the actor dispatcher
-        // starting at 01:45A8, or entering an alien routine with its return to
-        // the dispatcher (45C7) on top of the stack.
-        if(ac_cabinet_aliens && (PC==0x45a8 || PC==0x5da5 || PC==0x5e70 || PC==0x5f82 || PC==0x60e1 ||
-            PC==0x619d || PC==0x630c || PC==0x63cd || PC==0x6552 || PC==0x65ab) &&
+        // Cabinet actors (src/gameplay/cabinet_actors.cpp): the actor dispatcher
+        // starting at 01:45A8, or entering an owned actor's routine with its
+        // return to the dispatcher (45C7) on top of the stack. The update may
+        // hand the rest of the routine back to the ROM, with A.
+        // Verification also watches one PC, where the ROM's RAM is compared
+        // with the port's prediction (reported with bit 16 set, and A).
+        if(ac_cabinet_actors && (ac_cabinet_actor_pcs[PC>>3]>>(PC&7)&1 || static_cast<int>(PC)==ac_cabinet_watch_pc) &&
             MPR[1]==0xf8 && MPR[2]==1 && MPR[3]==2 && MPR[4]==3 && MPR[7]==0) {
-            const unsigned ac_caller=RdMem(0x2100+((S+1)&255))|(RdMem(0x2100+((S+2)&255))<<8);
-            if(const unsigned ac_next=ac_cabinet_aliens(PC,X,ac_caller)) PC=ac_next;
+            if(static_cast<int>(PC)==ac_cabinet_watch_pc) {
+                ac_cabinet_watch_pc=-1;
+                int ac_a=A;
+                ac_cabinet_actors(PC|0x10000,X,0,&ac_a);
+            }
+            if(ac_cabinet_actor_pcs[PC>>3]>>(PC&7)&1) {
+                const unsigned ac_caller=RdMem(0x2100+((S+1)&255))|(RdMem(0x2100+((S+2)&255))<<8);
+                int ac_a=-1;
+                if(const unsigned ac_next=ac_cabinet_actors(PC,X,ac_caller,&ac_a)) {
+                    PC=ac_next;
+                    if(ac_a>=0) A=static_cast<uint8>(ac_a);
+                }
+            }
         }
         // 01:4443 is the return after the original signed half-impulse was
         // added to ball Y velocity. The early-return branches also land here,
