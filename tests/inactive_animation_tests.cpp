@@ -169,6 +169,44 @@ void slingshot_rendering(std::span<const std::byte> rom,const diagnostics::Refer
         require(pieces>1,"The flyer above the seam has too few pieces for the check");
     }
 }
+// A brain flyer falls out of the upper half, to local Y 320 before 01:559C
+// removes it, and keeps its sprite below the seam whichever half the ball is
+// in: from the ball's half's bank, or from the stored one.
+void brain_flyer_rendering(std::span<const std::byte> rom,const diagnostics::ReferenceSnapshot& video,std::span<const std::byte> ram) {
+    const auto artwork=std::make_unique<Artwork>(rom);
+    for(const bool upstairs:{true,false}) {
+        auto current=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+        artwork->prepare(*current,upstairs?1:0,4000);
+        std::array<std::byte,8192> source{};
+        std::copy(ram.begin(),ram.end(),source.begin());
+        std::fill(source.begin()+0x1500,source.begin()+0x1d00,std::byte{});
+        std::fill(source.begin()+0x200,source.begin()+0xa00,std::byte{});
+        std::fill(source.begin()+0x1245,source.begin()+0x1445,std::byte{});
+        source[0x53]=source[0x54]=source[0xf6]=std::byte{};
+        source[0x79]=static_cast<std::byte>(upstairs?1:0);
+        auto empty=source;
+        const unsigned bank=upstairs?0x1500:0x200;
+        const auto field=[&](unsigned address,unsigned value) {source[bank+address-0x3500+4]=static_cast<std::byte>(value);};
+        field(0x3500,55);field(0x3540,0x84);field(0x35c0,150);field(0x3680,290&255);field(0x36c0,290>>8);
+        field(0x3a00,3);field(0x3b80,32);
+        const unsigned pointer=std::to_integer<unsigned>(rom[0x9df7+55-1])|(std::to_integer<unsigned>(rom[0x9e51+55-1])<<8);
+        field(0x3800,std::to_integer<unsigned>(rom[pointer-0x2000]));
+        auto flying=std::make_unique<render::TablePlayfield>(rom),blank=std::make_unique<render::TablePlayfield>(rom);
+        flying->capture_animation(true);
+        render::TableTransitionHold flying_hold,blank_hold;
+        const auto with=flying->cabinet_frame(*current,nullptr,source,nullptr,flying_hold);
+        const auto without=blank->cabinet_frame(*current,nullptr,empty,nullptr,blank_hold);
+        require(with && without,"Missing brain flyer views");
+        unsigned changed=0;
+        for(unsigned p=256*240;p<with->pixels.size();++p) changed+=with->pixels[p]!=without->pixels[p];
+        require(changed>20,upstairs?"Brain flyer is cut off at the seam":"Stored brain flyer is cut off at the seam");
+        if(upstairs) preview(*with,"brain-flyer-below-seam");
+        const auto& layers=flying->animation_scene()->layers;
+        require(std::any_of(layers.begin(),layers.end(),[](const auto& layer){
+            return layer.id>=0x200000 && layer.id<0x300000 && layer.actor_group!=0;}),
+            "A brain flyer's piece below the seam is not part of its actor");
+    }
+}
 }
 int main(int argc,char** argv) {
     try {
@@ -283,6 +321,7 @@ int main(int argc,char** argv) {
                 seam_invariance(rom,video,ram);
                 cocoon_rendering(rom,video,ram);
                 slingshot_rendering(rom,video,ram);
+                brain_flyer_rendering(rom,video,ram);
                 require(ram[0x79]==std::byte{1} && image,"Overlap fixture requires active upper table");
                 // Move only a private ball copy across the reported occluders.
                 // This includes artwork on the other side of the stitch.

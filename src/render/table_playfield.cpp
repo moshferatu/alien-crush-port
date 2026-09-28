@@ -713,6 +713,9 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         }
         animation_scene_=std::move(scene);
     }
+    // Flyers that leave their half across the seam: the slingshots' (52, 53)
+    // rise into the upper table, and the brain's (55, 01:559C) fall into the
+    // lower one, to local Y 320, before 559C removes them.
     if(cabinet) for(unsigned half=0;half<2;++half) {
         auto projected=half==table?std::array<std::byte,8192>{}:assets::inactive_table_actor_ram(ram);
         if(half==table) std::copy(ram.begin(),ram.end(),projected.begin());
@@ -721,7 +724,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         bool any=false;
         for(unsigned x=4;x<64;++x) {
             const auto type=std::to_integer<unsigned>(projected[0x1500+x]);
-            if(type!=52 && type!=53) {projected[0x1540+x]|=std::byte{0x20};continue;}
+            if(type!=52 && type!=53 && type!=55) {projected[0x1540+x]|=std::byte{0x20};continue;}
             any=true;
             // Translate BEFORE the SAT's ten-bit Y wrap. Negative local Y
             // belongs above the seam, not at the bottom of a wrapped viewport.
