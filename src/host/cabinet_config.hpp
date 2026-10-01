@@ -58,7 +58,7 @@ enum CabinetWindow : std::size_t {playfield_window=0,backglass_window=1,score_wi
 inline constexpr std::size_t kCabinetWindowCount=3;
 inline constexpr std::array<const char*,kCabinetWindowCount> kCabinetWindowFields{"playfield","backglass","dmd"};
 
-// Keys are SDL scancode names ("Left Shift", "Return", "X"), so the file stays
+// Keys are SDL scancode names ("Left Shift", "Return", "Space"), so the file stays
 // hand-editable. An input bound to no keys is unbound; one not in the file
 // takes the default.
 struct InputBindings {
@@ -76,7 +76,7 @@ struct InputBindings {
     bool operator==(const InputBindings&) const=default;
 };
 // Left Shift and Left work the left flipper; Right Shift and Right the right;
-// Return confirms, starts and pauses, and launches from the shooter; X nudges;
+// Return confirms, starts and pauses, and launches from the shooter; Space nudges;
 // Backspace is Select; Up and Down move through menus.
 InputBindings default_input_bindings();
 // The board's buttons under `input.buttons.`, in CabinetButtons' order.

@@ -57,7 +57,7 @@ and starts the game, then comes back when the game closes.
 | Tab | |
 | --- | --- |
 | Game | The ROM, and cabinet or desktop mode |
-| Video | Smoothing, and for the cabinet: which monitor each window is on, its rotation, and whether it is fullscreen |
+| Video | Smoothing, and for the cabinet: which monitor each window is on and whether it is fullscreen, and the playfield's rotation |
 | Audio | The music voice overlay |
 | Cabinet | The nudge strength and nudge board, and the analog plunger |
 | Keyboard | The keys for each PC Engine pad input, the launch keys, and each flipper's pad inputs |
@@ -187,7 +187,7 @@ Live play uses the Devil's Crush cabinet control layout (the keys are [rebindabl
 | Left Shift / Left / left shoulder | Left flipper |
 | Right Shift / Right / right shoulder | Right flipper |
 | Gamepad south button (A / Cross) | Launch / confirm |
-| X / east button | Nudge |
+| Space / east button | Nudge |
 | Backspace / gamepad Back | Select speed/music |
 | F5 / F9 | Save / restore quick state |
 | F11 | Borderless fullscreen |
@@ -430,7 +430,7 @@ reconnecting finds the board by name even if its SDL instance ID changes. Record
 store the resulting controller bits and accepted plunger commands; replay ignores hardware mappings.
 Physical nudging is enabled automatically in `--cabinet` for a connected joystick
 whose name contains `PinOne` (case insensitive). Shake the cabinet to trigger the
-same nudge as X / button II. Both directions on the accelerometer's X/Y axes
+same nudge as Space / button II. Both directions on the accelerometer's X/Y axes
 (0 and 1) trigger this single original-game action; shake strength does not change
 the in-game impulse. The plunger's Z axis is ignored. No Steam mapping or separate
 configuration file is needed.

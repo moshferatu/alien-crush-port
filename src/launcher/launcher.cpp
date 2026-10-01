@@ -315,7 +315,9 @@ void build_rows()
         const std::string name = kWindowNames[static_cast<std::size_t>(i)];
         l = {name + " Monitor", name + " Rotation", name + " Fullscreen"};
         add_choice(TAB_VIDEO, S_MONITOR + i, l[0].c_str(), nullptr, 0, monitor_help);
-        add_choice(TAB_VIDEO, S_ROTATION + i, l[1].c_str(), rotation_choices, count_of(rotation_choices), rotation_help);
+        // Only the playfield: some cabinets mount its monitor landscape.
+        if (i == 0)
+            add_choice(TAB_VIDEO, S_ROTATION + i, l[1].c_str(), rotation_choices, count_of(rotation_choices), rotation_help);
         add_choice(TAB_VIDEO, S_FULLSCREEN + i, l[2].c_str(), on_off, 2, fullscreen_help);
     }
 
@@ -1681,24 +1683,9 @@ void draw()
     SDL_RenderClear(ui.ren);
     const auto W = static_cast<float>(ui.w), H = static_cast<float>(ui.h);
 
-    // The heading, and the file this is.
-    float tw, sy;
-    if (!draw_logo(tw)) {
-        text(ui.ren, ui.title, L(MARGIN), L(18), "ALIEN CRUSH", C_ACCENT);
-        tw = text_width(ui.title, "ALIEN CRUSH");
-        sy = L(18) + ui.title.ascent - ui.body.ascent;
-    } else {
-        sy = (L(HEADER_H) - ui.body.height) / 2;
-    }
-    // Just after the heading: "Config File:" whole, and as much of the path's
-    // end as fits after it.
-    static const char label[] = "Config File: ";
-    const float label_x = L(MARGIN) + tw + L(24), label_w = text_width(ui.body, label);
-    const float room = W - L(MARGIN) - label_x - label_w;
-    if (room > L(60)) {
-        text(ui.ren, ui.body, label_x, sy, label, C_TEXT);
-        text_tail(ui.body, label_x + label_w, sy, room, utf8_of(ui.ini), C_DIM);
-    }
+    // The heading.
+    float tw;
+    if (!draw_logo(tw)) text(ui.ren, ui.title, L(MARGIN), L(18), "ALIEN CRUSH", C_ACCENT);
 
     // The tabs.
     float x = L(MARGIN) - L(12);

@@ -85,7 +85,7 @@ int main(int argc,char** argv) {
             else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
             else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\n"
                 "Keys (rebindable under input. in portable-data/cabinet.ini): Enter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper;\n"
-                "Right Shift/Right right flipper; X nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm.\n"
+                "Right Shift/Right right flipper; Space nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm.\n"
                 "F5/F9 quick save/load, F11 fullscreen, Escape exit.\n"
                 "Cabinet: move/resize three windows; F11 toggles the focused window, R rotates it, F10 moves it to the next monitor. Layout saves on normal exit.\n"
                 "portable-data/cabinet.ini holds every setting in Devil's Crush's format: windows, keys, flipper inputs, launch keys, cabinet buttons,\n"

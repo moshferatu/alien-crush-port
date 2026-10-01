@@ -344,7 +344,7 @@ InputBindings default_input_bindings() {
     // starts and pauses as Run, and as a launch key sends I alone from the
     // shooter. Neither flipper sends I, so no flipper press can launch.
     bindings[PadButton::one]={"Return"};
-    bindings[PadButton::two]={"X"};
+    bindings[PadButton::two]={"Space"};
     bindings[PadButton::select]={"Backspace"};
     bindings[PadButton::run]={"Return"};
     bindings[PadButton::up]={"Up"};
