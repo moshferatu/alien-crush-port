@@ -195,7 +195,9 @@ RAM 83 and sets RAM 78 bit 2, which 01:40AA answers with FDC1 on the next pass
 of the game loop. RAM 7C stays zero, so this is an ordinary game and not the
 title's practice mode: the room's score counts, FF04 returns the ball to the
 table and all three balls remain. The request is refused, leaving RAM intact,
-unless the shooter's exact seat gate holds. `bonus_stage_launch` checks all
+unless the shooter's exact seat gate holds. The start-up runs through the one
+full-brightness frame FE37 shows before the fade (see the entry flash above),
+so the session opens on the fade-in from black. `bonus_stage_launch` checks all
 four rooms, entry through return and the next seated ball, on the original and
 the cabinet runtime.
 

@@ -28,6 +28,18 @@ int main(int argc,char** argv) {
                 auto state=diagnostics::observe_alien_state(runtime->work_ram());
                 require(state.bonus_room==room && !state.title_menu && !state.demo_play && runtime->work_ram()[0x7c]==std::byte{0},
                     "The requested bonus stage begins in an ordinary game, not practice");
+                {
+                    // The room fades in from black, with no bright frame first.
+                    std::uint64_t last=0;
+                    for(unsigned n=0;n<30;++n) {
+                        const auto frame=runtime->advance({});
+                        std::uint64_t light=0;
+                        for(const auto pixel:frame.pixels) light+=(pixel&255)+((pixel>>8)&255)+((pixel>>16)&255);
+                        require(light>=last && (n || light<100000),"The bonus stage opens on its fade-in without a flash");
+                        last=light;
+                    }
+                    require(last>1000000,"The bonus stage fades in");
+                }
                 require(!runtime->request_bonus_room(0) && !runtime->request_bonus_room(kBonusRooms+1) && !runtime->request_bonus_room(room),
                     "Only rooms 1 to 4 are requested, and only from the table");
                 // Left alone the ball is lost, and the game's ordinary return

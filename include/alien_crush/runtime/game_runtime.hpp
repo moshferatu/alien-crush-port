@@ -101,7 +101,7 @@ std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode=Handof
     ControlMode controls=ControlMode::original,double nudge_multiplier=1.0,input::FlipperMasks flippers={},
     ActorMode actors=ActorMode::original);
 // Start a game from the title and take its first ball from the shooter into
-// bonus room 1..4, stopping on the room's first frame. The game goes on as an
+// bonus room 1..4, stopping where the room's fade-in from black begins. The game goes on as an
 // ordinary one: the room's score counts and its end returns to the table.
 // From boot or the title only. Throws if the room is not reached.
 void start_in_bonus_room(ReferenceRuntime&,unsigned room);

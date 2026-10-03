@@ -471,8 +471,11 @@ void start_in_bonus_room(ReferenceRuntime& runtime,unsigned room) {
     if(!requested) throw std::runtime_error("Could not start a game to enter the bonus stage from");
     for(unsigned n=0;n<longest_entry;++n) {
         runtime.advance({});
-        const auto state=diagnostics::observe_alien_state(runtime.work_ram());
-        if(state.bonus_room==room) return;
+        // FE37 turns the picture on a frame before EEDF clears the palette
+        // for the fade-in, so that frame is at full brightness. End on it:
+        // the session then opens on the fade from black.
+        if(diagnostics::observe_alien_state(runtime.work_ram()).bonus_room==room &&
+            (runtime.video_snapshot().control&0xc0)) return;
     }
     throw std::runtime_error("Bonus stage "+std::to_string(room)+" did not begin");
 }
