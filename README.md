@@ -57,7 +57,7 @@ and starts the game, then comes back when the game closes.
 
 | Tab | |
 | --- | --- |
-| Game | The ROM, and cabinet or desktop mode |
+| Game | The ROM, cabinet or desktop mode, and a starting bonus stage |
 | Video | Smoothing, and for the cabinet: which monitor each window is on and whether it is fullscreen, and the playfield's rotation |
 | Audio | The music voice overlay |
 | Cabinet | The nudge strength and nudge board, and the analog plunger |
@@ -70,14 +70,26 @@ dropped on the window. A click on the launcher acts even when another window
 has the focus.
 
 With no options the game plays as `portable-data/cabinet.ini` says, which is
-what the launcher edits: `game.rom`, `game.cabinet`,
+what the launcher edits: `game.rom`, `game.cabinet`, `game.bonus_stage`,
 `audio.music_voice_overlay`, `video.smoothing` and `input.nudge_multiplier`,
 beside the window, key, button, nudge and plunger fields described below. An
 option on the command line beats the file for that run (`--rom`, `--cabinet`
-or `--no-cabinet`, `--music-voice-overlay` or `--no-music-voice-overlay`,
+or `--no-cabinet`, `--bonus-stage`, `--music-voice-overlay` or `--no-music-voice-overlay`,
 `--smooth` or `--no-smooth`, `--nudge-multiplier`), and replays and `--frames`
-runs ignore these five. F7 is remembered in `video.smoothing` when a cabinet
-session exits normally.
+runs ignore these six, though `--bonus-stage` itself still works with
+`--frames`. F7 is remembered in `video.smoothing` when a cabinet session exits
+normally.
+
+To start a game directly in one of the four bonus stages, add `--bonus-stage`
+with a stage number from 1 through 4, or choose Starting Bonus Stage in the
+launcher. This works in both desktop and cabinet modes and uses the game's
+normal bonus-stage transition, taken with the first ball from the shooter: the
+stage's score counts, and when it ends the ball returns to the table and the
+game goes on with all three balls.
+
+```powershell
+alien-crush.exe --bonus-stage 3 --rom "D:\path\to\Alien Crush.pce"
+```
 
 `cabinet.ini` is in Devil's Crush's format, with Devil's Crush's keys wherever
 the two games share a setting, so its window, key, flipper, launch, nudge and

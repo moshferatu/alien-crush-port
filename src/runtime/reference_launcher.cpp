@@ -68,6 +68,12 @@ bool cancel_reference_launcher_draw(std::span<std::byte> ram) {
     put(0x1680,seat->y+3);put(0x16c0,(seat->y+3)>>8);
     return true;
 }
+bool request_reference_bonus_room(std::span<std::byte> ram,unsigned room) {
+    if(room<1 || room>kBonusRooms || !reference_launcher_seat(ram) || ram[0x7c]!=std::byte{0}) return false;
+    ram[0x83]=static_cast<std::byte>(room-1);
+    ram[0x78]|=std::byte{4};
+    return true;
+}
 bool apply_reference_launcher_draw(std::span<std::byte> ram,std::uint8_t percent) {
     if(percent==0 || percent>100) return false;
     const auto seat=reference_launcher_seat(ram);

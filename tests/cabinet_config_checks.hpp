@@ -25,7 +25,7 @@ inline void check_cabinet_config() {
         "The music voice overlay is on by default");
 
     host::CabinetConfig chosen;
-    chosen.play={"D:\\Games\\Alien Crush (USA) \xC3\xA9.pce",true,false,false,2.5};
+    chosen.play={"D:\\Games\\Alien Crush (USA) \xC3\xA9.pce",true,false,false,2.5,3};
     chosen.windows[host::playfield_window]={"Display = 1%",{-1920,40,1080,1920},host::DisplayRotation::portrait,true,90};
     chosen.windows[host::score_window].artwork_rotation=270;
     chosen.input[host::PadButton::run]={"Space","Keypad Enter"};
@@ -57,7 +57,7 @@ inline void check_cabinet_config() {
         "A key bound twice to one input is kept once");
 
     for(const auto* bad:{"", "input.one=A\n", "version=2\n", "version=1\nversion=1\n", "version=1\n# comment\n",
-        "version=1\ngame.cabinet=2\n", "version=1\nvideo.smoothing=off\n", "version=1\naudio.music_voice_overlay=yes\n",
+        "version=1\ngame.cabinet=2\n", "version=1\ngame.bonus_stage=5\n", "version=1\ngame.bonus_stage=\n", "version=1\nvideo.smoothing=off\n", "version=1\naudio.music_voice_overlay=yes\n",
         "version=1\ninput.nudge_multiplier=17\n", "version=1\ninput.nudge_multiplier=2x\n",
         "version=1\nplayfield.artwork_rotation=45\n", "version=1\ninput.left_flipper=left,sideways\n",
         "version=1\ninput.nudge.typo=1\n", "version=1\ninput.nudge.axis_y=0\n", "version=1\ninput.plunger.release=101\n",

@@ -22,4 +22,10 @@ bool apply_reference_launcher_draw(std::span<std::byte> ram,std::uint8_t percent
 // pause/resume wait; natural draws and release phases are rejected unchanged.
 // Caller tracks ownership and suppresses I/II until the physical rod rearms.
 bool cancel_reference_launcher_draw(std::span<std::byte> ram);
+inline constexpr unsigned kBonusRooms=4;
+// Ask for bonus room 1..4 the way a table feature does: the game loop at
+// 01:40AA calls FDC1 on RAM 78 bit 2, for the room in RAM 83, and the ordinary
+// FF04 return brings the ball back to the shooter. Only with a ball seated in
+// the shooter of an ordinary game; false leaves every RAM byte intact.
+bool request_reference_bonus_room(std::span<std::byte> ram,unsigned room);
 }

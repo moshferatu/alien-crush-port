@@ -188,6 +188,17 @@ FF67 loads the upper actors. The first restored lower bank matches all 19
 types in ROM 997B's six-byte entries (04:B97A count/list); its 1,920 actor bytes
 remain dormant until the next lower-table handoff.
 
+`--bonus-stage <1-4>` (`game.bonus_stage`, the launcher's Starting Bonus Stage)
+uses this same ordinary entry. `start_in_bonus_room()` presses Run through the
+title, waits for the first ball to seat in the shooter, then writes the room to
+RAM 83 and sets RAM 78 bit 2, which 01:40AA answers with FDC1 on the next pass
+of the game loop. RAM 7C stays zero, so this is an ordinary game and not the
+title's practice mode: the room's score counts, FF04 returns the ball to the
+table and all three balls remain. The request is refused, leaving RAM intact,
+unless the shooter's exact seat gate holds. `bonus_stage_launch` checks all
+four rooms, entry through return and the next seated ball, on the original and
+the cabinet runtime.
+
 The return exposed a presentation issue: a stitched image at frame 2214 used a
 partially faded upper palette alongside the fully lit inactive lower table.
 TablePlayfield now precomputes the black and partial E4A1 fade-in palettes using

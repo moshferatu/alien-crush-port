@@ -5,6 +5,7 @@
 #include "alien_crush/input/nudge_multiplier.hpp"
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/gameplay/cabinet_actors.hpp"
+#include "alien_crush/diagnostics/alien_state.hpp"
 #include "music_voice_overlay.hpp"
 #include <libretro.h>
 #include <array>
@@ -350,6 +351,12 @@ public:
         if(!memory || retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM)<8192) return false;
         return core::write_high_scores({memory,8192},table);
     }
+    bool request_bonus_room(unsigned room) override {
+        check_loaded();
+        auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
+        if(!memory || retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM)<8192) return false;
+        return request_reference_bonus_room({memory,8192},room);
+    }
     bool cancel_plunger_draw() override {
         check_loaded();
         const auto size=retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
@@ -449,6 +456,25 @@ public:
         observed_count=0; palette_count=0; observation_failed=false;
     }
 };
+}
+void start_in_bonus_room(ReferenceRuntime& runtime,unsigned room) {
+    if(room<1 || room>kBonusRooms) throw std::runtime_error("Bonus stages are numbered 1 to 4");
+    // Run at the title, as a player presses it: once to wake it and again
+    // through its menu. Never once play has begun, where Run pauses.
+    constexpr unsigned longest_start=1800,longest_entry=600;
+    bool requested=false;
+    for(unsigned n=0;n<longest_start && !requested;++n) {
+        const bool title=diagnostics::observe_alien_state(runtime.work_ram()).title_menu;
+        runtime.advance({static_cast<std::uint16_t>(title && n%60<5?Pad::run:0),0});
+        requested=runtime.request_bonus_room(room);
+    }
+    if(!requested) throw std::runtime_error("Could not start a game to enter the bonus stage from");
+    for(unsigned n=0;n<longest_entry;++n) {
+        runtime.advance({});
+        const auto state=diagnostics::observe_alien_state(runtime.work_ram());
+        if(state.bonus_room==room) return;
+    }
+    throw std::runtime_error("Bonus stage "+std::to_string(room)+" did not begin");
 }
 std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls,double multiplier,input::FlipperMasks flippers,ActorMode actors) { return std::make_unique<Reference>(mode,controls,multiplier,flippers,actors); }
 }

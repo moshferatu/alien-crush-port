@@ -173,6 +173,11 @@ if(AC_BUILD_TESTS)
         add_executable(ac_title_logo_tests tests/title_logo_tests.cpp)
         add_executable(ac_attract_replay_tests tests/attract_replay_tests.cpp)
         add_executable(ac_bonus_replay_tests tests/bonus_replay_tests.cpp)
+        add_executable(ac_bonus_stage_launch_tests tests/bonus_stage_launch_tests.cpp)
+        target_link_libraries(ac_bonus_stage_launch_tests PRIVATE ac_reference)
+        ac_enable_strict_warnings(ac_bonus_stage_launch_tests)
+        add_test(NAME bonus_stage_launch COMMAND ac_bonus_stage_launch_tests "${AC_ROM_PATH}")
+        set_tests_properties(bonus_stage_launch PROPERTIES LABELS "rom_required" TIMEOUT 120)
         add_executable(ac_ordinary_bonus_replay_tests tests/ordinary_bonus_replay_tests.cpp)
         add_executable(ac_game_over_replay_tests tests/game_over_replay_tests.cpp)
         add_executable(ac_match_replay_tests tests/match_replay_tests.cpp)
@@ -304,6 +309,10 @@ if(AC_BUILD_TESTS)
                 --replay "${CMAKE_BINARY_DIR}/bonus-smoke.room4.acrec" --frames 32 --data-dir "${CMAKE_BINARY_DIR}/bonus-host-smoke")
             set_tests_properties(bonus_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
                 FIXTURES_REQUIRED bonus_recording ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+            add_test(NAME bonus_stage_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
+                --bonus-stage 3 --frames 120 --data-dir "${CMAKE_BINARY_DIR}/bonus-stage-host-smoke")
+            set_tests_properties(bonus_stage_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30
+                PASS_REGULAR_EXPRESSION "Started in bonus stage 3" ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
             add_test(NAME ordinary_bonus_host_smoke COMMAND alien-crush --rom "${AC_ROM_PATH}" --cabinet
                 --replay "${CMAKE_BINARY_DIR}/ordinary-bonus-smoke.return.acrec" --frames 300 --data-dir "${CMAKE_BINARY_DIR}/ordinary-bonus-host-smoke")
             set_tests_properties(ordinary_bonus_host_smoke PROPERTIES LABELS "rom_required;host" TIMEOUT 30

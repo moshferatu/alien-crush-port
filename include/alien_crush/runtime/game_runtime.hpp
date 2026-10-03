@@ -66,6 +66,9 @@ public:
     // Explicit optional cabinet bridge; never used by canonical pad replays.
     virtual bool apply_plunger_draw(std::uint8_t percent) = 0;
     virtual bool cancel_plunger_draw() = 0;
+    // Enter bonus room 1..4 from the shooter by the game's own transition
+    // (request_reference_bonus_room). Never used by canonical pad replays.
+    virtual bool request_bonus_room(unsigned room) = 0;
     // The music's voices kept while sound effects play, on a second PSG that
     // only adds to the output (src/runtime/music_voice_overlay.hpp). Live sound
     // only: the machine and its states are untouched. After load; a new load
@@ -97,4 +100,9 @@ inline ActorMode recorded_actor_mode(std::string_view revision) {
 std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode=HandoffMode::original,
     ControlMode controls=ControlMode::original,double nudge_multiplier=1.0,input::FlipperMasks flippers={},
     ActorMode actors=ActorMode::original);
+// Start a game from the title and take its first ball from the shooter into
+// bonus room 1..4, stopping on the room's first frame. The game goes on as an
+// ordinary one: the room's score counts and its end returns to the table.
+// From boot or the title only. Throws if the room is not reached.
+void start_in_bonus_room(ReferenceRuntime&,unsigned room);
 }

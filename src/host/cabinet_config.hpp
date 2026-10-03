@@ -99,6 +99,9 @@ struct PlaySettings {
     bool smoothing=true;
     // input.nudge_multiplier (--nudge-multiplier), 0 to 16.
     double nudge_multiplier=1;
+    // game.bonus_stage (--bonus-stage): 0 starts at the title; 1 to 4 starts a
+    // game in that bonus stage.
+    std::uint8_t bonus_stage=0;
     bool operator==(const PlaySettings&) const=default;
 };
 

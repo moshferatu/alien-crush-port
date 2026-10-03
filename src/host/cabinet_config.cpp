@@ -245,11 +245,13 @@ void parse_bindings(const Fields& fields,InputBindings& input) {
 // a 2.5 typed in stays 2.5 rather than growing digits on every save.
 bool append_play_settings(std::string& out,const PlaySettings& play) {
     if(!std::isfinite(play.nudge_multiplier) || play.nudge_multiplier<0 || play.nudge_multiplier>16) return false;
+    if(play.bonus_stage>4) return false;
     std::array<char,32> multiplier{};
     const auto [end,error]=std::to_chars(multiplier.data(),multiplier.data()+multiplier.size(),play.nudge_multiplier);
     if(error!=std::errc{}) return false;
     out+="game.rom="+escape_value(play.rom)+'\n';
     out+="game.cabinet="+std::to_string(play.cabinet?1:0)+'\n';
+    out+="game.bonus_stage="+std::to_string(play.bonus_stage)+'\n';
     out+="audio.music_voice_overlay="+std::to_string(play.music_voice_overlay?1:0)+'\n';
     out+="video.smoothing="+std::to_string(play.smoothing?1:0)+'\n';
     out+="input.nudge_multiplier=";out.append(multiplier.data(),end);out+='\n';
@@ -260,6 +262,11 @@ void parse_play_settings(const Fields& fields,PlaySettings& play) {
     play={};
     if(const auto* rom=field(fields,"game.rom")) play.rom=unescape_value(trim(*rom),"game.rom");
     if(const auto* text=field(fields,"game.cabinet")) play.cabinet=flag(*text,"game.cabinet");
+    if(const auto* text=field(fields,"game.bonus_stage")) {
+        const auto stage=trim(*text);
+        if(stage.size()!=1 || stage[0]<'0' || stage[0]>'4') fail("game.bonus_stage must be a number from 0 to 4");
+        play.bonus_stage=static_cast<std::uint8_t>(stage[0]-'0');
+    }
     if(const auto* text=field(fields,"audio.music_voice_overlay")) play.music_voice_overlay=flag(*text,"audio.music_voice_overlay");
     if(const auto* text=field(fields,"video.smoothing")) play.smoothing=flag(*text,"video.smoothing");
     if(const auto* text=field(fields,"input.nudge_multiplier")) {
