@@ -9,7 +9,7 @@ $env:SDL_VIDEODRIVER='dummy'
 $env:SDL_AUDIODRIVER='dummy'
 $directory=Join-Path $OutputRoot ([guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
-$config=Join-Path $directory 'cabinet.ini'
+$config=Join-Path $directory 'alien-crush.ini'
 $recording=Join-Path $directory 'session.acrec'
 function Set-Fields([hashtable]$fields) {
     $lines=@([IO.File]::ReadAllLines($config) | Where-Object { -not $fields.ContainsKey(($_ -split '=',2)[0]) })
@@ -23,15 +23,15 @@ function Get-Field([string]$key) {
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory --record $recording
 if($LASTEXITCODE -ne 0) { throw 'Initial cabinet smoke run failed' }
 $lines=[IO.File]::ReadAllLines($config)
-if($lines[0] -ne 'version=1') { throw 'cabinet.ini is not in the current format' }
+if($lines[0] -ne 'version=1') { throw 'alien-crush.ini is not in the current format' }
 foreach($role in 'playfield','backglass','dmd') {
     if([int](Get-Field "$role.width") -le 0 -or -not (Get-Field "$role.display")) { throw "Missing $role window" }
 }
 foreach($oldFile in 'cabinet-windows.txt','cabinet-inputs.txt','cabinet-plunger.txt') {
-    if(Test-Path (Join-Path $directory $oldFile)) { throw 'Fresh cabinets must use only cabinet.ini' }
+    if(Test-Path (Join-Path $directory $oldFile)) { throw 'Fresh cabinets must use only alien-crush.ini' }
 }
 if((Get-Field 'input.plunger.axis') -ne '-1' -or $null -eq (Get-Field 'input.buttons.device') -or (Get-Field 'input.one') -ne 'Return') {
-    throw 'Main cabinet.ini must include key, button and plunger settings'
+    throw 'Main alien-crush.ini must include key, button and plunger settings'
 }
 # A disconnected monitor and off-screen geometry must recover to a usable display.
 Set-Fields @{'playfield.display'='Disconnected test monitor'; 'playfield.x'='99000'; 'playfield.y'='-99000'; 'playfield.artwork_rotation'='90'}
@@ -48,7 +48,7 @@ $invalid="version=1`nplayfield.artwork_rotation=45`n"
 if($LASTEXITCODE -eq 0) { throw 'Invalid cabinet configuration was accepted' }
 if([IO.File]::ReadAllText($config) -ne $invalid) { throw 'Invalid configuration was overwritten' }
 # The older format and its separate files are read, left alone, and their
-# settings carried into the current cabinet.ini on exit.
+# settings carried into the current alien-crush.ini on exit.
 $legacy="# Alien Crush cabinet settings`ninput.plunger.axis=-1`nwindow.playfield=`"Test`" 0 0 540 720 0 90`nwindow.backglass=`"Test`" 0 0 640 360 0 0`nwindow.score=`"Test`" 0 0 640 200 0 0`n"
 [IO.File]::WriteAllText($config,$legacy)
 $inputConfig=Join-Path $directory 'cabinet-inputs.txt'
@@ -59,7 +59,7 @@ if($LASTEXITCODE -ne 0) { throw 'Absent configured controller must allow startup
 if([IO.File]::ReadAllText($inputConfig) -ne $validInput) { throw 'Input settings were overwritten' }
 if((Get-Field 'version') -ne '1' -or (Get-Field 'input.buttons.device') -ne 'Absent test cabinet board' -or
     (Get-Field 'input.buttons.nudge') -ne '2' -or (Get-Field 'input.buttons.launch') -ne '-1' -or (Get-Field 'playfield.artwork_rotation') -ne '90') {
-    throw 'Legacy buttons and windows were not migrated into cabinet.ini'
+    throw 'Legacy buttons and windows were not migrated into alien-crush.ini'
 }
 $invalidInput="ACINPUTS1`n`"Test board`"`n256 1 2 3 4 -1 -1 -1`n"
 [IO.File]::WriteAllText($inputConfig,$invalidInput)
@@ -76,12 +76,12 @@ $validPlunger="ACPLUNGER1`n`"Absent test cabinet board`"`n2 1000 -1000 8 25`n"
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
 if($LASTEXITCODE -ne 0) { throw 'Absent configured plunger must allow startup' }
 if([IO.File]::ReadAllText($plungerConfig) -ne $validPlunger) { throw 'Plunger settings were overwritten' }
-if((Get-Field 'input.plunger.drawn') -ne '-1000') { throw 'Legacy plunger calibration was not migrated into cabinet.ini' }
+if((Get-Field 'input.plunger.drawn') -ne '-1000') { throw 'Legacy plunger calibration was not migrated into alien-crush.ini' }
 # Once migrated, changes to obsolete files cannot override the shared settings.
 [IO.File]::WriteAllText($inputConfig,'obsolete invalid buttons')
 [IO.File]::WriteAllText($plungerConfig,'obsolete invalid plunger')
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
-if($LASTEXITCODE -ne 0) { throw 'Shared cabinet.ini did not take precedence over old files' }
+if($LASTEXITCODE -ne 0) { throw 'Shared alien-crush.ini did not take precedence over old files' }
 # A replay reads no hardware settings, even ones that cannot be read.
 [IO.File]::WriteAllText($config,$legacy)
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory --replay $recording

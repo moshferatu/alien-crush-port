@@ -20,7 +20,7 @@ class Cabinet {
     std::optional<render::TitleLogoAnimation> backglass_animation_;
     std::uint64_t backglass_tick_{};
 public:
-    // Opens each window where `placements` (cabinet.ini) left it; one never
+    // Opens each window where `placements` (alien-crush.ini) left it; one never
     // placed opens on the monitor of its turn. `data` holds backglass.bmp.
     Cabinet(Presentation& playfield,const std::array<WindowPlacement,kCabinetWindowCount>& placements,
         const std::filesystem::path& data,std::span<const std::byte> rom);
@@ -32,7 +32,7 @@ public:
     bool handle_key(const SDL_KeyboardEvent&);
     // False means the display topology is temporarily unavailable; retry later.
     bool recover_displays();
-    // Where each window is now, in the game's order, for cabinet.ini.
+    // Where each window is now, in the game's order, for alien-crush.ini.
     std::array<WindowPlacement,kCabinetWindowCount> placements() const;
 };
 }

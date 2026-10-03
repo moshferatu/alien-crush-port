@@ -34,3 +34,7 @@ Thumbs.db
 # Runtime-local files
 /logs/
 /portable-data/
+/alien-crush.ini
+/alien-crush.hiscore
+/backglass.bmp
+/*.tmp

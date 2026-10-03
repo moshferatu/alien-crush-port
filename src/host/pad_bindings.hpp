@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 namespace alien_crush::host {
-// The eight PC Engine pad inputs, in the order cabinet.ini has them. Pad
+// The eight PC Engine pad inputs, in the order alien-crush.ini has them. Pad
 // inputs rather than game actions: the cartridge decides what each does, and
 // not the same in a menu as on the table.
 enum class PadButton : std::size_t {one=0,two=1,select=2,run=3,up=4,right=5,down=6,left=7};

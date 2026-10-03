@@ -91,7 +91,7 @@ high scores and ROM-free packaging.
 Windows x64; PinOne first; buttons, analog plunger and digital nudge in the cabinet release.
 Physical nudge, DOF, lighting and surround-sound feedback are deferred. Animated game-logo
 backglass has a user-image fallback. External launcher changes and Devil's Crush changes
-are outside this repository. Runtime state stays in machine-local portable-data.
+are outside this repository. Runtime state stays machine-local, beside the executable.
 Public distributions exclude ROMs, decoded assets, screenshots, traces and save states;
 private staging may explicitly include the user's ROM. Retain all reused source notices.
 

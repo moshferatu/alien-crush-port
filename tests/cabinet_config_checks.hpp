@@ -3,6 +3,7 @@
 #include "cabinet_config.hpp"
 #include "game_input.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/core/data_files.hpp"
 #include <fstream>
 
 inline void check_cabinet_config() {
@@ -38,7 +39,7 @@ inline void check_cabinet_config() {
     chosen.input.plunger.calibration={1000,-1000,12,30};
     chosen.input.buttons={"PinOne",{0,1,2,3,-1,5,6,7,8}};
     const auto encoded=host::encode_cabinet_config(chosen);
-    check(!encoded.empty() && decode(text_of(encoded))==chosen,"Every setting round trips through cabinet.ini");
+    check(!encoded.empty() && decode(text_of(encoded))==chosen,"Every setting round trips through alien-crush.ini");
     const auto written=text_of(encoded);
     for(const auto* line:{"version=1\n","input.nudge_multiplier=2.5\n","input.plunger.device=PinOne Board%25\n",
         "input.run=Space,Keypad Enter\n","input.select=\n","input.left_flipper=left,down\n","input.right_flipper=\n",
@@ -52,7 +53,7 @@ inline void check_cabinet_config() {
     const auto shared=decode("version=1\ninput.one=Return\ninput.launch=Return,Space\ngame.bonus_stage=3\ngame.native=1\n"
         "input.plunger.axis=2\nplayfield.artwork_rotation=90\n");
     check(shared.input.launch_keys==std::vector<std::string>{"Return","Space"} && shared.input.plunger.axis==2 &&
-        shared.windows[host::playfield_window].artwork_rotation==90,"A Devil's Crush cabinet.ini reads here");
+        shared.windows[host::playfield_window].artwork_rotation==90,"A Devil's Crush alien-crush.ini reads here");
     check(decode("version=1\ninput.one=A, A ,B\n").input[host::PadButton::one]==std::vector<std::string>{"A","B"},
         "A key bound twice to one input is kept once");
 
@@ -77,7 +78,7 @@ inline void check_cabinet_config() {
         std::ofstream(older/name,std::ios::binary)<<text;
     };
     check(host::load_cabinet_config(older).status==host::ConfigLoadStatus::not_found,"No file is the defaults");
-    write("cabinet.ini","# Alien Crush cabinet settings\ngame.cabinet=1\ninput.buttons=ACINPUTS2 \"PinOne\" 0 1 2 3 4 5 6 7 8\n"
+    write("alien-crush.ini","# Alien Crush cabinet settings\ngame.cabinet=1\ninput.buttons=ACINPUTS2 \"PinOne\" 0 1 2 3 4 5 6 7 8\n"
         "input.nudge.threshold=30\ninput.plunger.axis=2\ninput.plunger.device=Pin%3DOne\nvideo.smoothing=0\n"
         "window.playfield=\"Left\" 0 0 540 720 1 90\nwindow.backglass=\"Right\" 1920 0 640 360 0 0\n"
         "window.score=\"Right\" 1920 400 640 200 0 180\n");
@@ -87,21 +88,55 @@ inline void check_cabinet_config() {
         legacy.config.input.plunger.device=="Pin=One" && legacy.config.windows[host::playfield_window].fullscreen &&
         legacy.config.windows[host::playfield_window].artwork_rotation==90 &&
         legacy.config.windows[host::score_window].artwork_rotation==180 &&
-        legacy.config.windows[host::backglass_window].display_identity=="Right","The older cabinet.ini is read");
-    host::save_cabinet_config(older/"cabinet.ini",legacy.config);
+        legacy.config.windows[host::backglass_window].display_identity=="Right","The older alien-crush.ini is read");
+    host::save_cabinet_config(older/"alien-crush.ini",legacy.config);
     const auto migrated=host::load_cabinet_config(older);
     check(migrated.loaded() && !migrated.legacy && migrated.config==legacy.config,"A save rewrites it in the current format");
-    std::filesystem::remove(older/"cabinet.ini");
+    std::filesystem::remove(older/"alien-crush.ini");
     write("cabinet-windows.txt","ACWINDOWS 1\nplayfield \"A\" 0 0 540 720 0 0\nbackglass \"A\" 0 0 640 360 0 90\nscore \"A\" 0 0 640 200 0 0\n");
     write("cabinet-inputs.txt","ACINPUTS1 \"Board\" 0 1 2 3 4 5 6 7\n");
     write("cabinet-plunger.txt","ACPLUNGER1 \"PinOne\" 2 -32768 32767 8 25\n");
     legacy=host::load_cabinet_config(older);
     check(legacy.loaded() && legacy.legacy && legacy.config.windows[host::backglass_window].artwork_rotation==90 &&
         legacy.config.input.buttons.device=="Board" && legacy.config.input.plunger.calibration.rest==-32768,
-        "The older separate files are read when there is no cabinet.ini");
-    write("cabinet.ini","version=1\ngame.cabinet=2\n");
+        "The older separate files are read when there is no alien-crush.ini");
+    write("alien-crush.ini","version=1\ngame.cabinet=2\n");
     check(host::load_cabinet_config(older).status==host::ConfigLoadStatus::invalid,"A bad file is reported, not replaced");
     std::filesystem::remove_all(older);
+
+    // An earlier build's subfolder, with the settings as cabinet.ini.
+    {
+        namespace fs=std::filesystem;
+        const auto base=fs::temp_directory_path()/"alien-crush-data-migration-check";
+        fs::remove_all(base);
+        const auto put=[](const fs::path& path,const char* text) {std::ofstream(path,std::ios::binary)<<text;};
+        const auto get=[](const fs::path& path) {
+            std::ifstream input(path,std::ios::binary);
+            return std::string(std::istreambuf_iterator<char>(input),{});
+        };
+        fs::create_directories(base/"portable-data");
+        put(base/"portable-data"/"cabinet.ini","settings");
+        put(base/"portable-data"/"alien-crush.hiscore","scores");
+        put(base/"portable-data"/"alien-crush.cabinet-controls.state","state");
+        put(base/"portable-data"/"backglass.bmp","art");
+        auto result=core::migrate_legacy_data_folder(base);
+        check(result.moved.size()==4 && result.problems.empty() && get(base/"alien-crush.ini")=="settings" &&
+            get(base/"alien-crush.hiscore")=="scores" && get(base/"alien-crush.cabinet-controls.state")=="state" &&
+            get(base/"backglass.bmp")=="art","An earlier build's settings and saves move out of portable-data");
+        check(!fs::exists(base/"portable-data"),"The emptied portable-data folder is removed");
+        result=core::migrate_legacy_data_folder(base);
+        check(result.moved.empty() && result.problems.empty(),"Migrating again without the folder does nothing");
+        // A file at the new name was written by a build that has already
+        // moved, so it wins, and the old one and its folder stay.
+        fs::create_directories(base/"portable-data");
+        put(base/"portable-data"/"cabinet.ini","older");
+        put(base/"portable-data"/"notes.txt","mine");
+        result=core::migrate_legacy_data_folder(base);
+        check(result.moved.empty() && result.problems.size()==1 && get(base/"alien-crush.ini")=="settings" &&
+            fs::exists(base/"portable-data"/"cabinet.ini") && fs::exists(base/"portable-data"/"notes.txt"),
+            "A newer file is never replaced, and other files stay");
+        fs::remove_all(base);
+    }
 
     // The keyboard, as bound.
     std::array<bool,SDL_SCANCODE_COUNT> keys{};

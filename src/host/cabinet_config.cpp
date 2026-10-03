@@ -3,6 +3,7 @@
 #include "cabinet_plunger.hpp"
 #include "cabinet_settings.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/core/data_files.hpp"
 #include "alien_crush/input/nudge_multiplier.hpp"
 #include <algorithm>
 #include <cctype>
@@ -19,7 +20,7 @@ namespace alien_crush::host {
 namespace {
 constexpr std::size_t kMaximumConfigBytes=64U*1024U;
 using Fields=std::map<std::string,std::string,std::less<>>;
-[[noreturn]] void fail(const std::string& why) {throw std::runtime_error("cabinet.ini: "+why);}
+[[noreturn]] void fail(const std::string& why) {throw std::runtime_error("alien-crush.ini: "+why);}
 
 // Letters, digits and the punctuation of paths and names stay as they are, so
 // "Left Shift,Left" and "D:\Games\Alien Crush.pce" read back verbatim; every
@@ -317,7 +318,7 @@ CabinetConfig load_legacy(const CabinetSettings& settings,const std::filesystem:
     config.input.nudge=parse_cabinet_nudge(settings);
     config.input.buttons=load_cabinet_buttons(data/"cabinet-inputs.txt");
     const bool plunger_here=std::ranges::any_of(settings,[](const auto& f){return f.first.starts_with("input.plunger.");});
-    config.input.plunger=load_cabinet_plunger(plunger_here?data/"cabinet.ini":data/"cabinet-plunger.txt");
+    config.input.plunger=load_cabinet_plunger(plunger_here?data/core::kConfigFileName:data/"cabinet-plunger.txt");
     std::error_code error;
     if(settings.contains("window.playfield")) {
         std::string text="ACWINDOWS 1\n";
@@ -420,7 +421,7 @@ CabinetConfig decode_cabinet_config(std::span<const std::byte> bytes) {
 }
 
 ConfigLoadResult load_cabinet_config(const std::filesystem::path& data) {
-    const auto path=data/"cabinet.ini";
+    const auto path=data/core::kConfigFileName;
     ConfigLoadResult result;
     try {
         std::error_code error;
@@ -457,7 +458,7 @@ ConfigLoadResult load_cabinet_config(const std::filesystem::path& data) {
 void save_cabinet_config(const std::filesystem::path& path,const CabinetConfig& config) {
     const auto bytes=encode_cabinet_config(config);
     if(bytes.empty()) throw std::runtime_error("The cabinet configuration could not be encoded");
-    std::filesystem::create_directories(path.parent_path());
+    if(!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path());
     core::write_file_atomic(path,bytes);
 }
 }

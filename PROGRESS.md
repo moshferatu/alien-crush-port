@@ -1,5 +1,16 @@
 # Progress
 
+Settings and saves beside the executable (2026-10-03):
+
+- As in Devil's Crush: the settings are `alien-crush.ini`, and it, the high
+  scores, quick states and `backglass.bmp` sit beside the executable instead
+  of in `portable-data`. `--data-dir` still selects another folder.
+- The game and the launcher move an earlier build's files out of
+  `portable-data` on first start (`core::migrate_legacy_data_folder`),
+  renaming `cabinet.ini`. A file already at the new name is never replaced,
+  and the folder is removed only when that empties it.
+- The published Syncthing ignore patterns now name the files themselves.
+
 Native cabinet actors (2026-09-25):
 
 - The lower aliens were not alone: every actor the cabinet animated as a

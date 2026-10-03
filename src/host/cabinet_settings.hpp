@@ -6,7 +6,7 @@
 #include <string>
 #include <stdexcept>
 namespace alien_crush::host {
-// The older cabinet.ini, before Devil's Crush's format (cabinet_config.hpp):
+// The older settings format (then cabinet.ini), before Devil's Crush's format (cabinet_config.hpp):
 // lenient key=value lines with comments. Read only, to bring its settings over.
 using CabinetSettings=std::map<std::string,std::string>;
 inline CabinetSettings read_cabinet_settings(const std::filesystem::path& path) {
@@ -24,7 +24,7 @@ inline CabinetSettings read_cabinet_settings(const std::filesystem::path& path) 
         line=trim(line);
         if(line.empty() || line[0]=='#' || line[0]==';') continue;
         const auto equal=line.find('=');
-        if(equal==line.npos) throw std::runtime_error("Expected key=value in cabinet.ini");
+        if(equal==line.npos) throw std::runtime_error("Expected key=value in alien-crush.ini");
         result[trim(line.substr(0,equal))]=trim(line.substr(equal+1));
     }
     return result;

@@ -138,7 +138,7 @@ int plunger_probe() {
         if(c=='%' || c=='\r' || c=='\n' || c=='=') {escaped+='%';escaped+=hex[c>>4];escaped+=hex[c&15];}
         else escaped+=static_cast<char>(c);
     }
-    std::cout<<"\nPut these settings in Alien Crush's portable-data/cabinet.ini:\n\n"
+    std::cout<<"\nPut these settings in Alien Crush's alien-crush.ini:\n\n"
         <<"input.plunger.device="<<escaped<<"\ninput.plunger.axis="<<moved->index
         <<"\ninput.plunger.rest="<<moved->rest<<"\ninput.plunger.drawn="<<moved->extreme
         <<"\ninput.plunger.deadzone=8\ninput.plunger.release=25\n";

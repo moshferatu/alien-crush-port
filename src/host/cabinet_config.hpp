@@ -14,7 +14,7 @@
 #include <string_view>
 #include <vector>
 
-// portable-data/cabinet.ini, in Devil's Crush's format (its
+// alien-crush.ini, in Devil's Crush's format (its
 // src/cabinet/display_config.cpp): `key=value` lines, a `version`, values
 // percent-escaped, a repeated key or an unreadable value rejects the file, and
 // unknown keys are ignored and dropped the next time it is written. The keys
@@ -26,7 +26,7 @@
 //
 // The game writes the whole file on a cabinet session's exit, and the launcher
 // (src/launcher/launcher.cpp) whenever it saves. Files from before this
-// format -- the older cabinet.ini with its `window.*` and `input.buttons`
+// format -- the older settings file with its `window.*` and `input.buttons`
 // lines, and the separate cabinet-windows.txt, cabinet-inputs.txt and
 // cabinet-plunger.txt -- are still read, and the first write replaces them.
 namespace alien_crush::host {
@@ -128,7 +128,7 @@ struct ConfigLoadResult {
     bool legacy=false;
     bool loaded() const {return status==ConfigLoadStatus::loaded;}
 };
-// `data`/cabinet.ini, or the older files beside it. Not found gives the defaults.
+// `data`/alien-crush.ini, or the older files beside it. Not found gives the defaults.
 ConfigLoadResult load_cabinet_config(const std::filesystem::path& data);
 // Throws on failure. Written through a temporary file, so a reader never sees half.
 void save_cabinet_config(const std::filesystem::path& path,const CabinetConfig&);

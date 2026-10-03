@@ -3,6 +3,7 @@
 #include "window_layout.hpp"
 #include "alien_crush/render/title_logo.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/core/data_files.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -34,7 +35,7 @@ std::vector<Monitor> monitors(bool required=true) {
 Cabinet::Cabinet(Presentation& playfield,const std::array<WindowPlacement,kCabinetWindowCount>& placements,
     const std::filesystem::path& data,std::span<const std::byte> rom)
     : windows_{&playfield,&backglass_,&score_},score_panel_(render::ScorePanel::from_rom(rom)),
-      backglass_image_(load_backglass(data/"backglass.bmp")) {
+      backglass_image_(load_backglass(data/core::kBackglassFileName)) {
     if(!backglass_image_) backglass_animation_.emplace(rom);
     const auto displays=monitors();
     for(std::size_t i=0;i<windows_.size();++i) {

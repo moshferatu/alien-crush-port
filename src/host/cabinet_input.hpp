@@ -12,7 +12,7 @@ namespace alien_crush::host {
 struct CabinetButtons {
     std::string device;
     // left flipper, right flipper, nudge, start/launch, select, up, down,
-    // right/menu, dedicated launch/confirm (ninth entry in ACINPUTS2). cabinet.ini has them as
+    // right/menu, dedicated launch/confirm (ninth entry in ACINPUTS2). alien-crush.ini has them as
     // input.buttons.*; the older ACINPUTS1/2 line is still read.
     std::array<int,9> buttons{-1,-1,-1,-1,-1,-1,-1,-1,-1};
     bool operator==(const CabinetButtons&) const=default;

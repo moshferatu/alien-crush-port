@@ -17,7 +17,7 @@ set(AC_ROM_PATH "" CACHE FILEPATH "Local Alien Crush ROM for tests")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(CompilerWarnings)
 add_library(ac_core STATIC src/core/rom_image.cpp src/core/save_state.cpp
-    src/core/atomic_file.cpp src/core/files.cpp src/core/recording.cpp
+    src/core/atomic_file.cpp src/core/data_files.cpp src/core/files.cpp src/core/recording.cpp
     src/render/sharp_pixel_scaler.cpp src/input/plunger.cpp
     src/diagnostics/reference_snapshot.cpp src/diagnostics/display_trace.cpp src/render/pce_graphics.cpp
     src/assets/table_assets.cpp src/assets/actor_assets.cpp src/diagnostics/alien_state.cpp
@@ -60,7 +60,7 @@ if(AC_BUILD_APP)
     target_link_libraries(ac_launcher_art PRIVATE ac_core SDL3::SDL3)
     ac_enable_strict_warnings(ac_launcher_art)
 
-    # The launcher (src/launcher/launcher.cpp): portable-data/cabinet.ini with
+    # The launcher (src/launcher/launcher.cpp): alien-crush.ini with
     # a face on it, and a Play button. It ships beside alien-crush.exe and
     # starts it. SDL as the game is, the game's own reading and writing of the
     # file, and stb_truetype to draw the system's font.

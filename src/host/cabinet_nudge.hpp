@@ -12,7 +12,7 @@ struct NudgeBinding {
     int threshold=20,release=8,cooldown_ms=250;
     bool operator==(const NudgeBinding&) const=default;
 };
-// The older cabinet.ini's nudge lines; see cabinet_config.hpp for the current file.
+// The older settings format's nudge lines; see cabinet_config.hpp for the current file.
 NudgeBinding parse_cabinet_nudge(const CabinetSettings& settings);
 // Throws when the axes, thresholds or cooldown cannot work together.
 void validate_cabinet_nudge(const NudgeBinding&);

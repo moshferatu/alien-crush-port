@@ -14,6 +14,7 @@
 #include "alien_crush/runtime/reference_launcher.hpp"
 #include "alien_crush/render/table_playfield.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/core/data_files.hpp"
 #include "alien_crush/core/recording.hpp"
 #include "alien_crush/input/nudge_multiplier.hpp"
 #include <SDL3/SDL_main.h>
@@ -51,7 +52,7 @@ int main(int argc,char** argv) {
         std::optional<double> requested_nudge_multiplier;
         double refresh_override=0;
         std::optional<unsigned> bonus_stage_override;
-        // Flags beat cabinet.ini's play settings, which fill in what they leave unsaid.
+        // Flags beat alien-crush.ini's play settings, which fill in what they leave unsaid.
         std::optional<bool> smoothing_override,cabinet_override,overlay_override;
         bool probe=false,probe_plunger=false,no_vsync=false;
         for(int i=1;i<argc;++i) {
@@ -90,22 +91,24 @@ int main(int argc,char** argv) {
             else if(arg=="--cabinet-plunger-probe") probe_plunger=true;
             else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
             else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\n"
-                "Keys (rebindable under input. in portable-data/cabinet.ini): Enter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper;\n"
+                "Keys (rebindable under input. in alien-crush.ini): Enter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper;\n"
                 "Right Shift/Right right flipper; Space nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm.\n"
                 "F5/F9 quick save/load, F11 fullscreen, Escape exit.\n"
                 "Cabinet: move/resize three windows; F11 toggles the focused window, R rotates it, F10 moves it to the next monitor. Layout saves on normal exit.\n"
-                "portable-data/cabinet.ini holds every setting in Devil's Crush's format: windows, keys, flipper inputs, launch keys, cabinet buttons,\n"
+                "alien-crush.ini holds every setting in Devil's Crush's format: windows, keys, flipper inputs, launch keys, cabinet buttons,\n"
                 "nudge, plunger and the play settings below (see README). alien-crush-launcher.exe edits it.\n"
+                "It, the high scores (alien-crush.hiscore), quick states and an optional backglass.bmp sit beside the executable, or in --data-dir.\n"
+                "An earlier build kept them in a portable-data folder, with the settings as cabinet.ini; they are moved out of it on the first start.\n"
                 "With no options, normal play takes game.rom, game.cabinet, game.bonus_stage, audio.music_voice_overlay, video.smoothing and\n"
                 "input.nudge_multiplier from it; a flag beats the file for that run.\n"
-                "--no-cabinet: one window, whatever cabinet.ini says.\n"
+                "--no-cabinet: one window, whatever alien-crush.ini says.\n"
                 "--bonus-stage <1-4>: start a game in that bonus stage, through the game's own bonus transition.\n"
                 "--music-voice-overlay / --no-music-voice-overlay: keep the music's voices while effects play (default on).\n"
                 "--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F7 toggles.\n"
                 "--refresh <Hz>: override the detected playfield refresh rate; --no-vsync uses timer pacing.\n"
                 "--nudge-multiplier <factor>: nudge force from 0 to 16 (default 1); applies to keyboard, buttons and physical nudges.\n"
                 "--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n"
-                "--plunger-config <path>: take the plunger from another cabinet.ini, such as Devil's Crush's.\n"
+                "--plunger-config <path>: take the plunger from another game's settings file, such as Devil's Crush's devils-crush.ini.\n"
                 "--input-probe: inspect raw buttons and axes without a ROM; --frames limits 100ms samples.\n"; return 0; }
             else throw std::runtime_error("Unknown option "+arg);
         }
@@ -118,8 +121,16 @@ int main(int argc,char** argv) {
         // cabinet backglass and score display, without grabbing the mouse.
         if(!SDL_HideCursor()) throw std::runtime_error(SDL_GetError());
         const auto base=core::path_from_utf8(SDL_GetBasePath());
-        if(data_path.empty()) data_path=base/"portable-data";
-        // Normal play takes what the flags leave unsaid from cabinet.ini, where
+        // Settings and saves live beside the executable. An earlier build kept
+        // them in a subfolder, with the settings as cabinet.ini: move them out
+        // before anything is read.
+        if(data_path.empty()) {
+            data_path=base;
+            const auto migration=core::migrate_legacy_data_folder(base);
+            for(const auto& moved:migration.moved) std::cout<<"Moved "<<moved<<'\n';
+            for(const auto& problem:migration.problems) std::cerr<<"Could not move "<<problem<<'\n';
+        }
+        // Normal play takes what the flags leave unsaid from alien-crush.ini, where
         // the launcher keeps it. Replays and --frames runs stay reproducible:
         // --frames reads only its devices, and a replay only where the
         // cabinet's windows go, which is presentation and not the game.
@@ -167,7 +178,7 @@ int main(int argc,char** argv) {
         const auto multiplier=playback?input::recorded_nudge_multiplier(playback->initial.core_revision):requested_nudge_multiplier.value_or(1);
         if(playback && requested_nudge_multiplier && *requested_nudge_multiplier!=multiplier)
             throw std::runtime_error("Nudge multiplier differs from the recorded session");
-        // Which pad inputs each flipper piece answers to, as cabinet.ini says,
+        // Which pad inputs each flipper piece answers to, as alien-crush.ini says,
         // or as the recording was made.
         const auto flipper_masks=playback?input::recorded_flipper_masks(playback->initial.core_revision):
             input::FlipperMasks{host::flipper_input_mask(bindings.flippers.left),host::flipper_input_mask(bindings.flippers.right)};
@@ -179,7 +190,7 @@ int main(int argc,char** argv) {
         if(music_voice_overlay) runtime->music_voice_overlay(true);
         std::cout<<"Music voice overlay: "<<(music_voice_overlay?"on":"off")<<'\n';
         std::optional<host::HighScoreAutosave> high_scores;
-        if(!playback) high_scores.emplace(*runtime,data_path/"alien-crush.hiscore");
+        if(!playback) high_scores.emplace(*runtime,data_path/core::kHighScoreFileName);
         const bool table_raster=cabinet_mode && runtime->supports_display_observation();
         if(table_raster) runtime->observe_display(true);
         if(playback) runtime->restore(playback->initial);
@@ -249,7 +260,7 @@ int main(int argc,char** argv) {
                     if(event.key.scancode==SDL_SCANCODE_F5 || event.key.scancode==SDL_SCANCODE_F9) {
                         try {
                             if(playback || !record_path.empty()) throw std::runtime_error("Quick states are disabled during recording/replay to keep the input timeline reproducible");
-                            const auto path=data_path/(mode==HandoffMode::continuous?"alien-crush.cabinet-controls.state":"alien-crush.desktop-controls.state");
+                            const auto path=data_path/(mode==HandoffMode::continuous?core::kCabinetQuickStateFileName:core::kDesktopQuickStateFileName);
                             if(event.key.scancode==SDL_SCANCODE_F5) {
                                 if(cabinet_plunger.owns_draw()) throw std::runtime_error("Release the plunger before saving a quick state");
                                 core::write_file_atomic(path,state::encode(runtime->save()));
@@ -433,9 +444,9 @@ int main(int argc,char** argv) {
                 // Keep the last usable layout if the user exits during a display outage.
                 if(!display_layout_changed) saved.config.windows=cabinet->placements();
                 if(smoothing_toggled && !playback) saved.config.play.smoothing=smoothing;
-                host::save_cabinet_config(data_path/"cabinet.ini",saved.config);
-                if(saved.legacy) std::cout<<"cabinet.ini rewritten in the current format\n";
-            } else std::cerr<<"cabinet.ini was not updated: "<<saved.message<<'\n';
+                host::save_cabinet_config(data_path/core::kConfigFileName,saved.config);
+                if(saved.legacy) std::cout<<"alien-crush.ini rewritten in the current format\n";
+            } else std::cerr<<"alien-crush.ini was not updated: "<<saved.message<<'\n';
         }
         // Count simulated session frames, not VSync repeats or restored frame
         // numbers. Cabinet presentation is native; the reference backend has

@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <iostream>
 namespace alien_crush::host {
-// Scancodes resolved once from the key names in cabinet.ini, so reading the
+// Scancodes resolved once from the key names in alien-crush.ini, so reading the
 // keyboard every frame is an array lookup.
 struct ResolvedKeys {
     std::array<std::vector<SDL_Scancode>,kPadButtonCount> pads;
@@ -31,7 +31,7 @@ inline ResolvedKeys resolve_keys(const InputBindings& bindings) {
     return resolved;
 }
 
-// The keyboard, as cabinet.ini binds it. While the ball is seated in the
+// The keyboard, as alien-crush.ini binds it. While the ball is seated in the
 // shooter a launch key sends I and nothing else -- its ordinary input is
 // suppressed, so a launch key that is also Run launches rather than pausing --
 // and a press that began as a launch stays one until it is let go, so the ball

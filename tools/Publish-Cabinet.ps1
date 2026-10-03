@@ -5,7 +5,7 @@ Build and publish a portable cabinet folder for Syncthing.
 .DESCRIPTION
 Uses the static windows-cabinet Release preset. Defaults to the sibling
 alien-crush-cabinet folder. Updates packaged files without deleting local files
-or touching portable-data. Run from any working directory.
+or touching settings and saves. Run from any working directory.
 .EXAMPLE
 .\tools\Publish-Cabinet.ps1
 .EXAMPLE
@@ -88,11 +88,15 @@ try {
     [IO.File]::WriteAllText((Join-Path $stage 'Launch-Cabinet.cmd'), "@echo off`r`n`"%~dp0alien-crush.exe`" --cabinet %*`r`nexit /b %errorlevel%`r`n", $utf8)
     $patterns = @'
 // Machine-local layout, input/plunger bindings, artwork, high scores and quick states.
+/alien-crush.ini*
+/alien-crush.hiscore*
+/backglass.bmp
+/cabinet-*.txt
 /portable-data
 /logs
 /captures
 /traces
-*.state
+*.state*
 *.acrec
 '@
     [IO.File]::WriteAllText((Join-Path $stage 'syncthing-ignore.txt'), $patterns + "`r`n", $utf8)
@@ -100,7 +104,7 @@ try {
 Alien Crush cabinet package
 
 Run alien-crush-launcher.exe to change settings and play, or Launch-Cabinet.cmd,
-or alien-crush.exe --cabinet. The launcher edits portable-data/cabinet.ini, and
+or alien-crush.exe --cabinet. The launcher edits alien-crush.ini, and
 the game plays as that file says when it is started without options.
 The ROM is included under its default name. No extra runtime DLLs are needed.
 Close the game before applying an update on the cabinet.
@@ -108,11 +112,15 @@ Close the game before applying an update on the cabinet.
 Syncthing setup (do this on BOTH computers before the first sync):
 1. Select this package folder as the Syncthing folder root.
 2. In Edit Folder > Ignore Patterns add these lines:
+   /alien-crush.ini*
+   /alien-crush.hiscore*
+   /backglass.bmp
+   /cabinet-*.txt
    /portable-data
    /logs
    /captures
    /traces
-   *.state
+   *.state*
    *.acrec
    Alternatively, after syncthing-ignore.txt exists locally, use:
    #include syncthing-ignore.txt
@@ -122,13 +130,16 @@ Syncthing setup (do this on BOTH computers before the first sync):
 The publish script configures it on the workstation. Configure the cabinet too.
 Reference: https://docs.syncthing.net/users/ignoring.html
 
-Layout, key/button/plunger bindings, custom backglass.bmp, high scores and quick states live in
-portable-data beside the executable. They stay local to each computer.
-High scores and initials automatically save to portable-data/alien-crush.hiscore.
-Publishing updates packaged files and preserves this directory and other local
+Layout, key/button/plunger bindings (alien-crush.ini), custom backglass.bmp, high scores
+and quick states live beside the executable. They stay local to each computer.
+High scores and initials automatically save to alien-crush.hiscore.
+An earlier build kept these in a portable-data folder, with the settings as cabinet.ini;
+the game and the launcher move them out on first start. Add the patterns above on the
+cabinet BEFORE it runs this build, or its settings will sync back to the workstation.
+Publishing updates packaged files and preserves these and other local
 files. If needed, copy cabinet-specific bindings/artwork manually once.
 See README.md for controls, monitor setup and configuration file formats.
-portable-data/cabinet.ini holds every setting, in Devil's Crush's format: window placement,
+alien-crush.ini holds every setting, in Devil's Crush's format: window placement,
 keys, flipper inputs, raw buttons, physical nudge, plunger, music voice overlay and smoothing.
 The launcher's tabs edit all of it; its plunger lines are interchangeable with Devil's Crush's.
 PinOne accelerometer nudging works automatically in cabinet mode (axes 0/1).

@@ -202,7 +202,7 @@ int main(int argc,char** argv) {
         host::CabinetConfig fixture;
         fixture.input.plunger.axis=2;
         for(auto& window:fixture.windows) window.display_identity="Test",window.geometry={0,0,320,240};
-        host::save_cabinet_config(data/"cabinet.ini",fixture);
+        host::save_cabinet_config(data/"alien-crush.ini",fixture);
         {
             const auto rom=core::read_file(core::path_from_utf8(argv[1]));
             host::Presentation playfield("Test playfield",320,240,true);
@@ -267,11 +267,11 @@ int main(int argc,char** argv) {
             }
             auto saved=host::load_cabinet_config(data).config;
             saved.windows=cabinet.placements();
-            host::save_cabinet_config(data/"cabinet.ini",saved);
+            host::save_cabinet_config(data/"alien-crush.ini",saved);
         }
         {
             const auto loaded=host::load_cabinet_config(data);
-            require(loaded.loaded() && !loaded.legacy,"Read the saved cabinet.ini");
+            require(loaded.loaded() && !loaded.legacy,"Read the saved alien-crush.ini");
             require(loaded.config.input.plunger.axis==2,"Window saves preserve shared inputs");
             const std::array<int,3> expected{90,90,270};
             for(std::size_t i=0;i<expected.size();++i) {

@@ -2,6 +2,7 @@
 #include "cabinet_input.hpp"
 #include "cabinet_settings.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/core/data_files.hpp"
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
@@ -34,7 +35,7 @@ CabinetButtons parse_cabinet_buttons(std::string_view text) {
     return result;
 }
 CabinetButtons load_cabinet_buttons(const std::filesystem::path& path) {
-    const auto settings=read_cabinet_settings(path.parent_path()/"cabinet.ini");
+    const auto settings=read_cabinet_settings(path.parent_path()/core::kConfigFileName);
     if(const auto found=settings.find("input.buttons");found!=settings.end())
         return found->second.empty()?CabinetButtons{}:parse_cabinet_buttons(found->second);
     if(!std::filesystem::exists(path)) return {};
@@ -100,7 +101,7 @@ int input_probe(std::uint64_t samples) {
         std::ostringstream report;
         report<<"Raw joystick probe - button/axis indices start at 0\n"
               <<"Press buttons; pull/release the rod. Record its axis, rest and full-pull values.\n"
-              <<"Set input.plunger.* in the main cabinet.ini (see README).\n\n";
+              <<"Set input.plunger.* in the main alien-crush.ini (see README).\n\n";
         if(devices.empty()) report<<"No joysticks detected. Connect the cabinet controller.\n";
         for(const auto& device:devices) {
             const auto* name=SDL_GetJoystickName(device.get());

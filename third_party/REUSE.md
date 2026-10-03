@@ -101,13 +101,13 @@ The settings launcher (`src/launcher/launcher.cpp`) and its icon tool
 `src/launcher/launcher.cpp` and `tools/make_launcher_art.cpp` at commit
 `cbff624`, under GPL-3.0-or-later: the SDL/stb_truetype drawing, layout,
 dropdowns, sliders, text fields, mouse/keyboard/controller handling, monitor
-list, key capture and ROM-logo icon pipeline. `cabinet.ini` is read and written
+list, key capture and ROM-logo icon pipeline. `alien-crush.ini` is read and written
 through this port's host module (`src/host/cabinet_config.cpp`), and the icon is Alien Crush's title logo decoded by
 `TitleLogoAnimation`. No Devil's Crush ROM
 addresses or artwork are used. `third_party/stb/stb_truetype.h` is vendored
 unmodified from the same upstream revision Devil's Crush pins.
 
-`portable-data/cabinet.ini`'s format (`src/host/cabinet_config.cpp`) follows
+`alien-crush.ini`'s format (`src/host/cabinet_config.cpp`) follows
 Devil's Crush `src/cabinet/display_config.cpp` at commit `cbff624`, under
 GPL-3.0-or-later: its keys, percent-escaping, strict one-key-per-line reading,
 key-name bindings, flipper input lists, launch keys and the opposing-direction

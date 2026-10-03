@@ -52,7 +52,7 @@ Other ROM revisions are rejected. ROMs and generated game assets are not distrib
 ## Launcher
 
 `alien-crush-launcher.exe` sits beside the game and is the easy way to set it
-up: `portable-data/cabinet.ini` a tab at a time, and a Play button that saves
+up: `alien-crush.ini` a tab at a time, and a Play button that saves
 and starts the game, then comes back when the game closes.
 
 | Tab | |
@@ -69,7 +69,7 @@ Ctrl+Enter, F5 or Start plays. The ROM can also be chosen with Browse or
 dropped on the window. A click on the launcher acts even when another window
 has the focus.
 
-With no options the game plays as `portable-data/cabinet.ini` says, which is
+With no options the game plays as `alien-crush.ini` says, which is
 what the launcher edits: `game.rom`, `game.cabinet`, `game.bonus_stage`,
 `audio.music_voice_overlay`, `video.smoothing` and `input.nudge_multiplier`,
 beside the window, key, button, nudge and plunger fields described below. An
@@ -91,7 +91,7 @@ game goes on with all three balls.
 alien-crush.exe --bonus-stage 3 --rom "D:\path\to\Alien Crush.pce"
 ```
 
-`cabinet.ini` is in Devil's Crush's format, with Devil's Crush's keys wherever
+`alien-crush.ini` is in Devil's Crush's format, with Devil's Crush's keys wherever
 the two games share a setting, so its window, key, flipper, launch, nudge and
 plunger lines read the same in either game:
 
@@ -169,11 +169,15 @@ Point Syncthing at **only the published folder**. Before the first sync, add
 the following Ignore Patterns on **both computers**:
 
 ```text
+/alien-crush.ini*
+/alien-crush.hiscore*
+/backglass.bmp
+/cabinet-*.txt
 /portable-data
 /logs
 /captures
 /traces
-*.state
+*.state*
 *.acrec
 ```
 
@@ -183,8 +187,10 @@ on the cabinet, `#include syncthing-ignore.txt` can replace the patterns above.
 [Syncthing does not sync `.stignore` itself](https://docs.syncthing.net/users/ignoring.html),
 so set up the cabinet's exclusions separately. `CABINET-SETUP.txt` in the package
 contains these instructions. Monitor layouts, input/plunger bindings, custom
-backglass artwork and quick states under `portable-data` stay machine-local;
-copy any desired bindings or artwork to the cabinet manually once.
+backglass artwork, high scores and quick states sit beside the executable and
+stay machine-local; copy any desired bindings or artwork to the cabinet manually
+once. A cabinet set up with the earlier patterns needs the new ones before it
+runs this build, or its settings will sync back to the workstation.
 
 ## Play
 
@@ -223,7 +229,7 @@ Pause and the cartridge's tilt gates remain active. Z is no longer a flipper key
 ### Keys
 
 The keys above are the defaults, and each is rebindable, as in Devil's Crush:
-on the launcher's Keyboard tab, or under `input.` in `portable-data/cabinet.ini`.
+on the launcher's Keyboard tab, or under `input.` in `alien-crush.ini`.
 Each of the eight PC Engine pad inputs (`input.one`, `two`, `select`, `run`,
 `up`, `right`, `down`, `left`) takes up to four keys by their SDL names,
 comma-separated; an empty value leaves the input unbound. A name SDL does not
@@ -279,7 +285,7 @@ to. Desktop mode runs the cartridge alone. Cabinet recordings made earlier
 replay as they were made; earlier cabinet quick states don't load. See
 [docs/CABINET_ACTORS.md](docs/CABINET_ACTORS.md).
 
-Desktop quick states live beside the executable in `portable-data/alien-crush.desktop-controls.state`.
+Desktop quick states live beside the executable in `alien-crush.desktop-controls.state`.
 Live cabinet mode uses `alien-crush.cabinet-controls.state` and a distinct runtime identity.
 Recordings select their recorded runtime automatically: existing reference recordings
 retain original loading timing and controls; new cabinet recordings use continuous
@@ -287,6 +293,20 @@ handoffs and separate controls. The previous `.reference.state`/`.cabinet.state`
 files are preserved, but cannot be loaded into the changed-controls runtime.
 Quick states cannot be exchanged between these execution modes.
 Use `--data-dir` to select another location. Missing ROM paths default beside the executable.
+
+Everything the game keeps between runs sits beside the executable:
+
+| File | What it holds |
+| --- | --- |
+| `alien-crush.ini` | The launcher's settings, window placement, key and button bindings, and plunger calibration |
+| `alien-crush.hiscore` | The high-score table |
+| `alien-crush.desktop-controls.state`, `alien-crush.cabinet-controls.state` | The F5/F9 quick states |
+| `backglass.bmp` | Your own backglass artwork, if you add any |
+
+Earlier builds kept these in a `portable-data` subfolder, with the settings
+named `cabinet.ini`. The game and the launcher move them out on first start,
+and remove the folder if nothing else is left in it. A folder chosen with
+`--data-dir` is used as it is, so rename a `cabinet.ini` there by hand.
 
 Record with `--record session.acrec`, replay with `--replay session.acrec`.
 Recordings embed the initial state and every sampled controller input with an integrity hash.
@@ -311,7 +331,7 @@ Monitor changes center the window on the destination, fit its size to the usable
 area, and retain its rotation and fullscreen setting. F10 does nothing when only
 one monitor is connected. Keyboard repeats do not repeat setup actions.
 Placement, monitor names and rotation save on normal exit to
-`portable-data/cabinet.ini` (or your `--data-dir`). This single file also holds
+`alien-crush.ini` (or your `--data-dir`). This single file also holds
 the keys, button mappings and plunger calibration, in the format described under
 [Launcher](#launcher). A file in the older format, and the older separate settings
 files, are read and kept as backups; normal exit rewrites the configuration in the
@@ -360,7 +380,7 @@ To view the five high scores during ordinary play, press **Enter** (Run) to
 pause, then **Backspace** (Select). The score window shows all five ranks while
 the playfield shows the original score-table screen. Press Backspace or Enter
 to leave that screen, then Enter to resume play. The five ranked scores and
-initials automatically save to `portable-data/alien-crush.hiscore` and restore
+initials automatically save to `alien-crush.hiscore` beside the executable and restore
 at the next launch, in both desktop and cabinet modes. Changes save after about
 one second of stability, with a final flush on normal exit. No manual save or
 configuration is needed. `--data-dir` also selects the high-score location.
@@ -376,7 +396,7 @@ game or bonus practice, the playfield stays black and the DMD keeps showing the
 rankings, so neither flashes table art or gameplay counters.
 A qualifying replay checks a 1,505,700-point score, name confirmation and
 retention when starting another game in the same session.
-Put your artwork at `portable-data/backglass.bmp` (or in
+Put your artwork at `backglass.bmp` beside the executable (or in
 your `--data-dir`) to display it on the backglass. Use an uncompressed 24-bit or
 32-bit Windows BMP, at most 4096x4096 pixels and 64 MiB; pixels are opaque.
 Artwork loads at startup, fits without stretching or cropping, and honors saved
@@ -405,7 +425,7 @@ Escape closes the probe. `--frames N` limits it to N samples at 100ms intervals.
 
 A cabinet whose buttons arrive as key presses needs none of this: bind the keys
 on the launcher's Keyboard tab. For a board that reports its buttons as a
-joystick instead, set them under `input.buttons.` in `portable-data/cabinet.ini`
+joystick instead, set them under `input.buttons.` in `alien-crush.ini`
 (they are not on a launcher tab) using the observed controller name and button
 numbers:
 
@@ -448,7 +468,7 @@ same nudge as Space / button II. Both directions on the accelerometer's X/Y axes
 the in-game impulse. The plunger's Z axis is ignored. No Steam mapping or separate
 configuration file is needed.
 
-Optional overrides go in the existing `portable-data/cabinet.ini`:
+Optional overrides go in the existing `alien-crush.ini`:
 
 ```text
 input.nudge.enabled=1
@@ -487,13 +507,13 @@ Recordings retain their multiplier automatically; an explicitly conflicting repl
 flag is rejected. Quick states require the same multiplier used when saving.
 
 Plunger setup accepts the same settings as Devil's Crush. Copy the working
-`input.plunger.*` lines from that game's `portable-data/cabinet.ini` into Alien
-Crush's existing `portable-data/cabinet.ini`, alongside its window and button
+`input.plunger.*` lines from that game's `devils-crush.ini` into Alien
+Crush's existing `alien-crush.ini`, alongside its window and button
 settings. No separate plunger configuration file is required.
 Alternatively, read the existing file directly without copying or modifying it:
 
 ```powershell
-.\alien-crush.exe --cabinet --plunger-config 'D:\Path\To\DevilsCrush\portable-data\cabinet.ini'
+.\alien-crush.exe --cabinet --plunger-config 'D:\Path\To\DevilsCrush\devils-crush.ini'
 ```
 
 The same PinOne defaults apply, so an axis-only configuration is sufficient
@@ -519,13 +539,13 @@ a supplied name matches a case-insensitive substring. Axis -1 disables input.
 To measure a different board, run `alien-crush.exe --cabinet-plunger-probe` in a
 terminal. As in Devil's Crush, leave the rod at rest for two seconds, then fully
 pull and release it during the twelve-second measurement. The probe prints the
-settings to paste into `cabinet.ini`; it does not change existing calibration.
+settings to paste into `alien-crush.ini`; it does not change existing calibration.
 `--input-probe` remains available for the live raw button/axis display.
 
 Restart after editing. Explicit `--plunger-config` takes precedence, followed by
-the data directory's `cabinet.ini`. The older `cabinet-plunger.txt` format below
-is read only while `cabinet.ini` is still in the older format and has no plunger
-settings, and the next save moves it into `cabinet.ini`:
+the data directory's `alien-crush.ini`. The older `cabinet-plunger.txt` format below
+is read only while `alien-crush.ini` is still in the older format and has no plunger
+settings, and the next save moves it into `alien-crush.ini`:
 
 ```text
 ACPLUNGER1

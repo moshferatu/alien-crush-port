@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// alien-crush-launcher: `portable-data/cabinet.ini` with a face on it, and a
+// alien-crush-launcher: `alien-crush.ini` with a face on it, and a
 // Play button.
 //
 // Everything here is a setting the file already has (`src/host/cabinet_config.hpp`)
@@ -14,8 +14,10 @@
 //
 // ## The file
 //
-// `portable-data/cabinet.ini` beside the launcher, which is where the game
-// looks when it is started from beside it, in Devil's Crush's format. Read
+// `alien-crush.ini` beside the launcher, which is where the game
+// looks when it is started from beside it, in Devil's Crush's format.
+// Settings and saves an earlier build kept in `portable-data`, with the
+// settings as `cabinet.ini`, are moved out first (`migrate_legacy_data_folder`). Read
 // and written with the game's own `load_cabinet_config` and
 // `save_cabinet_config`, so what is shown is what the game would play and the
 // launcher cannot write a file the game would refuse; fields neither knows
@@ -62,6 +64,7 @@
 // time the launcher builds without an icon, and its heading is text.
 
 #include "cabinet_config.hpp"
+#include "alien_crush/core/data_files.hpp"
 #include "alien_crush/core/rom_image.hpp"
 
 #include <SDL3/SDL.h>
@@ -118,8 +121,7 @@ using alien_crush::host::WindowPlacement;
 constexpr const char* kTitle = "Alien Crush";
 constexpr const wchar_t* kGameExe = L"alien-crush.exe";
 constexpr const char* kRomDefault = "Alien Crush.pce";
-const std::filesystem::path kDataRelative = "portable-data";
-const std::filesystem::path kConfigRelative = kDataRelative / "cabinet.ini";
+const std::filesystem::path kConfigRelative = alien_crush::core::kConfigFileName;
 constexpr std::size_t kKeysMax = 4;
 
 // The cabinet's windows, in the order the game has them, and the size the
@@ -959,7 +961,7 @@ void load()
     ui.def = Config{};
     ui.cfg = Config{};
     ui.status.clear();
-    const auto loaded = alien_crush::host::load_cabinet_config((ui.base / kDataRelative).lexically_normal());
+    const auto loaded = alien_crush::host::load_cabinet_config(ui.base);
     if (loaded.loaded()) {
         ui.cfg = loaded.config;
     } else if (loaded.status != alien_crush::host::ConfigLoadStatus::not_found) {
@@ -1173,7 +1175,7 @@ void capture_key(SDL_Scancode sc)
     ui.capturing = false;
     const char* name = SDL_GetScancodeName(sc);
     if (name == nullptr || *name == '\0' || SDL_GetScancodeFromName(name) != sc) {
-        say("That key has no name cabinet.ini can hold.");
+        say("That key has no name alien-crush.ini can hold.");
         return;
     }
     auto& list = keys_of(ui.cfg, r->id);
@@ -2245,7 +2247,15 @@ int main(int argc, char* argv[])
     }
     find_base();
     build_rows();
+    // Before the file is read, or Save would write a fresh one over the
+    // settings an earlier build left in its subfolder.
+    const auto migration = alien_crush::core::migrate_legacy_data_folder(ui.base);
     load();
+    if (!migration.problems.empty()) {
+        say("Could not move %s", migration.problems.front().c_str());
+    } else if (!migration.moved.empty()) {
+        say("Moved the settings and saves out of portable-data, next to the launcher.");
+    }
     ui.focus = first_row();
 
     ui.ttf[0] = load_font(false);
