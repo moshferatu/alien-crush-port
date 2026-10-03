@@ -37,13 +37,13 @@ int main() {
             for(unsigned i=0;i<maximum.size();++i) {
                 const auto color=0xff100000+static_cast<unsigned>(maximum[i]-'0');
                 require(image.pixels[20*256+22+i*20]==color,"Maximum score retains every digit at fixed scale");
-                require(image.pixels[74*256+35+i*10]==color,"Maximum high score fits reserved field");
+                require(image.pixels[78*256+35+i*10]==color,"Maximum high score fits reserved field");
             }
-            require(image.pixels[74*256+208]==0xff100001,"Extra reserves cannot produce a negative ball number");
+            require(image.pixels[78*256+208]==0xff100001,"Extra reserves cannot produce a negative ball number");
             for(unsigned remaining=0;remaining<=3;++remaining) {
                 state.ball_counter=static_cast<std::uint8_t>(remaining);
                 const auto ball=panel.compose(state);
-                require(ball.pixels[74*256+208]==0xff100000+(remaining?4-remaining:3),"DMD counts balls up and retains ball three after final drain");
+                require(ball.pixels[78*256+208]==0xff100000+(remaining?4-remaining:3),"DMD counts balls up and retains ball three after final drain");
             }
             {
                 // Like a cabinet, an extra ball is played under the same number.
@@ -52,7 +52,7 @@ int main() {
                 const auto after=[&](unsigned left,std::uint32_t score) {
                     game.ball_counter=static_cast<std::uint8_t>(left);game.score_points=score;
                     const auto number=ball.update(game);
-                    require(!number || game.bonus_room || panel.compose(game,number).pixels[74*256+208]==0xff100000+number,"DMD shows the tracked ball");
+                    require(!number || game.bonus_room || panel.compose(game,number).pixels[78*256+208]==0xff100000+number,"DMD shows the tracked ball");
                     return number;
                 };
                 require(after(3,0)==1 && after(3,500)==1 && after(2,900)==2,"Balls count up as they drain");
@@ -71,7 +71,7 @@ int main() {
             state.title_menu=true;state.high_scores[0]=4294967295U;
             const auto menu=panel.compose(state);
             for(unsigned i=0;i<maximum.size();++i)
-                require(menu.pixels[20*256+22+i*20]==0xff100000+static_cast<unsigned>(maximum[i]-'0'),"Menu high score fits at fixed scale");
+                require(menu.pixels[31*256+22+i*20]==0xff100000+static_cast<unsigned>(maximum[i]-'0'),"Menu high score fits at fixed scale");
             state.score_points=123456;state.ball_counter=255;
             require(panel.compose(state).pixels==menu.pixels,"Menu hides stale score and ball values");
             require(menu.pixels!=zero.pixels,"Menu presentation differs from gameplay");
@@ -85,7 +85,7 @@ int main() {
             for(unsigned room=1;room<=4;++room) {
                 state.bonus_room=static_cast<std::uint8_t>(room);
                 const auto bonus=panel.compose(state);
-                require(bonus.pixels[74*256+208]==0xff100000+room,"Bonus room number uses original digit slot");
+                require(bonus.pixels[78*256+208]==0xff100000+room,"Bonus room number uses original digit slot");
                 state.ball_counter=static_cast<std::uint8_t>(50+room);
                 require(panel.compose(state).pixels==bonus.pixels,"Bonus room replaces ball counter");
             }
@@ -109,8 +109,8 @@ int main() {
             for(unsigned digit=0;digit<10;++digit) {
                 state.match_digit=static_cast<std::uint8_t>(digit);
                 const auto match=panel.compose(state);
-                require(match.pixels[74*256+70]==0xff100000+digit &&
-                    match.pixels[74*256+80]==0xff100000 && match.pixels[74*256+90]==0xff100000,
+                require(match.pixels[78*256+70]==0xff100000+digit &&
+                    match.pixels[78*256+80]==0xff100000 && match.pixels[78*256+90]==0xff100000,
                     "DMD shows every match digit followed by two zeroes, including 000");
                 require(std::equal(match.pixels.begin(),match.pixels.begin()+50*256,game_over.pixels.begin()),
                     "Match preserves final score and heading");

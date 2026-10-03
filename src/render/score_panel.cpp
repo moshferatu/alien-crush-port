@@ -66,12 +66,15 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
             x+=10*scale;
         }
     };
+    // The top score's initials, centred between its heading and the score.
+    auto initials=[&](int center,int y) {label(result,{state.high_score_initials[0].data(),3},center-8,y);};
     if(state.title_transition) return result;
     if(state.title_menu || (state.demo_play && !state.high_score_menu)) {
-        label(result,"HIGH SCORE",98,6);
-        number(state.high_scores[0],128,18,2);
-        if(state.demo_play && !state.title_menu) label(result,"DEMO",116,56);
-        label(result,"PUSH RUN BUTTON",83,72);
+        label(result,"HIGH SCORE",98,3);
+        initials(128,18);
+        number(state.high_scores[0],128,29,2);
+        if(state.demo_play && !state.title_menu) label(result,"DEMO",116,65);
+        label(result,"PUSH RUN BUTTON",83,78);
         return result;
     }
     if(state.high_score_menu) {
@@ -87,12 +90,12 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
     label(result,heading,state.game_over?101:state.bonus_cleared?95:state.bonus_round_over?98:113,6);
     number(state.score_points,128,18,2);
     if(state.match_visible) {
-        label(result,"MATCH",74,61);number(state.match_digit*100u,88,73,1,3);
+        label(result,"MATCH",74,65);number(state.match_digit*100u,88,77,1,3);
     } else {
-        label(result,"HIGH",77,61);number(state.high_scores[0],88,73,1);
+        label(result,"HIGH",77,52);initials(88,65);number(state.high_scores[0],88,77,1);
     }
-    label(result,state.bonus_room?"BONUS":"BALL",state.bonus_room?202:205,61);
-    number(state.bonus_room?state.bonus_room:ball?ball:BallNumber{}.update(state),216,73,1);
+    label(result,state.bonus_room?"BONUS":"BALL",state.bonus_room?202:205,65);
+    number(state.bonus_room?state.bonus_room:ball?ball:BallNumber{}.update(state),216,77,1);
     return result;
 }
 const Image& PanelHold::update(const ScorePanel& panel,const diagnostics::AlienState& state,BallNumber& ball) {
