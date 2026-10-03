@@ -23,13 +23,13 @@ constexpr std::array<std::array<unsigned,7>,27> labels{{
     {17,17,17,21,21,21,10},{17,17,10,4,10,17,17},
     {17,17,10,4,4,4,4},{31,1,2,4,8,16,31},
     {0,0,0,0,0,6,6}}};
-void label(Image& image,std::string_view text,int x,int y) {
+void label(Image& image,std::string_view text,int x,int y,std::uint32_t color=0xffddd4e8) {
     for(const char c:text) {
         if(c==' ' || c=='\0') {x+=6;continue;}
         const auto& glyph=labels.at(letters.find(c));
         for(int row=0;row<7;++row) for(int col=0;col<5;++col)
             if(glyph[static_cast<std::size_t>(row)]&(1u<<(4-col)))
-                image.pixels[static_cast<std::size_t>((y+row)*image.width+x+col)]=0xffddd4e8;
+                image.pixels[static_cast<std::size_t>((y+row)*image.width+x+col)]=color;
         x+=6;
     }
 }
@@ -66,8 +66,9 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
             x+=10*scale;
         }
     };
-    // The top score's initials, centred between its heading and the score.
-    auto initials=[&](int center,int y) {label(result,{state.high_score_initials[0].data(),3},center-8,y);};
+    // Initials in the logo's orange. The top score's sit centred between its heading and the score.
+    constexpr std::uint32_t orange=0xfffc6c00;
+    auto initials=[&](int center,int y) {label(result,{state.high_score_initials[0].data(),3},center-8,y,orange);};
     if(state.title_transition) return result;
     if(state.title_menu || (state.demo_play && !state.high_score_menu)) {
         label(result,"HIGH SCORE",98,3);
@@ -81,7 +82,7 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
         label(result,"HIGH SCORES",95,2);
         for(unsigned rank=0;rank<state.high_scores.size();++rank) {
             number(rank+1,38,16+static_cast<int>(rank)*16,1);
-            label(result,{state.high_score_initials[rank].data(),3},64,20+static_cast<int>(rank)*16);
+            label(result,{state.high_score_initials[rank].data(),3},64,20+static_cast<int>(rank)*16,orange);
             number(state.high_scores[rank],160,16+static_cast<int>(rank)*16,1);
         }
         return result;
