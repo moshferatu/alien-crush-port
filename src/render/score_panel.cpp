@@ -66,7 +66,7 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
             x+=10*scale;
         }
     };
-    // Initials in the logo's orange. The top score's sit centred between its heading and the score.
+    // Initials in the logo's orange. On the title and demo the top score's sit centred between its heading and the score.
     constexpr std::uint32_t orange=0xfffc6c00;
     auto initials=[&](int center,int y) {label(result,{state.high_score_initials[0].data(),3},center-8,y,orange);};
     if(state.title_transition) return result;
@@ -91,12 +91,12 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
     label(result,heading,state.game_over?101:state.bonus_cleared?95:state.bonus_round_over?98:113,6);
     number(state.score_points,128,18,2);
     if(state.match_visible) {
-        label(result,"MATCH",74,65);number(state.match_digit*100u,88,77,1,3);
+        label(result,"MATCH",74,61);number(state.match_digit*100u,88,73,1,3);
     } else {
-        label(result,"HIGH",77,52);initials(88,65);number(state.high_scores[0],88,77,1);
+        label(result,"HIGH",77,61);number(state.high_scores[0],88,73,1);
     }
-    label(result,state.bonus_room?"BONUS":"BALL",state.bonus_room?202:205,65);
-    number(state.bonus_room?state.bonus_room:ball?ball:BallNumber{}.update(state),216,77,1);
+    label(result,state.bonus_room?"BONUS":"BALL",state.bonus_room?202:205,61);
+    number(state.bonus_room?state.bonus_room:ball?ball:BallNumber{}.update(state),216,73,1);
     return result;
 }
 const Image& PanelHold::update(const ScorePanel& panel,const diagnostics::AlienState& state,BallNumber& ball) {
