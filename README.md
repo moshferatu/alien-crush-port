@@ -17,7 +17,8 @@ renderer. If VSync is unavailable, timer pacing is selected automatically.
 On high-refresh displays, cabinet mode smooths moving sprites throughout the
 main table and bonus stages, including flippers, aliens, bumpers, guards and the
 ball. Sprite positions interpolate separately; pose and palette changes blend
-at those positions. The title background scrolls at fractional positions, and
+at those positions. Flippers swing between their poses instead of blending, on
+the table and in the bonus stages. The title background scrolls at fractional positions, and
 the backglass logo's color animation also blends between ticks. Swallowing
 mouths still cover the ball. Physics, audio, animation scripts and recordings
 retain the original 59.826 Hz rate. Smoothing adds up to one game tick of visual

@@ -11,6 +11,9 @@ struct AnimationLayer {
     // Sprite layout relative to the actor. Pose changes are not movement.
     MotionPosition pose_offset;
     std::uint64_t actor_group{};
+    // A flipper: the game draws its swing as a few poses, so a pose change is
+    // drawn as its artwork turning about its pivot rather than a crossfade.
+    bool swings{};
 };
 struct AnimationScene {
     Image background;

@@ -64,6 +64,27 @@ pose edges without drawing moving sprites at two separated old/new positions.
 Background palette changes and background-drawn mouths blend too. Pixel art
 poses are blended, not converted into newly drawn in-between artwork.
 
+Flippers are the exception, on the table (both halves) and in the bonus rooms.
+The game draws a flip as four poses, one per tick, so a crossfade only blurs
+each step. Instead, between ticks the current pose is drawn turned back toward
+the previous pose's angle about the flipper's pivot, through
+`degrees * (1 - fraction)`, so the flip is a continuous swing and every tick
+still shows the game's own pose exactly. `flipper_swing()` measures each step
+from the pixels of actor types 2 and 3: the turn is the change in the long axis
+of the flipper's drawn pixels, and the pivot is the one point that turn leaves
+in place. The three steps measure about 22, 24 and 24 degrees, with the pivot
+inside the round end. A step is accepted only when the flipper stayed put, the
+turn is between one and sixty degrees, the pivot lies on the flipper's own
+pixels and the previous pose, turned, lands at least 80% on the current one;
+otherwise the pose is shown as drawn.
+
+At 240 Hz that is four angles per tick, each a sharp flipper about six degrees
+from the last, so each picture also draws a fading trail of the angles swept
+since the previous picture. The trail reaches back into the previous tick only
+when the flipper was already turning the same way. A picture at the tick itself
+with no picture before it has no trail and is pixel-exact. The turn is applied
+in console pixels before scaling. Collisions still use only the game's poses.
+
 The title's 96-pixel repeating background uses wrapped scroll deltas and padded
 textures translated on the GPU. It does not dissolve between displaced patterns.
 At least four target pixels per source pixel preserve fractional movement before
@@ -81,7 +102,10 @@ beyond known game state.
 
 `motion_smoothing` checks independent fractional actor motion, pose color mixing,
 transparent edges, foreground occlusion, scene changes/removal/reset, title-scroll
-wrap and 120/144/165/240 Hz fractions. It reconstructs 571 sampled real-ROM table
+wrap and 120/144/165/240 Hz fractions. It checks a flipper's measured turn and
+pivot, its halfway angle, trail and exact pose on its own tick, and that the
+table's flippers (120 swings) and each bonus room's (30) swing on the real-ROM
+routes. It reconstructs 571 sampled real-ROM table
 backdrops pixel-for-pixel across a seam crossing, checks all four bonus rooms and
 title frames against their original viewport, and verifies rendering leaves RAM
 unchanged. GPU screenshots are generated in `smoothing-previews`.

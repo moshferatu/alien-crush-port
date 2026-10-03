@@ -3,6 +3,8 @@
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/core/recording.hpp"
 #include "alien_crush/render/viewport_actors.hpp"
+#include "alien_crush/render/flipper_swing.hpp"
+#include <set>
 #include <map>
 #include <iostream>
 #include <memory>
@@ -25,6 +27,25 @@ void bitmap(const std::filesystem::path& path,const render::Image& image) {
     require(surface!=nullptr,"Create screenshot surface");
     const bool saved=SDL_SaveBMP(surface,path.string().c_str());SDL_DestroySurface(surface);
     require(saved,"Save screenshot");
+}
+// How many flippers changed pose by a measured turn between two scenes.
+unsigned swings(const render::AnimationScene& before,const render::AnimationScene& now) {
+    std::set<std::uint64_t> groups;
+    for(const auto& layer:now.layers) if(layer.swings) groups.insert(layer.actor_group);
+    unsigned result=0;
+    for(const auto group:groups) if(render::flipper_swing(before.layers,now.layers,group)) ++result;
+    return result;
+}
+// A round-ended bar from a pivot at (68.5, 220.5), as one flipper piece.
+render::AnimationLayer bar(double angle) {
+    render::AnimationLayer layer{500,{60,200},{40,40,std::vector<std::uint32_t>(1600)},false,{},500,true};
+    const double px=8.5,py=20.5,ex=px+26*std::cos(angle),ey=py+26*std::sin(angle);
+    for(int y=0;y<40;++y) for(int x=0;x<40;++x) {
+        const double dx=x+.5-px,dy=y+.5-py;
+        const double along=std::clamp((dx*(ex-px)+dy*(ey-py))/(26*26),0.0,1.0);
+        if(std::hypot(dx-along*(ex-px),dy-along*(ey-py))<=2.5 || std::hypot(dx,dy)<=4) layer.image.pixels[y*40+x]=0xffffffff;
+    }
+    return layer;
 }
 void renderer_checks() {
     render::MotionSmoothing motion;
@@ -128,6 +149,39 @@ void renderer_checks() {
     require(display.capture().pixels==smooth.pixels,"Toggling smoothing preserves stationary actor alignment");
     scene.layers.clear();
 
+    // A flipper's pose change is its current pose turning about its pivot,
+    // not a crossfade: halfway through, it stands at the angle halfway
+    // between, where neither pose draws anything, over a fading trail.
+    scene.key=82;scene.layers={bar(.3)};
+    animated(40,1);
+    const auto raised=scene;
+    scene.layers={bar(-.1)};
+    const auto turn=render::flipper_swing(raised.layers,scene.layers,500);
+    require(turn && std::abs(turn->degrees-.4*180/3.14159265)<2 &&
+        std::abs(turn->pivot_x-68.5)<2 && std::abs(turn->pivot_y-220.5)<2,"A flipper's turn and pivot are measured from its pixels");
+    scene.layers[0].position.x=61;
+    require(!render::flipper_swing(raised.layers,scene.layers,500),"A flipper that moved is not swung");
+    scene.layers[0].position.x=60;scene.layers[0].swings=false;
+    require(!render::flipper_swing(raised.layers,scene.layers,500),"Only flippers swing");
+    scene.layers[0].swings=true;
+    animated(41,.5);
+    const auto swung=display.capture();
+    const auto at=[&](double angle,double radius) {
+        const int x=static_cast<int>(68.5+radius*std::cos(angle)),y=static_cast<int>(220.5+radius*std::sin(angle));
+        return swung.pixels[static_cast<std::size_t>(y*4+2)*1024+x*4+2];
+    };
+    require(at(.1,22)==0xffffffff,"A flipper halfway through a pose change stands halfway between the poses");
+    require((at(.3,24)&255)>0x56 && (at(.3,24)&255)<255,"A swinging flipper leaves a fading trail from its previous picture");
+    require(std::abs(int(at(-.1,24)&255)-0x56)<=1,"A swinging flipper is not drawn ahead of its turn");
+    display.repeat(1);
+    const auto landed=display.capture();const auto lowered=flatten(scene);
+    for(int y=0;y<456;++y) for(int x=0;x<256;++x) if(lowered.pixels[y*256+x]==0xffffffff)
+        require(landed.pixels[static_cast<std::size_t>(y*4+2)*1024+x*4+2]==0xffffffff,"A flipper's pose is exact on its own tick");
+    animated(42,1);animated(43,.5);
+    require(display.capture().pixels==[&]{display.show({44,256,456,lowered.pixels,{}},256,456,true);return display.capture().pixels;}(),
+        "A flipper holding its pose is drawn as it is");
+    scene.layers.clear();
+
     // Scrolling background uses texture coordinates, rather than dissolving
     // two displaced patterns. Crossing the repeat boundary is one pixel.
     scene.key=79;scene.scroll_period=96;scene.scroll={95,0};
@@ -154,7 +208,8 @@ void viewport_checks(const std::filesystem::path& rom,const std::filesystem::pat
         unsigned layered=0;std::size_t actors=0;
         std::array<std::byte,8192> previous_ram{};
         std::map<std::uint64_t,unsigned> previous_slots;
-        unsigned identified_samples=0,reordered_samples=0,unidentified_samples=0;
+        unsigned identified_samples=0,reordered_samples=0,unidentified_samples=0,swung=0;
+        render::AnimationScene last_scene;
         for(unsigned n=0;n<600;++n) {
             auto input=recording::canonical_input(n);
             if(n>=100 && n<140) {
@@ -182,6 +237,8 @@ void viewport_checks(const std::filesystem::path& rom,const std::filesystem::pat
                     if(old!=previous_slots.end() && old->second!=slots[i]) ++reordered_samples;
                 }
                 previous_slots=std::move(current_slots);
+                swung+=swings(last_scene,scene);
+                last_scene=scene;
             }
             require(flatten(scene).pixels==original.pixels,"Bonus/title split preserves every source pixel");
             if(room==0 && (n==98 || n==99)) {
@@ -207,6 +264,8 @@ void viewport_checks(const std::filesystem::path& rom,const std::filesystem::pat
         require(identified_samples>500 && reordered_samples>0,"Bonus identity survives real sprite-slot changes during flipper use");
         std::cout<<"Bonus "<<room+1<<": "<<identified_samples<<" identified pieces, "<<unidentified_samples<<" conservative fallbacks, "<<reordered_samples<<" stable identities across slot changes\n";
         std::cout<<"Bonus "<<room+1<<": "<<layered<<" layered frames, "<<actors<<" sprite samples\n";
+        require(swung>20,"Bonus room flippers swing between their poses");
+        std::cout<<"Bonus "<<room+1<<": "<<swung<<" flipper swings\n";
     }
 }
 }
@@ -227,7 +286,8 @@ int main(int argc,char** argv) {
         host::Presentation alignment_display("Cabinet alignment checks",1024,1824,true);
         unsigned checked=0,crossings=0,last_half=2;
         std::array<std::optional<render::MotionPosition>,128> overlay_positions;
-        unsigned overlay_samples=0;
+        unsigned overlay_samples=0,swung=0;
+        render::AnimationScene last_scene;
         render::MotionSmoothing motion;
         for(unsigned n=0;n<1000;++n) {
             (void)runtime->advance(recording::canonical_input(n));
@@ -253,6 +313,8 @@ int main(int argc,char** argv) {
                         require(alignment_display.capture().pixels==smoothed.pixels,
                             "Real table GPU endpoints match smoothing off during launcher and flipper operation");
                     }
+                    swung+=swings(last_scene,*animation);
+                    last_scene=*animation;
                     auto rebuilt=animation->background;
                     for(const auto& layer:animation->layers) {
                         require(layer.position.x==std::floor(layer.position.x) && layer.position.y==std::floor(layer.position.y),
@@ -314,7 +376,9 @@ int main(int argc,char** argv) {
         }
         require(checked>100 && crossings>0,"ROM route covers layered table play and seam crossings");
         require(overlay_samples>100,"ROM route verifies bonus overlays while operating flippers");
-        std::cout<<checked<<" exact layered frames and "<<crossings<<" seam crossings verified\n";
+        // Both halves' flippers answer the controls, so each press swings two.
+        require(swung>100,"Table flippers swing between their poses in both halves");
+        std::cout<<checked<<" exact layered frames, "<<crossings<<" seam crossings and "<<swung<<" flipper swings verified\n";
         return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

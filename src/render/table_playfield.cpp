@@ -663,7 +663,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
             std::array<unsigned,64> ordinal{};
             std::array<MotionPosition,64> anchors{};
             std::array<bool,64> actor_piece{};
-            std::array<bool,64> mouths{};
+            std::array<bool,64> mouths{},flippers{};
             for(unsigned slot=0;slot<64;++slot) identities[slot]=0x100000+half*64+slot;
             for(const auto& piece:pieces) {
                 std::copy(piece.words.begin(),piece.words.end(),attributes.begin()+piece.slot*4);
@@ -677,6 +677,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
                 anchors[piece.slot]={double(static_cast<std::int16_t>(word(0x15c0,0x1600)))-32,
                     double(static_cast<std::int16_t>(word(0x1680,0x16c0)))-64};
                 actor_piece[piece.slot]=true;
+                flippers[piece.slot]=type==2 || type==3;
                 mouths[piece.slot]=half==table && (type==11 || type==12 || type==13 || type==34) &&
                     (std::to_integer<unsigned>(projected[0x1540+piece.actor])&0x0c);
             }
@@ -691,7 +692,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
             auto split=split_animation(source,captures[half],decoded,1);
             for(auto& layer:split.layers) {
                 const auto slot=static_cast<unsigned>(layer.id);
-                layer.id=identities[slot];layer.foreground=mouths[slot];
+                layer.id=identities[slot];layer.foreground=mouths[slot];layer.swings=flippers[slot];
                 const int ox=static_cast<int>(layer.position.x),oy=static_cast<int>(layer.position.y);
                 if(actor_piece[slot]) {
                     layer.pose_offset={layer.position.x-anchors[slot].x,layer.position.y-anchors[slot].y};

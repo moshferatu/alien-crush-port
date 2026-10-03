@@ -28,6 +28,7 @@ inline unsigned identify_viewport_actors(AnimationScene& scene,const assets::Act
             const unsigned actor=piece->actor,type=std::to_integer<unsigned>(ram[0x1500+actor]);
             layer.id=(static_cast<std::uint64_t>(type)<<32)|(actor<<8)|ordinals[slot];
             layer.actor_group=layer.id&~std::uint64_t{255};
+            layer.swings=type==2 || type==3;
             const double x=static_cast<std::int16_t>(word(0x15c0+actor,0x1600+actor))-32;
             const double y=static_cast<std::int16_t>(word(0x1680+actor,0x16c0+actor))-64-static_cast<int>(word(0x16,0x17));
             layer.pose_offset={layer.position.x-x,layer.position.y-y};

@@ -21,7 +21,7 @@ add_library(ac_core STATIC src/core/rom_image.cpp src/core/save_state.cpp
     src/render/sharp_pixel_scaler.cpp src/input/plunger.cpp
     src/diagnostics/reference_snapshot.cpp src/diagnostics/display_trace.cpp src/render/pce_graphics.cpp
     src/assets/table_assets.cpp src/assets/actor_assets.cpp src/diagnostics/alien_state.cpp
-    src/render/table_playfield.cpp src/gameplay/launcher_contact.cpp src/gameplay/cabinet_actors.cpp src/gameplay/cabinet_actors_lower.cpp src/gameplay/cabinet_actors_upper.cpp src/runtime/reference_launcher.cpp src/render/score_panel.cpp src/render/title_logo.cpp)
+    src/render/table_playfield.cpp src/gameplay/launcher_contact.cpp src/gameplay/cabinet_actors.cpp src/gameplay/cabinet_actors_lower.cpp src/gameplay/cabinet_actors_upper.cpp src/runtime/reference_launcher.cpp src/render/score_panel.cpp src/render/title_logo.cpp src/render/flipper_swing.cpp)
 target_include_directories(ac_core PUBLIC include)
 target_link_libraries(ac_core PRIVATE bcrypt)
 ac_enable_strict_warnings(ac_core)
