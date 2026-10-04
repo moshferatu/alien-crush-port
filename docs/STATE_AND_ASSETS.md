@@ -214,6 +214,17 @@ GREATEST PLAYER", and 675 frames after the maximum the score is ranked first,
 with all three balls unplayed and RAM 78 bit 1 (game over) never set. Initials
 entry and the return to the title follow as after an ordinary game.
 
+The ending is the loop at 01:44CE, called from the game loop at 40A7 (so its
+frames sit under the return `40A9`). Each frame it runs the actors, and from
+slot 0 to 63 (`$94`) writes type 50, an explosion, over each actor in the
+ball's half: 16 frames before the first, 8 before each one after. It then
+sets RAM 9D bit 6, waits 60 frames, fades the palette out (451B, FE92),
+writes the congratulations text and waits 240 frames (4574), and jumps to the
+game-over ranking call at 4177. In cabinet play the stored half follows the
+same slot counter (`CabinetActors::update_ending`), the fade applies to both
+halves, and the playfield window shows the game's own picture from the
+congratulations screen on.
+
 The return exposed a presentation issue: a stitched image at frame 2214 used a
 partially faded upper palette alongside the fully lit inactive lower table.
 TablePlayfield now precomputes the black and partial E4A1 fade-in palettes using

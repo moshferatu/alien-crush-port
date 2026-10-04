@@ -56,6 +56,10 @@ public:
     std::optional<Next> update_active(std::span<std::byte> ram,unsigned x,std::uint64_t frame);
     // The inactive bank ($2200, exchanged by 01:46FD), once per game loop.
     void update_inactive(std::span<std::byte> ram,std::uint64_t frame);
+    // The maximum score's ending (01:44C8) turns the ball's half's actors into
+    // explosions one slot at a time. The stored half's follow the same slot
+    // counter, and run as in play, so the whole table blows up.
+    void update_ending(std::span<std::byte> ram,std::uint64_t frame);
     // The palette scheduler (00:F292, each vblank) for the stored half's 32
     // slots, which the ROM leaves for the ball's half. Only their state in
     // RAM changes; the colors are uploaded when their half is shown.
@@ -78,5 +82,6 @@ private:
     unsigned predicted_slot_{},predicted_type_{},predicted_pc_{};
     int predicted_a_{-1};
     unsigned inactive_table_{2};
+    unsigned ending_slot_{64};
 };
 }

@@ -169,7 +169,7 @@ CabinetActors::CabinetActors(std::span<const std::byte> rom,Scope scope,bool sto
     reset();
 }
 CabinetActors::~CabinetActors()=default;
-void CabinetActors::reset() noexcept {inactive_frame_.fill(~std::uint64_t{});inactive_table_=2;}
+void CabinetActors::reset() noexcept {inactive_frame_.fill(~std::uint64_t{});inactive_table_=2;ending_slot_=64;}
 bool CabinetActors::owned(std::uint8_t type,Scope scope) noexcept {return scope==Scope::aliens?alien(type):table(type);}
 std::uint16_t CabinetActors::entry(std::uint8_t type) const noexcept {
     // 01:45A8 returns into the routine through the tables at 04:BC8E / BCE8.
@@ -236,6 +236,22 @@ void CabinetActors::update_palettes(std::span<std::byte> ram) {
     if(scope_!=Scope::table || !stored_half_ || table>1 || !(std::to_integer<unsigned>(ram[0x68])&1)) return;
     Bank bank(*rom_,ram,false);
     for(unsigned x=(1-table)*32;x<(2-table)*32;++x) {bank.begin();palette_script(bank,x);bank.commit();}
+}
+void CabinetActors::update_ending(std::span<std::byte> ram,std::uint64_t frame) {
+    if(ram.size()!=8192) throw std::runtime_error("Invalid cabinet actor update");
+    if(scope_==Scope::table && stored_half_ && std::to_integer<unsigned>(ram[0x79])<=1) {
+        // $94 is the next slot 44F0 looks at: 16 frames for the first actor,
+        // 8 for each one after, and a frame for an empty slot. 4515 sets $9D
+        // bit 6 after the last. The stored slot goes in the frame the ROM
+        // reaches its own. After a restore, go on from where it is.
+        const unsigned slot=(std::to_integer<unsigned>(ram[0x9d])&0x40)?64:std::min(64u,std::to_integer<unsigned>(ram[0x94])+1);
+        if(ending_slot_>slot) ending_slot_=slot;
+        for(unsigned x=std::max(4u,ending_slot_);x<slot;++x) if(ram[0x200+x]!=std::byte{}) {
+            ram[0x200+x]=std::byte{50};ram[0x240+x]=std::byte{}; // 44FF: type and flags.
+        }
+        ending_slot_=slot;
+    }
+    update_inactive(ram,frame);
 }
 void CabinetActors::update_inactive(std::span<std::byte> ram,std::uint64_t frame) {
     if(ram.size()!=8192) throw std::runtime_error("Invalid cabinet actor update");

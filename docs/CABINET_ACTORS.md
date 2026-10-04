@@ -88,6 +88,12 @@ actors the stored-half pass has already updated that frame.
 
 ## Differences from the original
 
+- The maximum score's ending (01:44CE) blows up both halves: the stored
+  half's actors become explosions on the ROM's slot counter (`$94`), in the
+  frame the ROM reaches the same slot of the ball's half, and the fade that
+  follows darkens both. The cartridge leaves the stored half as it was.
+- The backdrop flash (00:F64B steps color 0 while `$8A` bit 7 is set) shows
+  across the whole table, in play and in the ending, which keeps it going.
 - Everything that follows from the stored half moving: the lower aliens,
   cocoons, mouths, risers, orbs and indicators are wherever their cycles have
   taken them when the ball returns. The first upstairs trip is where cabinet

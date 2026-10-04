@@ -9,8 +9,19 @@ Start near the maximum score (2026-10-04):
   It combines with `--bonus-stage`.
 - `score_start` plays it out on the original and the cabinet runtime: the
   score stops at 999,999,900, the game's own ending follows and the score is
-  ranked first. The cabinet's presentation of that ending (explosions,
-  congratulations screen) has not been looked at yet.
+  ranked first.
+- The cabinet's ending. The cartridge's ending loop (01:44CE) blows up only
+  the ball's half, fades only its palette, and reaches the ranking one return
+  deeper than a game over does, so the cabinet showed the other half
+  untouched, then a broken table for the congratulations screen and black for
+  the ranking. Now `CabinetActors::update_ending` turns the stored half's
+  actors into explosions on the ROM's own slot counter (`$94`) and runs them;
+  the fade at 451B darkens both halves; the backdrop flash (00:F64B, color 0
+  while `$8A` bit 7 is set, which the ending keeps set) is drawn in the stored
+  half too, in the ending and in play; and `AlienState` recognizes the
+  congratulations screen (`ending_screen`), the ranking and the reset to the
+  title from this caller, so the playfield window shows the game's own
+  picture for them, as it does for the ranking after a game over.
 
 Settings and saves beside the executable (2026-10-03):
 

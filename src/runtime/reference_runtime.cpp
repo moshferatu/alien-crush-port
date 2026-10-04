@@ -89,6 +89,8 @@ class Reference final : public ReferenceRuntime {
                 // loops at 00:FDD0 and 00:FEC7 that run the table between balls.
                 if(caller==0x409a || caller==0x4037 || caller==0xfdd2 || caller==0xfec9)
                     self->actors->update_inactive(ram,self->frame_number);
+                // The maximum score's ending loop, 01:44CE.
+                else if(caller==0x44d6) self->actors->update_ending(ram,self->frame_number);
                 return 0;
             }
             if(caller!=0x45c7 || x<4 || x>=64) return 0;

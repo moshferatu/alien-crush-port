@@ -48,6 +48,14 @@ AlienState observe_alien_state(std::span<const std::byte> ram) {
         std::byte{2},std::byte{1},std::byte{0x7d},std::byte{0x41}};
     result.high_score_menu|=b(0x7a)==2 && b(0x7c)==0 && !result.demo_play &&
         std::equal(game_scores_stack.begin(),game_scores_stack.end(),ram.begin()+0x1f9);
+    // The maximum score's ending (01:44C8, called from the game loop at
+    // 40A7) jumps to the same call, so its frame sits one return lower.
+    const bool ending=b(0x1fe)==0xa9 && b(0x1ff)==0x40 && !result.demo_play;
+    result.high_score_menu|=b(0x7a)==2 && b(0x7c)==0 && ending &&
+        std::equal(game_scores_stack.begin(),game_scores_stack.end(),ram.begin()+0x1f7);
+    // 01:451E..4574 clears the screen, writes CONGRATULATIONS and waits.
+    const unsigned ending_return=b(0x1fc)|(b(0x1fd)<<8);
+    result.ending_screen=ending && (b(0x9d)&0xc0)==0xc0 && ending_return>=0x4520 && ending_return<=0x4576;
     // Attract completion calls the same ranking screen at 01:405A (405C).
     // The demo selector stays set until the subsequent return to title.
     constexpr std::array<std::byte,7> demo_scores_stack{std::byte{0xfd},std::byte{0xeb},std::byte{3},
@@ -60,6 +68,8 @@ AlienState observe_alien_state(std::span<const std::byte> ram) {
     const bool ending_caller=(b(0x1fe)==0x5c && b(0x1ff)==0x40 && result.demo_play) ||
         (b(0x1fe)==0x7d && b(0x1ff)==0x41 && !result.demo_play);
     result.title_transition=b(0x7a)==2 && ending_caller && b(0x1fc)==0x0c && b(0x1fd)==0xec;
+    result.title_transition|=b(0x7a)==2 && ending && b(0x1fc)==0x7d && b(0x1fd)==0x41 &&
+        b(0x1fa)==0x0c && b(0x1fb)==0xec;
     // Practice ends at 01:448D (return 448F), inside 4006's call (4008), so
     // its frames sit one return lower; it then jumps to E0DE as well.
     const bool practice_caller=b(0x1fc)==0x8f && b(0x1fd)==0x44 && b(0x1fe)==0x08 && b(0x1ff)==0x40;
@@ -70,7 +80,8 @@ AlienState observe_alien_state(std::span<const std::byte> ram) {
     // and identify the gap even after the demo and table selectors are zero.
     result.title_transition|=(b(0x1fe)==0xe3 && b(0x1ff)==0xe0) ||
         (b(0x1fe)==0x21 && b(0x1ff)==0xe1) ||
-        (b(0x1fc)==0xe3 && b(0x1fd)==0xe0 && b(0x1fe)==0x08 && b(0x1ff)==0x40);
+        (b(0x1fc)==0xe3 && b(0x1fd)==0xe0 && b(0x1fe)==0x08 && b(0x1ff)==0x40) ||
+        (b(0x1fc)==0xe3 && b(0x1fd)==0xe0 && ending);
     // FDE5 uses 83+2 to load room actors, then restores shared table code 2.
     if(result.table_code==2 && b(0x83)<4) result.bonus_room=static_cast<std::uint8_t>(b(0x83)+1);
     result.bonus_round_over=result.bonus_room!=0 && (b(0x78)&1)!=0;

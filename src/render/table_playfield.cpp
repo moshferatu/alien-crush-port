@@ -12,6 +12,8 @@ namespace {
 // return, not a stale scratch byte or a palette that happens to look faded.
 int bonus_table_fade(std::span<const std::byte> ram) {
     const auto b=[&](unsigned p){return std::to_integer<unsigned>(ram[p]);};
+    // The maximum score's ending: 40A7 -> 451B -> FE92 (fade out).
+    if(b(0x1fe)==0xa9 && b(0x1ff)==0x40 && b(0x1fc)==0x1d && b(0x1fd)==0x45 && b(0x79)<=1) return -1;
     if(b(0x1fe)!=0xb6 || b(0x1ff)!=0x40 || b(0x79)>1) return 0;
     if(b(0x1fc)==0xc3 && b(0x1fd)==0xfd && b(0x1fb)==0xfe &&
         (b(0x1fa)==6 || b(0x1fa)==9)) return -1;
@@ -337,7 +339,7 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
     const TableRaster* raster,TableTransitionHold& transition) const {
     const auto scene=diagnostics::observe_alien_state(ram);
     const unsigned half=scene.table_code;
-    if(half>1 || scene.title_menu || scene.high_score_menu || scene.title_transition) {
+    if(half>1 || scene.title_menu || scene.high_score_menu || scene.title_transition || scene.ending_screen) {
         transition.reset();animation_half_=2;animation_.reset();return std::nullopt;
     }
     if(const auto fade=bonus_table_fade(ram)) {
@@ -611,6 +613,9 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
             inactive_palette=partial_fades_[1-table][static_cast<std::size_t>(fade-partial_fades_[table].begin())];
         else {
             if(!fading) animation_.apply_palette(1-table,animated_palette);
+            // The backdrop flash (00:F64B, while $8A bit 7 is set) steps
+            // color 0 in the vblank before the picture, for the whole table.
+            if(!fading && (std::to_integer<unsigned>(ram[0x8a])&0x80)) animated_palette[0]=current.palette[0];
             inactive_palette=animated_palette;
         }
     }

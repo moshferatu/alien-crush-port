@@ -20,6 +20,7 @@ struct AlienState {
     bool game_over{}; // 01:410F sets RAM 78 bit 1 after the final ordinary ball is consumed.
     bool match_visible{}; // Type 43 actions 2..4 own the last-chance digit sprites.
     std::uint8_t match_digit{}; // Hundreds digit; the two trailing digits are zero.
+    bool ending_screen{}; // The maximum score's congratulations screen, between the table's fade and the ranking.
     bool high_score_menu{}; // Verified pause viewer and practice game-end score calls; presentation only.
 };
 // Diagnostics/presentation only: not a gameplay-validity or bridge-write gate.

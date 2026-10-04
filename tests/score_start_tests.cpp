@@ -42,10 +42,21 @@ int main(int argc,char** argv) {
             // game then ends by itself: the table blows up, CONGRATULATIONS
             // is shown, and the score is ranked first.
             unsigned reached=0,ranked=0;
+            bool stored_explosions=false,congratulations=false;
             std::uint32_t last=state.score_points;
             for(unsigned n=0;n<6000 && !ranked;++n) {
                 runtime->advance(play(n));
                 state=diagnostics::observe_alien_state(runtime->work_ram());
+                // The stored half's actors (work RAM $2200) blow up with the
+                // ball's half's in cabinet play; the cartridge leaves them.
+                const auto ram=runtime->work_ram();
+                if(reached && (ram[0x9d]&std::byte{0x40})==std::byte{})
+                    stored_explosions|=std::find(ram.begin()+0x204,ram.begin()+0x240,std::byte{50})!=ram.begin()+0x240;
+                if(state.ending_screen) {
+                    congratulations=true;
+                    require(std::all_of(ram.begin()+0x204,ram.begin()+0x240,[](std::byte type) {return type==std::byte{};}) || !cabinet,
+                        "The stored half is empty by the congratulations screen");
+                }
                 if(state.high_scores[0]==kMaximumScore) {ranked=n+1;break;}
                 require(state.score_points>=last && state.score_points<=kMaximumScore,"The score only climbs, and never past the maximum");
                 last=state.score_points;
@@ -56,6 +67,9 @@ int main(int argc,char** argv) {
             }
             require(reached && ranked>reached && state.ball_counter==3 && !state.game_over,
                 "Play reaches the maximum score, and the game's ending ranks it first with balls still to play");
+            require(congratulations && state.high_score_menu && !state.ending_screen,
+                "The congratulations screen and the ranking after it are recognized");
+            require(stored_explosions==cabinet,"The stored half blows up in cabinet play only");
             std::cout<<(cabinet?"Cabinet":"Desktop")<<": the maximum score after "<<reached<<" frames of play, ranked first after "<<ranked<<'\n';
             // With a bonus stage as well, the score goes into the stage.
             runtime->load(path);
