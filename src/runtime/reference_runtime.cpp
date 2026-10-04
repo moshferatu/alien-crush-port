@@ -357,6 +357,12 @@ public:
         if(!memory || retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM)<8192) return false;
         return request_reference_bonus_room({memory,8192},room);
     }
+    bool set_score(std::uint32_t points) override {
+        check_loaded();
+        auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
+        if(!memory || retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM)<8192) return false;
+        return set_reference_score({memory,8192},points);
+    }
     bool cancel_plunger_draw() override {
         check_loaded();
         const auto size=retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
@@ -478,6 +484,17 @@ void start_in_bonus_room(ReferenceRuntime& runtime,unsigned room) {
             (runtime.video_snapshot().control&0xc0)) return;
     }
     throw std::runtime_error("Bonus stage "+std::to_string(room)+" did not begin");
+}
+void start_with_score(ReferenceRuntime& runtime,std::uint32_t points) {
+    if(points>kMaximumScore || points%100) throw std::runtime_error("A score is a multiple of 100 up to 999,999,900");
+    // Run at the title, as start_in_bonus_room presses it.
+    constexpr unsigned longest_start=1800;
+    for(unsigned n=0;n<longest_start;++n) {
+        const bool title=diagnostics::observe_alien_state(runtime.work_ram()).title_menu;
+        runtime.advance({static_cast<std::uint16_t>(title && n%60<5?Pad::run:0),0});
+        if(runtime.set_score(points)) return;
+    }
+    throw std::runtime_error("Could not start a game to give the score to");
 }
 std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode,ControlMode controls,double multiplier,input::FlipperMasks flippers,ActorMode actors) { return std::make_unique<Reference>(mode,controls,multiplier,flippers,actors); }
 }

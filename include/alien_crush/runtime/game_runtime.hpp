@@ -69,6 +69,9 @@ public:
     // Enter bonus room 1..4 from the shooter by the game's own transition
     // (request_reference_bonus_room). Never used by canonical pad replays.
     virtual bool request_bonus_room(unsigned room) = 0;
+    // Give the game in play a score, from the shooter (set_reference_score).
+    // Never used by canonical pad replays.
+    virtual bool set_score(std::uint32_t points) = 0;
     // The music's voices kept while sound effects play, on a second PSG that
     // only adds to the output (src/runtime/music_voice_overlay.hpp). Live sound
     // only: the machine and its states are untouched. After load; a new load
@@ -105,4 +108,9 @@ std::unique_ptr<ReferenceRuntime> make_reference_runtime(HandoffMode mode=Handof
 // ordinary one: the room's score counts and its end returns to the table.
 // From boot or the title only. Throws if the room is not reached.
 void start_in_bonus_room(ReferenceRuntime&,unsigned room);
+// Start a game from the title and give it this score once its first ball is
+// seated in the shooter, where it stops. The game goes on as an ordinary one.
+// From boot or the title only; start_in_bonus_room may follow. Throws if no
+// game starts.
+void start_with_score(ReferenceRuntime&,std::uint32_t points);
 }

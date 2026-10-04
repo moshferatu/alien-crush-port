@@ -102,6 +102,9 @@ struct PlaySettings {
     // game.bonus_stage (--bonus-stage): 0 starts at the title; 1 to 4 starts a
     // game in that bonus stage.
     std::uint8_t bonus_stage=0;
+    // game.near_max_score (--near-max-score): a new game starts 900 points
+    // short of the maximum score, to play into the game's ending.
+    bool near_max_score=false;
     bool operator==(const PlaySettings&) const=default;
 };
 

@@ -74,6 +74,15 @@ bool request_reference_bonus_room(std::span<std::byte> ram,unsigned room) {
     ram[0x78]|=std::byte{4};
     return true;
 }
+bool set_reference_score(std::span<std::byte> ram,std::uint32_t points) {
+    if(points>kMaximumScore || points%100 || !reference_launcher_seat(ram) || ram[0x7c]!=std::byte{0}) return false;
+    const auto hundreds=points/100;
+    ram[0x121e]=static_cast<std::byte>(hundreds&255);
+    ram[0x1224]=static_cast<std::byte>((hundreds>>8)&255);
+    ram[0x122a]=static_cast<std::byte>(hundreds>>16);
+    ram[0x68]|=std::byte{4};
+    return true;
+}
 bool apply_reference_launcher_draw(std::span<std::byte> ram,std::uint8_t percent) {
     if(percent==0 || percent>100) return false;
     const auto seat=reference_launcher_seat(ram);

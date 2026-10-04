@@ -253,6 +253,7 @@ bool append_play_settings(std::string& out,const PlaySettings& play) {
     out+="game.rom="+escape_value(play.rom)+'\n';
     out+="game.cabinet="+std::to_string(play.cabinet?1:0)+'\n';
     out+="game.bonus_stage="+std::to_string(play.bonus_stage)+'\n';
+    out+="game.near_max_score="+std::to_string(play.near_max_score?1:0)+'\n';
     out+="audio.music_voice_overlay="+std::to_string(play.music_voice_overlay?1:0)+'\n';
     out+="video.smoothing="+std::to_string(play.smoothing?1:0)+'\n';
     out+="input.nudge_multiplier=";out.append(multiplier.data(),end);out+='\n';
@@ -268,6 +269,7 @@ void parse_play_settings(const Fields& fields,PlaySettings& play) {
         if(stage.size()!=1 || stage[0]<'0' || stage[0]>'4') fail("game.bonus_stage must be a number from 0 to 4");
         play.bonus_stage=static_cast<std::uint8_t>(stage[0]-'0');
     }
+    if(const auto* text=field(fields,"game.near_max_score")) play.near_max_score=flag(*text,"game.near_max_score");
     if(const auto* text=field(fields,"audio.music_voice_overlay")) play.music_voice_overlay=flag(*text,"audio.music_voice_overlay");
     if(const auto* text=field(fields,"video.smoothing")) play.smoothing=flag(*text,"video.smoothing");
     if(const auto* text=field(fields,"input.nudge_multiplier")) {

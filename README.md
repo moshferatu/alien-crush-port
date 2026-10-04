@@ -57,7 +57,7 @@ and starts the game, then comes back when the game closes.
 
 | Tab | |
 | --- | --- |
-| Game | The ROM, cabinet or desktop mode, and a starting bonus stage |
+| Game | The ROM, cabinet or desktop mode, a starting bonus stage, and a start near the maximum score |
 | Video | Smoothing, and for the cabinet: which monitor each window is on and whether it is fullscreen, and the playfield's rotation |
 | Audio | The music voice overlay |
 | Cabinet | The nudge strength and nudge board, and the analog plunger |
@@ -71,13 +71,13 @@ has the focus.
 
 With no options the game plays as `alien-crush.ini` says, which is
 what the launcher edits: `game.rom`, `game.cabinet`, `game.bonus_stage`,
-`audio.music_voice_overlay`, `video.smoothing` and `input.nudge_multiplier`,
+`game.near_max_score`, `audio.music_voice_overlay`, `video.smoothing` and `input.nudge_multiplier`,
 beside the window, key, button, nudge and plunger fields described below. An
 option on the command line beats the file for that run (`--rom`, `--cabinet`
-or `--no-cabinet`, `--bonus-stage`, `--music-voice-overlay` or `--no-music-voice-overlay`,
+or `--no-cabinet`, `--bonus-stage`, `--near-max-score`, `--music-voice-overlay` or `--no-music-voice-overlay`,
 `--smooth` or `--no-smooth`, `--nudge-multiplier`), and replays and `--frames`
-runs ignore these six, though `--bonus-stage` itself still works with
-`--frames`. F7 is remembered in `video.smoothing` when a cabinet session exits
+runs ignore these seven, though `--bonus-stage` and `--near-max-score`
+themselves still work with `--frames`. F7 is remembered in `video.smoothing` when a cabinet session exits
 normally.
 
 To start a game directly in one of the four bonus stages, add `--bonus-stage`
@@ -89,6 +89,19 @@ game goes on with all three balls.
 
 ```powershell
 alien-crush.exe --bonus-stage 3 --rom "D:\path\to\Alien Crush.pce"
+```
+
+The score stops at 999,999,900, and reaching it ends the game: the table blows
+up, a congratulations screen follows, and the score takes first place in the
+table. To see that without earning it, add `--near-max-score`, or turn on Start
+Near Maximum Score in the launcher. A new game then starts with its first ball
+in the shooter and 999,999,000 points, 900 short, which a few bumpers make up.
+It is an ordinary game from there, so the score is saved to
+`alien-crush.hiscore` like any other; add `--data-dir` with a scratch folder to
+keep your own table. It combines with `--bonus-stage`.
+
+```powershell
+alien-crush.exe --near-max-score --data-dir "D:\scratch\alien-crush-test"
 ```
 
 `alien-crush.ini` is in Devil's Crush's format, with Devil's Crush's keys wherever

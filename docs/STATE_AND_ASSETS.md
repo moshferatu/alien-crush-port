@@ -201,6 +201,19 @@ so the session opens on the fade-in from black. `bonus_stage_launch` checks all
 four rooms, entry through return and the next seated ball, on the original and
 the cabinet runtime.
 
+`--near-max-score` (`game.near_max_score`, the launcher's Start Near Maximum
+Score) starts the same way: `start_with_score()` presses Run through the title
+and, under the same seat gate, writes 999,999,000 points to the score bytes
+(`$121E`/`$1224`/`$122A`, in hundreds) and sets RAM 68 bit 2 for FA49 to redraw
+the HUD. Nothing else is written. FAB6 stops the score at 999,999,900
+(`$98967F` hundreds) and sets RAM 9D bit 7. In `score_start`, with a full
+plunger shot and both flippers cycling, the maximum is reached 278 frames after
+the start (263 on the cabinet runtime); RAM 9D gains bit 6 about 330 frames
+later as the table's explosions give way to "CONGRATULATIONS !! YOU ARE THE
+GREATEST PLAYER", and 675 frames after the maximum the score is ranked first,
+with all three balls unplayed and RAM 78 bit 1 (game over) never set. Initials
+entry and the return to the title follow as after an ordinary game.
+
 The return exposed a presentation issue: a stitched image at frame 2214 used a
 partially faded upper palette alongside the fully lit inactive lower table.
 TablePlayfield now precomputes the black and partial E4A1 fade-in palettes using

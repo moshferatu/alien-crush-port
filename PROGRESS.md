@@ -1,5 +1,17 @@
 # Progress
 
+Start near the maximum score (2026-10-04):
+
+- The game has no password to reach its ending with, so `--near-max-score`
+  (`game.near_max_score`, the launcher's Start Near Maximum Score) starts a
+  game with 999,999,000 points, 900 short of the cap, written once the first
+  ball is seated in the shooter (`start_with_score`, `set_reference_score`).
+  It combines with `--bonus-stage`.
+- `score_start` plays it out on the original and the cabinet runtime: the
+  score stops at 999,999,900, the game's own ending follows and the score is
+  ranked first. The cabinet's presentation of that ending (explosions,
+  congratulations screen) has not been looked at yet.
+
 Settings and saves beside the executable (2026-10-03):
 
 - As in Devil's Crush: the settings are `alien-crush.ini`, and it, the high

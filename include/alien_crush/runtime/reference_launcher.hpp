@@ -28,4 +28,12 @@ inline constexpr unsigned kBonusRooms=4;
 // FF04 return brings the ball back to the shooter. Only with a ball seated in
 // the shooter of an ordinary game; false leaves every RAM byte intact.
 bool request_reference_bonus_room(std::span<std::byte> ram,unsigned room);
+// 00:FAB6 stops the score at 999,999,900. The near-maximum start leaves 900
+// points to earn: a few bumpers.
+inline constexpr std::uint32_t kMaximumScore=999999900,kNearMaximumScore=999999000;
+// Give the game in play a score, a multiple of 100 up to the maximum, as
+// 00:FA27 leaves one: the three bytes in hundreds, and RAM 68 bit 2 for FA49
+// to redraw the HUD. Only with a ball seated in the shooter of an ordinary
+// game; false leaves every RAM byte intact.
+bool set_reference_score(std::span<std::byte> ram,std::uint32_t points);
 }

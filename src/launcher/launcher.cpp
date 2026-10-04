@@ -224,7 +224,7 @@ bool same_ignoring_case(std::string_view a, std::string_view b)
 enum Kind { K_HEAD, K_CHOICE, K_RANGE, K_PATH, K_TEXT, K_NUMBER, K_KEYS, K_INPUTS };
 
 enum Setting {
-    S_ROM, S_CABINET, S_BONUS_STAGE,
+    S_ROM, S_CABINET, S_BONUS_STAGE, S_NEAR_MAX_SCORE,
     S_SMOOTHING,
     S_MONITOR, S_ROTATION = S_MONITOR + kWindows, S_FULLSCREEN = S_ROTATION + kWindows,
     S_OVERLAY = S_FULLSCREEN + kWindows,
@@ -300,6 +300,9 @@ void build_rows()
     add_range(TAB_GAME, S_BONUS_STAGE, "Starting Bonus Stage", 0, 4, 1, false,
         "Off starts at the title. A stage from 1 to 4 starts a new game there, through the "
         "game's own bonus transition.");
+    add_choice(TAB_GAME, S_NEAR_MAX_SCORE, "Start Near Maximum Score", on_off, 2,
+        "For testing the game's ending. On: a new game starts with 999,999,000 points, 900 short "
+        "of the maximum; reaching it ends the game and puts the score at the top of the table.");
 
     add_choice(TAB_VIDEO, S_SMOOTHING, "Smoothing", on_off, 2,
         "On: on a playfield display faster than 66 Hz, a picture for every refresh, the table's "
@@ -500,6 +503,7 @@ int setting_get(Config& c, int id)
     switch (id) {
     case S_CABINET: return c.play.cabinet;
     case S_BONUS_STAGE: return c.play.bonus_stage;
+    case S_NEAR_MAX_SCORE: return c.play.near_max_score;
     case S_SMOOTHING: return c.play.smoothing;
     case S_OVERLAY: return c.play.music_voice_overlay;
     case S_NUDGE_STRENGTH: return static_cast<int>(std::lround(c.play.nudge_multiplier * 10.0));
@@ -536,6 +540,7 @@ void setting_set(Config& c, int id, int v)
     switch (id) {
     case S_CABINET: c.play.cabinet = v != 0; break;
     case S_BONUS_STAGE: c.play.bonus_stage = static_cast<std::uint8_t>(v); break;
+    case S_NEAR_MAX_SCORE: c.play.near_max_score = v != 0; break;
     case S_SMOOTHING: c.play.smoothing = v != 0; break;
     case S_OVERLAY: c.play.music_voice_overlay = v != 0; break;
     case S_NUDGE_STRENGTH: c.play.nudge_multiplier = v / 10.0; break;

@@ -54,7 +54,7 @@ int main(int argc,char** argv) {
         std::optional<unsigned> bonus_stage_override;
         // Flags beat alien-crush.ini's play settings, which fill in what they leave unsaid.
         std::optional<bool> smoothing_override,cabinet_override,overlay_override;
-        bool probe=false,probe_plunger=false,no_vsync=false;
+        bool probe=false,probe_plunger=false,no_vsync=false,near_max_score_flag=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]);};
@@ -87,6 +87,7 @@ int main(int argc,char** argv) {
                 if(text.size()!=1 || text[0]<'1' || text[0]>'4') throw std::runtime_error("--bonus-stage requires a stage from 1 to 4");
                 bonus_stage_override=static_cast<unsigned>(text[0]-'0');
             }
+            else if(arg=="--near-max-score") near_max_score_flag=true;
             else if(arg=="--input-probe") probe=true;
             else if(arg=="--cabinet-plunger-probe") probe_plunger=true;
             else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
@@ -99,10 +100,12 @@ int main(int argc,char** argv) {
                 "nudge, plunger and the play settings below (see README). alien-crush-launcher.exe edits it.\n"
                 "It, the high scores (alien-crush.hiscore), quick states and an optional backglass.bmp sit beside the executable, or in --data-dir.\n"
                 "An earlier build kept them in a portable-data folder, with the settings as cabinet.ini; they are moved out of it on the first start.\n"
-                "With no options, normal play takes game.rom, game.cabinet, game.bonus_stage, audio.music_voice_overlay, video.smoothing and\n"
+                "With no options, normal play takes game.rom, game.cabinet, game.bonus_stage, game.near_max_score,\n"
+                "audio.music_voice_overlay, video.smoothing and\n"
                 "input.nudge_multiplier from it; a flag beats the file for that run.\n"
                 "--no-cabinet: one window, whatever alien-crush.ini says.\n"
                 "--bonus-stage <1-4>: start a game in that bonus stage, through the game's own bonus transition.\n"
+                "--near-max-score: start a game with 999,999,000 points, 900 short of the maximum, to see the game's ending.\n"
                 "--music-voice-overlay / --no-music-voice-overlay: keep the music's voices while effects play (default on).\n"
                 "--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F7 toggles.\n"
                 "--refresh <Hz>: override the detected playfield refresh rate; --no-vsync uses timer pacing.\n"
@@ -114,6 +117,7 @@ int main(int argc,char** argv) {
         }
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
         if(bonus_stage_override && !replay_path.empty()) throw std::runtime_error("--bonus-stage does not apply to a replay");
+        if(near_max_score_flag && !replay_path.empty()) throw std::runtime_error("--near-max-score does not apply to a replay");
         SdlLifetime sdl;
         if(probe_plunger) return host::plunger_probe();
         if(probe) return host::input_probe(limit);
@@ -154,6 +158,7 @@ int main(int argc,char** argv) {
         if(rom_path.empty()) rom_path=base/"Alien Crush.pce";
         const bool cabinet_mode=cabinet_override.value_or(play.cabinet);
         const unsigned bonus_stage=bonus_stage_override.value_or(play.bonus_stage);
+        const bool near_max_score=near_max_score_flag || play.near_max_score;
         bool smoothing=smoothing_override.value_or(play.smoothing),smoothing_toggled=false;
         // The overlay is live sound only; replays and --frames keep the original's.
         const bool music_voice_overlay=overlay_override.value_or(replay_path.empty() && !limit && play.music_voice_overlay);
@@ -194,7 +199,12 @@ int main(int argc,char** argv) {
         const bool table_raster=cabinet_mode && runtime->supports_display_observation();
         if(table_raster) runtime->observe_display(true);
         if(playback) runtime->restore(playback->initial);
-        // Before anything is shown, heard or recorded: the session opens on the stage.
+        // Before anything is shown, heard or recorded: the session opens in the
+        // shooter with the score, or on the stage.
+        if(near_max_score) {
+            start_with_score(*runtime,kNearMaximumScore);
+            std::cout<<"Started with "<<kNearMaximumScore<<" points\n";
+        }
         if(bonus_stage) {
             start_in_bonus_room(*runtime,bonus_stage);
             std::cout<<"Started in bonus stage "<<bonus_stage<<'\n';
