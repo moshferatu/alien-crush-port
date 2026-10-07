@@ -205,6 +205,25 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
             return static_cast<std::uint16_t>(std::to_integer<unsigned>(palette_rom_[p])|
                 ((std::to_integer<unsigned>(palette_rom_[p+1])&1)<<8));
         };
+        // F463 selects a packed ROM frame using F192/F1D2, F212/F252.
+        const auto upload=[&](unsigned x,unsigned frame) {
+            const auto first=b(128+x),last=b(192+x);
+            if(first>last || last>30 || (first&1) || (last&1)) return;
+            const unsigned bytes=last-first+2;
+            const unsigned pointer=b(x)|(b(64+x)<<8);
+            const unsigned offset=pointer+bytes*frame;
+            if(offset<0xa000 || offset+bytes>0xe000) return;
+            for(unsigned i=0;i<bytes;i+=2) {
+                const unsigned color=(x%32)*16+(first+i)/2;
+                colors_[half][color]=rom_color(offset-0xa000+i);
+                color_owned_[half][color]=true;
+            }
+        };
+        // The bumpers' colors follow their layout ($A8). No script holds
+        // them: 03:95B9 uploads them again each time the upper table loads,
+        // so the stored upper table gets them here.
+        if(half==1 && half!=active) for(const unsigned x:{0x38u,0x3du,0x36u})
+            upload(x,std::to_integer<unsigned>(actor_offsets_[std::to_integer<unsigned>(ram[0xa8])&7]));
         for(unsigned x=half*32;x<(half+1)*32;++x) {
             const unsigned script=std::to_integer<unsigned>(visual[0x1245+x]);
             unsigned frame=std::to_integer<unsigned>(visual[0x13c5+x]);
@@ -224,18 +243,7 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
             // Keep the loaded palette until a real frame becomes available.
             if(script!=8 && frame>=std::to_integer<unsigned>(visual[0x1405+x])) continue;
             if(script==10) frame=(frame+std::to_integer<unsigned>(actor_offsets_[std::to_integer<unsigned>(ram[0xa8])&7]))&255;
-            // F463 selects a packed ROM frame using F192/F1D2, F212/F252.
-            const auto first=b(128+x),last=b(192+x);
-            if(first>last || last>30 || (first&1) || (last&1)) continue;
-            const unsigned bytes=last-first+2;
-            const unsigned pointer=b(x)|(b(64+x)<<8);
-            const unsigned offset=pointer+bytes*frame;
-            if(offset<0xa000 || offset+bytes>0xe000) continue;
-            for(unsigned i=0;i<bytes;i+=2) {
-                const unsigned color=(x%32)*16+(first+i)/2;
-                colors_[half][color]=rom_color(offset-0xa000+i);
-                color_owned_[half][color]=true;
-            }
+            upload(x,frame);
         }
     }
     valid_=true;

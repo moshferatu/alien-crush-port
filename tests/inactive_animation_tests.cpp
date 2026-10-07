@@ -226,6 +226,38 @@ int main(int argc,char** argv) {
 
         auto table=std::make_unique<render::TablePlayfield>(rom);
         auto palette_probe=std::make_unique<render::TableAnimation>(rom);
+        {
+            // The stored upper table's bumpers keep the colors of their layout
+            // ($A8): the frame 03:95B9 uploads to palettes $36, $38 and $3D.
+            const auto stored=assets::decode_table_backgrounds(rom)[1].palette;
+            std::array<std::array<std::uint16_t,512>,8> shown{};
+            for(unsigned layout=0;layout<8;++layout) {
+                std::array<std::byte,8192> ram{};
+                ram[0xa8]=static_cast<std::byte>(layout);
+                palette_probe->reset();palette_probe->update(actors,ram);
+                shown[layout]=stored;
+                palette_probe->apply_palette(1,shown[layout]);
+                const unsigned frame=std::to_integer<unsigned>(rom[0x3c9d+layout]);
+                for(const unsigned slot:{0x36u,0x38u,0x3du}) {
+                    const unsigned pointer=std::to_integer<unsigned>(rom[0x1192+slot])|(std::to_integer<unsigned>(rom[0x11d2+slot])<<8);
+                    const unsigned first=std::to_integer<unsigned>(rom[0x1212+slot]);
+                    const unsigned bytes=std::to_integer<unsigned>(rom[0x1252+slot])-first+2;
+                    for(unsigned i=0;i<bytes;i+=2) {
+                        const unsigned offset=0x36000+pointer-0xa000+frame*bytes+i;
+                        const auto expected=std::to_integer<unsigned>(rom[offset])|((std::to_integer<unsigned>(rom[offset+1])&1)<<8);
+                        require(shown[layout][(slot-32)*16+(first+i)/2]==expected,"Stored bumper colors differ from the ROM's for their layout");
+                    }
+                }
+                ram[0x79]=std::byte{1};
+                palette_probe->reset();palette_probe->update(actors,ram);
+                for(unsigned color=0;color<512;++color)
+                    require(!palette_probe->owns_color(1,color),"The ball's half's bumper colors are the game's own");
+            }
+            require(shown[0]==stored,"The first bumper layout has the upper table's loaded colors");
+            require(shown[1]!=shown[0] && shown[2]!=shown[0] && shown[1]!=shown[2] && shown[3]==shown[0] && shown[7]==shown[1],
+                "The bumper layouts cycle through three color sets");
+            palette_probe->reset();
+        }
         auto runtime=make_reference_runtime(HandoffMode::continuous,ControlMode::original,1.0,{},ActorMode::cabinet);
         runtime->load(path);runtime->observe_display(true);
         const auto initial=runtime->save();

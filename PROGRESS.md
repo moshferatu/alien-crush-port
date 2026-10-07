@@ -1,5 +1,16 @@
 # Progress
 
+Stored bumper colors (2026-10-07):
+
+- The upper table's bumpers take one of three color sets from their layout
+  (`$A8`, changed by the lane sensor at 01:5C3F). No palette script holds
+  them: the game uploads the layout's frame to palettes `$36`, `$38` and `$3D`
+  each time it loads the upper table (03:95B9). The cabinet drew the stored
+  upper table from its loaded colors plus the running scripts, so green or red
+  bumpers turned blue as the ball dropped to the lower table.
+  `TableAnimation::update` now gives the stored upper table the layout's
+  colors; `inactive_animation` checks all eight layouts against the ROM.
+
 Start near the maximum score (2026-10-04):
 
 - The game has no password to reach its ending with, so `--near-max-score`
