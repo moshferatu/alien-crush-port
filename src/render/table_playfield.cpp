@@ -165,6 +165,24 @@ TableAnimation::TableAnimation(std::span<const std::byte> rom) {
     std::copy_n(rom.begin()+0x1192,palette_tables_.size(),palette_tables_.begin());
     std::copy_n(rom.begin()+0x3c9d,actor_offsets_.size(),actor_offsets_.begin()); // 01:5C9D
 }
+// F463 selects a packed ROM frame using F192/F1D2, F212/F252.
+template<class Put> void TableAnimation::upload(unsigned x,unsigned frame,Put put) const {
+    const auto b=[&](unsigned p){return std::to_integer<unsigned>(palette_tables_[p]);};
+    const auto first=b(128+x),last=b(192+x);
+    if(first>last || last>30 || (first&1) || (last&1)) return;
+    const unsigned bytes=last-first+2;
+    const unsigned offset=(b(x)|(b(64+x)<<8))+bytes*frame;
+    if(offset<0xa000 || offset+bytes>0xe000) return;
+    for(unsigned i=0;i<bytes;i+=2) {
+        const unsigned p=offset-0xa000+i;
+        put((x%32)*16+(first+i)/2,static_cast<std::uint16_t>(std::to_integer<unsigned>(palette_rom_[p])|
+            ((std::to_integer<unsigned>(palette_rom_[p+1])&1)<<8)));
+    }
+}
+void TableAnimation::apply_bumper_colors(std::span<std::uint16_t> palette,unsigned layout) const {
+    for(const unsigned x:{0x38u,0x3du,0x36u}) upload(x,std::to_integer<unsigned>(actor_offsets_[layout&7]),
+        [&](unsigned color,std::uint16_t value) {palette[color]=value;});
+}
 void TableAnimation::update(const assets::ActorAssets& assets,std::span<const std::byte> ram) {
     if(ram.size()!=8192 || std::to_integer<unsigned>(ram[0x79])>1)
         throw std::runtime_error("Invalid table animation state");
@@ -200,30 +218,16 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
 
         // The colors each running script last uploaded, by its frame.
         color_owned_[half].fill(false);
-        const auto b=[&](unsigned p){return std::to_integer<unsigned>(palette_tables_[p]);};
         const auto rom_color=[&](unsigned p) {
             return static_cast<std::uint16_t>(std::to_integer<unsigned>(palette_rom_[p])|
                 ((std::to_integer<unsigned>(palette_rom_[p+1])&1)<<8));
         };
-        // F463 selects a packed ROM frame using F192/F1D2, F212/F252.
-        const auto upload=[&](unsigned x,unsigned frame) {
-            const auto first=b(128+x),last=b(192+x);
-            if(first>last || last>30 || (first&1) || (last&1)) return;
-            const unsigned bytes=last-first+2;
-            const unsigned pointer=b(x)|(b(64+x)<<8);
-            const unsigned offset=pointer+bytes*frame;
-            if(offset<0xa000 || offset+bytes>0xe000) return;
-            for(unsigned i=0;i<bytes;i+=2) {
-                const unsigned color=(x%32)*16+(first+i)/2;
-                colors_[half][color]=rom_color(offset-0xa000+i);
-                color_owned_[half][color]=true;
-            }
-        };
+        const auto own=[&](unsigned color,std::uint16_t value) {colors_[half][color]=value;color_owned_[half][color]=true;};
         // The bumpers' colors follow their layout ($A8). No script holds
         // them: 03:95B9 uploads them again each time the upper table loads,
         // so the stored upper table gets them here.
         if(half==1 && half!=active) for(const unsigned x:{0x38u,0x3du,0x36u})
-            upload(x,std::to_integer<unsigned>(actor_offsets_[std::to_integer<unsigned>(ram[0xa8])&7]));
+            upload(x,std::to_integer<unsigned>(actor_offsets_[std::to_integer<unsigned>(ram[0xa8])&7]),own);
         for(unsigned x=half*32;x<(half+1)*32;++x) {
             const unsigned script=std::to_integer<unsigned>(visual[0x1245+x]);
             unsigned frame=std::to_integer<unsigned>(visual[0x13c5+x]);
@@ -243,7 +247,7 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
             // Keep the loaded palette until a real frame becomes available.
             if(script!=8 && frame>=std::to_integer<unsigned>(visual[0x1405+x])) continue;
             if(script==10) frame=(frame+std::to_integer<unsigned>(actor_offsets_[std::to_integer<unsigned>(ram[0xa8])&7]))&255;
-            upload(x,frame);
+            upload(x,frame,own);
         }
     }
     valid_=true;
@@ -251,33 +255,39 @@ void TableAnimation::update(const assets::ActorAssets& assets,std::span<const st
 void TableAnimation::apply_palette(unsigned half,std::span<std::uint16_t> palette) const {
     for(unsigned i=0;i<512;++i) if(color_owned_[half][i]) palette[i]=colors_[half][i];
 }
+namespace {
+// Every step of a fade to and from a palette: black and the 20 steps in,
+// then the 7 steps out.
+std::vector<std::array<std::uint16_t,512>> fade_steps(const std::array<std::uint16_t,512>& target) {
+    std::vector<std::array<std::uint16_t,512>> steps;
+    std::array<std::uint16_t,512> palette{};
+    steps.push_back(palette);
+    for(unsigned threshold=21;threshold>1;--threshold) {
+        palette=assets::advance_palette_fade(palette,target,threshold);
+        steps.push_back(palette);
+    }
+    // E5EC subtracts one from every nonzero RGB channel per pass.
+    palette=target;
+    for(unsigned step=0;step<7;++step) {
+        palette=assets::advance_palette_fade_out(palette).colors;
+        steps.push_back(palette);
+    }
+    return steps;
+}
+}
 TablePlayfield::TablePlayfield(std::span<const std::byte> rom)
     :tables_(assets::decode_table_backgrounds(rom)),sprites_(assets::decode_table_sprites(rom)),actors_(rom),
     indicators_(assets::decode_table_indicators(rom)),counter_(assets::decode_lower_counter_tiles(rom)),animation_(rom) {
     // E4A1 starts black, visits thresholds 21..1, and increments the channel
     // with the largest remaining distance (ties: red, green, blue). Recognize
     // only complete original palette states; do not guess a brightness scalar.
-    for(unsigned table=0;table<2;++table) {
-        std::array<std::uint16_t,512> palette{};
-        partial_fades_[table].push_back(palette);
-        for(unsigned threshold=21;threshold>1;--threshold) {
-            palette=assets::advance_palette_fade(palette,tables_[table].palette,threshold);
-            partial_fades_[table].push_back(palette);
-        }
-        // E5EC subtracts one from every nonzero RGB channel per pass.
-        palette=tables_[table].palette;
-        for(unsigned step=0;step<7;++step) {
-            for(auto& color:palette) {
-                unsigned next=0;
-                for(unsigned shift:{0u,3u,6u}) {
-                    const unsigned channel=(color>>shift)&7;
-                    next|=(channel?channel-1:0)<<shift;
-                }
-                color=static_cast<std::uint16_t>(next);
-            }
-            partial_fades_[table].push_back(palette);
-        }
-    }
+    for(unsigned table=0;table<2;++table) partial_fades_[table]=fade_steps(tables_[table].palette);
+}
+// The table's loaded palette, with the colors of the bumpers' layout.
+std::array<std::uint16_t,512> TablePlayfield::settled_palette(unsigned table,std::span<const std::byte> ram) const {
+    auto palette=tables_[table].palette;
+    if(table==1) animation_.apply_bumper_colors(palette,std::to_integer<unsigned>(ram[0xa8]));
+    return palette;
 }
 Image TablePlayfield::inactive_view(unsigned table,std::span<const std::byte> ram,std::span<std::uint8_t> visible,
     std::span<std::uint8_t> blockers,std::span<const std::uint16_t> palette,CompositionCapture* capture) const {
@@ -362,16 +372,20 @@ std::optional<Image> TablePlayfield::cabinet_frame_impl(const diagnostics::Refer
         auto fade_current=std::make_unique<diagnostics::ReferenceSnapshot>(current);
         auto& active=*fade_current;
         unsigned best_error=~0u;
-        const auto consider=[&](const auto& palette) {
+        int best=-1;
+        const auto consider=[&](const auto& palette,int step) {
             unsigned error=0;
             for(unsigned i=0;i<256;++i) for(unsigned shift:{0u,3u,6u}) {
                 const int a=(palette[i]>>shift)&7,c=(current.palette[i]>>shift)&7;
                 error+=static_cast<unsigned>(a>c?a-c:c-a);
             }
-            if(error<best_error) {best_error=error;active.palette=palette;}
+            if(error<best_error) {best_error=error;best=step;}
         };
-        consider(tables_[half].palette);
-        for(unsigned i=fade<0?21:0;i<(fade<0?28u:21u);++i) consider(partial_fades_[half][i]);
+        consider(tables_[half].palette,-1);
+        for(unsigned i=fade<0?21:0;i<(fade<0?28u:21u);++i) consider(partial_fades_[half][i],static_cast<int>(i));
+        // The bumpers fade in their layout's colors, not the loaded ones.
+        active.palette=settled_palette(half,ram);
+        if(best>=0) active.palette=fade_steps(active.palette)[static_cast<std::size_t>(best)];
         auto latched=std::make_unique<diagnostics::ReferenceSnapshot>(active);latched->frame=active.frame-1;
         return compose_impl(active,*latched,half,0,ram,nullptr,false,nullptr,true);
     }
@@ -614,12 +628,20 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
     } else live=render::compose(active_vram,active_palette,sat,{256,240,0,0,0,0xc0},live_sprites,active_blocks,hidden,capture?&captures[table]:nullptr);
     std::vector<std::uint8_t> inactive_blocks(coverage?256*240:0);
     std::span<const std::uint16_t> inactive_palette;
-    auto animated_palette=tables_[1-table].palette;
+    auto animated_palette=cabinet?settled_palette(1-table,ram):tables_[1-table].palette;
     if(cabinet) {
-        const auto fade=std::find(partial_fades_[table].begin(),partial_fades_[table].end(),current.palette);
-        if(fade!=partial_fades_[table].end())
-            inactive_palette=partial_fades_[1-table][static_cast<std::size_t>(fade-partial_fades_[table].begin())];
-        else {
+        // A step of the ball's half's fade: the stored half takes the same
+        // step. The upper table's sprite colors include the bumpers'.
+        auto fade=std::find(partial_fades_[table].begin(),partial_fades_[table].end(),current.palette);
+        if(fade==partial_fades_[table].end() && table==1) {
+            const auto steps=fade_steps(settled_palette(1,ram));
+            const auto step=std::find(steps.begin(),steps.end(),current.palette);
+            if(step!=steps.end()) fade=partial_fades_[table].begin()+(step-steps.begin());
+        }
+        if(fade!=partial_fades_[table].end()) {
+            animated_palette=fade_steps(animated_palette)[static_cast<std::size_t>(fade-partial_fades_[table].begin())];
+            inactive_palette=animated_palette;
+        } else {
             if(!fading) animation_.apply_palette(1-table,animated_palette);
             // The backdrop flash (00:F64B, while $8A bit 7 is set) steps
             // color 0 in the vblank before the picture, for the whole table.

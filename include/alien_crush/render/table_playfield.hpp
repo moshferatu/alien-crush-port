@@ -73,8 +73,11 @@ class TableAnimation {
     std::array<std::byte,256> palette_tables_{};
     std::array<std::byte,8> actor_offsets_{};
     bool valid_{};
+    template<class Put> void upload(unsigned slot,unsigned frame,Put put) const;
 public:
     explicit TableAnimation(std::span<const std::byte> rom);
+    // The upper table's bumper colors for layout $A8, as 03:95B9 uploads them.
+    void apply_bumper_colors(std::span<std::uint16_t> palette,unsigned layout) const;
     void reset() {valid_=false;}
     void update(const assets::ActorAssets&,std::span<const std::byte> ram);
     const auto& actors(unsigned half) const {return actors_[half];}
@@ -99,6 +102,7 @@ class TablePlayfield {
         const diagnostics::ReferenceSnapshot* previous,std::span<const std::byte> ram,
         const TableRaster* raster,TableTransitionHold& transition) const;
     bool matches(const diagnostics::ReferenceSnapshot&,unsigned table) const;
+    std::array<std::uint16_t,512> settled_palette(unsigned table,std::span<const std::byte> ram) const;
     std::optional<Image> compose_impl(const diagnostics::ReferenceSnapshot& current,
         const diagnostics::ReferenceSnapshot& previous,unsigned table,unsigned camera,
         std::span<const std::byte> ram,const TableRaster* raster,bool hide_ball,

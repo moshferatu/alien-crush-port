@@ -58,7 +58,8 @@ draws the stored half's colors from each running script's frame.
 The bumpers' colors are held by no script. They follow the bumper layout
 (`$A8`), and the game uploads them each time it loads the upper table
 (03:95B9: frame `01:5C9D[$A8]` of palettes `$36`, `$38` and `$3D`). The cabinet
-draws the stored upper table with that frame.
+draws the stored upper table with that frame, and fades both halves (bonus
+entry and return, the ending) towards the palette that includes it.
 
 ## Who runs what
 

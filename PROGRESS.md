@@ -10,6 +10,11 @@ Stored bumper colors (2026-10-07):
   bumpers turned blue as the ball dropped to the lower table.
   `TableAnimation::update` now gives the stored upper table the layout's
   colors; `inactive_animation` checks all eight layouts against the ROM.
+- Fades too. The cabinet draws a bonus entry, bonus return or ending fade as
+  one step of the loaded palette's fade for both halves, which turned the
+  bumpers blue for the fade in either half. The step is now taken of the
+  palette with the layout's colors (`settled_palette`, `fade_steps`), and a
+  fade of the upper table is still recognized with them.
 
 Start near the maximum score (2026-10-04):
 

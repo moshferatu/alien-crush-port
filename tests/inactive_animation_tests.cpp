@@ -43,6 +43,47 @@ void swap_banks(std::array<std::byte,8192>& ram) {
     for(unsigned field=0;field<32;++field) for(unsigned x=4;x<64;++x)
         std::swap(ram[0x1500+field*64+x],ram[0x200+field*64+x]);
 }
+// The bumpers keep the colors of their layout ($A8) in the stored upper
+// table, and through a fade (here the bonus entry's, FE92) in either half.
+void bumper_fade(std::span<const std::byte> rom,const diagnostics::ReferenceSnapshot& video,std::span<const std::byte> ram) {
+    const auto artwork=std::make_unique<Artwork>(rom);
+    const unsigned half=std::to_integer<unsigned>(ram[0x79]);
+    std::array<std::array<std::optional<render::Image>,2>,2> images;
+    for(unsigned faded=0;faded<2;++faded) for(unsigned layout=0;layout<2;++layout) {
+        std::array<std::byte,8192> source{};
+        std::copy(ram.begin(),ram.end(),source.begin());
+        source[0xa8]=static_cast<std::byte>(layout);source[0xf6]=std::byte{};
+        auto current=std::make_unique<diagnostics::ReferenceSnapshot>(video);
+        if(faded) {
+            constexpr unsigned stack[]{0x06,0xfe,0xc3,0xfd,0xb6,0x40};
+            for(unsigned i=0;i<6;++i) source[0x1fa+i]=static_cast<std::byte>(stack[i]);
+            current->palette=artwork->backgrounds[half].palette;
+            for(unsigned step=0;step<2;++step) current->palette=assets::advance_palette_fade_out(current->palette).colors;
+        }
+        auto previous=std::make_unique<diagnostics::ReferenceSnapshot>(*current);
+        previous->frame=current->frame-1;
+        const auto table=std::make_unique<render::TablePlayfield>(rom);
+        render::TableTransitionHold hold;
+        images[faded][layout]=table->cabinet_frame(*current,previous.get(),source,nullptr,hold);
+        require(images[faded][layout].has_value(),"Bumper fixture lacks a cabinet image");
+    }
+    const auto differing=[&](unsigned faded) {
+        unsigned count=0;
+        for(unsigned i=0;i<256*render::table_playfield_height;++i)
+            count+=images[faded][0]->pixels[i]!=images[faded][1]->pixels[i];
+        return count;
+    };
+    // The ball's half's full colors are the game's own, whatever $A8 is made here.
+    const unsigned full=differing(0),fading=differing(1);
+    if(!half) require(full>100,"The stored upper table's bumpers ignore their layout");
+    require(fading>100 && (half || fading*2>full),"A fade shows the bumpers in the loaded colors, not their layout's");
+    if(!half) for(unsigned i=0;i<256*render::table_playfield_height;++i) {
+        if(images[0][0]->pixels[i]==images[0][1]->pixels[i]) continue;
+        unsigned bright=0,dim=0;
+        for(unsigned shift:{0u,8u,16u}) {bright+=(images[0][1]->pixels[i]>>shift)&255;dim+=(images[1][1]->pixels[i]>>shift)&255;}
+        require(dim<=bright,"A faded bumper is brighter than at full brightness");
+    }
+}
 // The same banks, whichever half the ball is in, give the same picture:
 // the actors and the palette scripts of both halves.
 void seam_invariance(std::span<const std::byte> rom,const diagnostics::ReferenceSnapshot& video,std::span<const std::byte> ram) {
@@ -280,6 +321,7 @@ int main(int argc,char** argv) {
                 const auto stored=assets::inactive_table_actor_ram(ram);
                 require(std::count(stored.begin()+0x1504,stored.begin()+0x1540,std::byte{19})==5,
                     "The stored upper half lacks the brain orbs before the first visit");
+                bumper_fade(rom,video,ram);
             }
             const render::TableRaster raster{runtime->display_rows(),runtime->palette_writes(),runtime->vram_rows()};
             const auto image=table->cabinet_frame(video,previous?&*previous:nullptr,ram,&raster,hold);
@@ -351,6 +393,7 @@ int main(int argc,char** argv) {
             }
             if(n==999) {
                 seam_invariance(rom,video,ram);
+                bumper_fade(rom,video,ram);
                 cocoon_rendering(rom,video,ram);
                 slingshot_rendering(rom,video,ram);
                 brain_flyer_rendering(rom,video,ram);
