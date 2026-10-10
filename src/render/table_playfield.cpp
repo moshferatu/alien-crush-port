@@ -750,7 +750,12 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
     // Flyers that leave their half across the seam: the slingshots' (52, 53)
     // rise into the upper table, and the brain's (55, 01:559C) fall into the
     // lower one, to local Y 320, before 559C removes them.
-    if(cabinet) for(unsigned half=0;half<2;++half) {
+    // A slingshot flyer the upper half has taken (gameplay::CabinetActors::
+    // carry_flyers) is hidden in its bank, and drawn here whole from the
+    // lower table's patterns and colors: the third pass.
+    if(cabinet) for(unsigned pass=0;pass<3;++pass) {
+        const unsigned half=pass==2?1:pass,art=pass==2?0:half;
+        const bool taken=pass==2;
         auto projected=half==table?std::array<std::byte,8192>{}:assets::inactive_table_actor_ram(ram);
         if(half==table) std::copy(ram.begin(),ram.end(),projected.begin());
         projected[0x1540]=std::byte{0x20};projected[0x50]=std::byte{};
@@ -758,6 +763,12 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         bool any=false;
         for(unsigned x=4;x<64;++x) {
             const auto type=std::to_integer<unsigned>(projected[0x1500+x]);
+            if(taken) {
+                if((type==52 || type==53) && (std::to_integer<unsigned>(projected[0x1540+x])&0xa0)==0xa0) {
+                    projected[0x1540+x]&=std::byte{0xdf};any=true;
+                } else projected[0x1540+x]|=std::byte{0x20};
+                continue;
+            }
             if(type!=52 && type!=53 && type!=55) {projected[0x1540+x]|=std::byte{0x20};continue;}
             any=true;
             // Translate BEFORE the SAT's ten-bit Y wrap. Negative local Y
@@ -774,9 +785,9 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
         const auto pieces=assets::assemble_table_actors(actors_,projected);
         for(const auto& piece:pieces)
             std::copy(piece.words.begin(),piece.words.end(),flight_sat.begin()+piece.slot*4);
-        const std::span<const std::uint16_t> palette=half==table?active_palette:
-            inactive_palette.empty()?std::span<const std::uint16_t>(tables_[half].palette):inactive_palette;
-        const auto flight=render::sprites(sprites_[half].vram,palette,flight_sat,0);
+        const std::span<const std::uint16_t> palette=art==table?active_palette:
+            inactive_palette.empty()?std::span<const std::uint16_t>(tables_[art].palette):inactive_palette;
+        const auto flight=render::sprites(sprites_[art].vram,palette,flight_sat,0);
         // The ordinary half composition already draws the local portion with
         // its correct ordering. Add only pixels clipped by that old viewport.
         // Smoothing moves these pieces with the rest of their actor: the same
@@ -799,7 +810,7 @@ std::optional<Image> TablePlayfield::compose_impl(const diagnostics::ReferenceSn
             for(int y=0;y<sprite.height;++y) for(int x=0;x<sprite.width;++x) {
                 const int dx=sprite.x+x,dy=sprite.y+y;
                 if(dx<0 || dx>=256 || dy<0 || dy>=table_playfield_height ||
-                    (!half?dy>=table_half_offset:dy<240)) continue;
+                    (!taken && (!half?dy>=table_half_offset:dy<240))) continue;
                 const auto color=sprite.image.pixels[y*sprite.width+x];
                 if(color>>24) {
                     result.pixels[dy*256+dx]=color;drawn=true;

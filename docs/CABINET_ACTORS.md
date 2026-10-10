@@ -132,8 +132,22 @@ actors the stored-half pass has already updated that frame.
   at upper Y 280 the upper one is removed. With no free slot the flyer stays
   the upper half's. This runs with the stored half's pass, at the start of the
   dispatcher (`CabinetActors::carry_flyers`).
+- The cocoons' aliens (types 52 and 53) can be burst in the upper half. They
+  fly up out of the lower half to local Y -64 before the cartridge removes
+  them, and the picture already drew them above the seam, but the ball's
+  touch test (03:8703) ends at local Y 64 and the ball only meets its own
+  half's actors. An alien that rises above lower Y 64 is moved, with all its
+  fields, to the first free slot of the upper half's bank, 216 rows down. Its
+  own routine (01:56AA / 575D) runs it there, by the ROM when the ball is
+  upstairs: a hit scores its 3,000 points and bursts it as below, and steps
+  the upper table's progress (03:911B goes by the ball's half) rather than
+  the lower's. The upper table has none of its patterns, so the alien is
+  hidden (`$3540` bit 5, which the touch test ignores) and
+  `render::TablePlayfield` draws it from the lower table's patterns and
+  colors. With no free slot it stays the lower half's, as before.
 - Runtimes with cabinet actors carry `-actors3` in their revision. Recordings
-  made with `-actors2` replay with the brain's flyers ending in the upper half,
+  made with `-actors2` replay with the brain's flyers ending in the upper half
+  and the cocoons' aliens staying the lower half's,
   those made with `-actors1` with the upper riser waiting for the ball as well,
   and those made with `-aliens1` with only the lower aliens native, as they were
   made; older cabinet recordings replay with none, and the stored half's other
@@ -170,6 +184,13 @@ banks, in step, for the rows it straddles, is drawn whole there (all 32 rows of
 the sprite, against the same frame without flyers), and flies on to the lower
 half's bottom edge. The ball bursts one in either half. With no free slot, and
 under `-actors2`, the flyers stay the upper half's.
+
+`cocoon_aliens` (`tests/cocoon_alien_tests.cpp`) hatches both cocoons with the
+ball held in either half. Each alien becomes the upper half's at the seam, is
+drawn whole across it (against the same frame without aliens), and flies on
+until it leaves the upper table's side. The ball bursts one in either half for
+3,000 points. With no free slot, and under `-actors2`, they stay the lower
+half's.
 
 `inactive_animation` renders cabinet play: both stored halves are drawn moving,
 the picture doesn't depend on which half holds the ball, rendering never

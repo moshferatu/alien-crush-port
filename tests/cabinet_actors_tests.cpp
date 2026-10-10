@@ -200,9 +200,10 @@ void stored_half(std::span<const std::byte> rom) {
     };
     // A real table's stored actors, from a fresh game.
     // Cocoons hatch there: an alien unfolds and flies off the slingshot, all
-    // in the stored bank.
+    // in the stored bank. (Without the hand-over at the seam, which gives it
+    // to the ball's bank: cocoon_alien_tests.cpp.)
     {
-        gameplay::CabinetActors actors(rom,Scope::table);
+        gameplay::CabinetActors actors(rom,Scope::table,true,true,false);
         Ram ram{};set(ram,0x79,1);set(ram,0x1217,0x35);set(ram,0x1218,0x7a);
         const unsigned cocoon=6;
         put(ram,false,0x3500,cocoon,26);put(ram,false,0x35c0,cocoon,0x40);put(ram,false,0x3680,cocoon,0xa0);

@@ -74,7 +74,11 @@ public:
     // where the same routine flies it on to the bottom of the table and the
     // ball can still burst it. While it straddles the two pictures (upper Y
     // 272..280, the lower half's 216 less) both banks hold it, a step apart
-    // at most; then the upper one goes. Run by update_inactive.
+    // at most; then the upper one goes. The cocoons' aliens (types 52 and 53)
+    // go the other way: one that rises to the lower half's top edge, where
+    // the ball stops touching it, becomes the upper half's, hidden from that
+    // table's own sprites since only the lower table has its patterns. Run by
+    // update_inactive.
     void carry_flyers(std::span<std::byte> ram) const;
     // Verification: the port's update of slot x in the ball's half, on a copy
     // of RAM, as the ROM is about to run it. Returns the PC where the ROM's

@@ -51,7 +51,7 @@ using cabinet::Bank;using cabinet::Resume;using cabinet::Wait;
 // table_half_offset), and each shows 240 rows from sprite Y 64. A flyer is 32
 // rows tall: from upper Y 272 the upper picture cuts its feet, and from 280
 // the lower one shows all of it.
-constexpr unsigned kFlyerHalfOffset=216,kFlyerCarryFrom=272,kFlyerCarryTo=280;
+constexpr unsigned kFlyerHalfOffset=216,kFlyerCarryFrom=272,kFlyerCarryTo=280,kFlyerRiseFrom=64;
 bool alien(unsigned type) {
     switch(type) {
     case 15: case 16: case 21: case 22: case 25: case 67: case 68: case 72: case 73: return true;
@@ -284,6 +284,27 @@ void CabinetActors::carry_flyers(std::span<std::byte> ram) const {
         const unsigned below=y-kFlyerHalfOffset;
         put(lower,0x3680,slot,below);put(lower,0x36c0,slot,below>>8);
         put(upper,0x38c0,x,1);
+    }
+    // The cocoons' aliens (01:56AA / 575D) fly up out of the lower half, and
+    // from Y 64 the ball touches nothing (03:8703): there the alien becomes
+    // the upper half's, with all its fields, so the ball meets it as it does
+    // below. The upper table has none of its patterns, so it goes hidden, and
+    // render::TablePlayfield draws it from the lower table's.
+    for(unsigned x=4;x<64;++x) {
+        const unsigned type=b(lower,0x3500,x);
+        if((type!=52 && type!=53) || (b(lower,0x3540,x)&0x81)!=0x80 || !b(lower,0x3840,x)) continue;
+        const unsigned y=b(lower,0x3680,x)|(b(lower,0x36c0,x)<<8);
+        if(y>=kFlyerRiseFrom && y<0xffc0) continue;
+        unsigned slot=4;
+        while(slot<0x3c && b(upper,0x3500,slot)) ++slot;
+        if(slot==0x3c) continue;
+        for(unsigned field=0;field<32;++field) {
+            put(upper,0x3500+field*64,slot,b(lower,0x3500+field*64,x));
+            put(lower,0x3500+field*64,x,0);
+        }
+        const unsigned above=y+kFlyerHalfOffset;
+        put(upper,0x3680,slot,above);put(upper,0x36c0,slot,above>>8);
+        put(upper,0x3540,slot,b(upper,0x3540,slot)|0x20);
     }
 }
 void CabinetActors::update_inactive(std::span<std::byte> ram,std::uint64_t frame) {
