@@ -35,8 +35,11 @@ public:
     enum class Scope {aliens,table};
     // `stored_half` false leaves the stored half to the original too, for
     // verification. `lowers_riser` false keeps the upper riser up until the
-    // ball returns, as runtimes marked -actors1 did.
-    CabinetActors(std::span<const std::byte> rom,Scope scope,bool stored_half=true,bool lowers_riser=true);
+    // ball returns, as runtimes marked -actors1 did. `carries_flyers` false
+    // leaves the brain's flyers to the upper half, as runtimes up to -actors2
+    // did.
+    CabinetActors(std::span<const std::byte> rom,Scope scope,bool stored_half=true,bool lowers_riser=true,
+        bool carries_flyers=true);
     ~CabinetActors();
     CabinetActors(const CabinetActors&)=delete;
     CabinetActors& operator=(const CabinetActors&)=delete;
@@ -65,6 +68,14 @@ public:
     // RAM changes; the colors are uploaded when their half is shown.
     void update_palettes(std::span<std::byte> ram);
     void reset() noexcept;
+    // The brain's flyers (type 55) belong to the upper half, which removes
+    // them at its own bottom edge, Y $140: in mid-air on the whole table. One
+    // that flies down to the seam is given to the lower half's bank instead,
+    // where the same routine flies it on to the bottom of the table and the
+    // ball can still burst it. While it straddles the two pictures (upper Y
+    // 272..280, the lower half's 216 less) both banks hold it, a step apart
+    // at most; then the upper one goes. Run by update_inactive.
+    void carry_flyers(std::span<std::byte> ram) const;
     // Verification: the port's update of slot x in the ball's half, on a copy
     // of RAM, as the ROM is about to run it. Returns the PC where the ROM's
     // RAM should then equal the prediction: 01:45C8 after the routine's RTS,
@@ -76,7 +87,7 @@ public:
 private:
     std::unique_ptr<cabinet::Rom> rom_;
     Scope scope_;
-    bool stored_half_,lowers_riser_;
+    bool stored_half_,lowers_riser_,carries_flyers_;
     std::array<std::uint64_t,64> inactive_frame_{};
     std::array<std::byte,8192> prediction_{};
     unsigned predicted_slot_{},predicted_type_{},predicted_pc_{};

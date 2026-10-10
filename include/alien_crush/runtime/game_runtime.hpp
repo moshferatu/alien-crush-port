@@ -88,16 +88,20 @@ enum class ControlMode { original, cabinet };
 // aliens, as runtimes marked -aliens1 did; kept to replay their recordings.
 // Cabinet actors1: as cabinet, but the upper riser stays up until the ball
 // returns, as runtimes marked -actors1 did; kept likewise.
+// Cabinet actors2: as cabinet, but the brain's flyers end at the upper half's
+// bottom edge, as runtimes marked -actors2 did; kept likewise.
 // Verify: the port's actors in the ball's half only, which plays the original
 // to the byte. All but original require continuous handoff.
-enum class ActorMode { original, cabinet, cabinet_aliens, verify, cabinet_actors1 };
+enum class ActorMode { original, cabinet, cabinet_aliens, verify, cabinet_actors1, cabinet_actors2 };
 // Mark a cabinet runtime's revision, and so its recordings and states.
-inline constexpr std::string_view kCabinetActorsRevision="-actors2";
+inline constexpr std::string_view kCabinetActorsRevision="-actors3";
+inline constexpr std::string_view kCabinetActors2Revision="-actors2";
 inline constexpr std::string_view kCabinetActors1Revision="-actors1";
 inline constexpr std::string_view kCabinetAliensRevision="-aliens1";
 // The actor mode a recording or state was made with, by its revision.
 inline ActorMode recorded_actor_mode(std::string_view revision) {
     if(revision.find(kCabinetActorsRevision)!=std::string_view::npos) return ActorMode::cabinet;
+    if(revision.find(kCabinetActors2Revision)!=std::string_view::npos) return ActorMode::cabinet_actors2;
     if(revision.find(kCabinetActors1Revision)!=std::string_view::npos) return ActorMode::cabinet_actors1;
     if(revision.find(kCabinetAliensRevision)!=std::string_view::npos) return ActorMode::cabinet_aliens;
     return ActorMode::original;

@@ -120,9 +120,22 @@ actors the stored-half pass has already updated that frame.
   leaves the upper table, usually on its way to the launcher, and the riser
   drops then instead of on the ball's return. Its 20 points and upper progress
   step (5AC8, 03:911B's upper branch) are awarded then too.
-- Runtimes with cabinet actors carry `-actors2` in their revision. Recordings
-  made with `-actors1` replay with the upper riser waiting for the ball, and
-  those made with `-aliens1` with only the lower aliens native, as they were
+- The brain's flyers (type 55) fly on down the whole table. The cartridge
+  removes them at the upper half's bottom edge (Y `$140`), which is off its
+  screen but in mid-air on the cabinet's table, a little below the seam. A
+  flyer that reaches upper Y 272, where the upper half's picture would start
+  to cut it, is copied into the first free slot of the lower half's bank, 216
+  rows up (the offset between the two pictures). The same routine (01:559C)
+  runs it there, by the ROM when the ball is in the lower half, so it ends at
+  that half's bottom edge, and the ball bursts it as it does upstairs, for no
+  points. For the eight rows it straddles the two pictures both banks hold it;
+  at upper Y 280 the upper one is removed. With no free slot the flyer stays
+  the upper half's. This runs with the stored half's pass, at the start of the
+  dispatcher (`CabinetActors::carry_flyers`).
+- Runtimes with cabinet actors carry `-actors3` in their revision. Recordings
+  made with `-actors2` replay with the brain's flyers ending in the upper half,
+  those made with `-actors1` with the upper riser waiting for the ball as well,
+  and those made with `-aliens1` with only the lower aliens native, as they were
   made; older cabinet recordings replay with none, and the stored half's other
   actors are drawn frozen. Quick states from other revisions don't load.
 
@@ -150,6 +163,13 @@ actors the stored-half pass has already updated that frame.
   before an upstairs trip respawns and shows while the ball is up.
 - `-aliens1` runtimes still play the original's game until the ball first goes
   upstairs (2,441 frames compared).
+
+`brain_flyers` (`tests/brain_flyer_tests.cpp`) sets the brain off with the ball
+held in either half. Two of its four flyers cross the seam: each is in both
+banks, in step, for the rows it straddles, is drawn whole there (all 32 rows of
+the sprite, against the same frame without flyers), and flies on to the lower
+half's bottom edge. The ball bursts one in either half. With no free slot, and
+under `-actors2`, the flyers stay the upper half's.
 
 `inactive_animation` renders cabinet play: both stored halves are drawn moving,
 the picture doesn't depend on which half holds the ball, rendering never

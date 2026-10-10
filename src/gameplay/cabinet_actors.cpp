@@ -47,6 +47,11 @@ void Bank::heading(unsigned x,unsigned direction,unsigned scale) {
 }
 namespace {
 using cabinet::Bank;using cabinet::Resume;using cabinet::Wait;
+// The lower half's picture starts 216 rows down the upper's (render::
+// table_half_offset), and each shows 240 rows from sprite Y 64. A flyer is 32
+// rows tall: from upper Y 272 the upper picture cuts its feet, and from 280
+// the lower one shows all of it.
+constexpr unsigned kFlyerHalfOffset=216,kFlyerCarryFrom=272,kFlyerCarryTo=280;
 bool alien(unsigned type) {
     switch(type) {
     case 15: case 16: case 21: case 22: case 25: case 67: case 68: case 72: case 73: return true;
@@ -161,8 +166,9 @@ void run(Bank& b,unsigned x) {
         throw std::runtime_error("Cabinet actor update for an actor it does not own");
 }
 }
-CabinetActors::CabinetActors(std::span<const std::byte> rom,Scope scope,bool stored_half,bool lowers_riser)
-    :rom_(std::make_unique<cabinet::Rom>()),scope_(scope),stored_half_(stored_half),lowers_riser_(lowers_riser) {
+CabinetActors::CabinetActors(std::span<const std::byte> rom,Scope scope,bool stored_half,bool lowers_riser,bool carries_flyers)
+    :rom_(std::make_unique<cabinet::Rom>()),scope_(scope),stored_half_(stored_half),lowers_riser_(lowers_riser),
+    carries_flyers_(carries_flyers && scope==Scope::table) {
     if(!rom::matches_supported_rom(rom.size(),rom::compute_digests(rom))) throw std::runtime_error("Unsupported ROM for cabinet actors");
     for(unsigned bank=0;bank<rom_->banks.size();++bank)
         std::copy_n(rom.begin()+bank*0x2000,0x2000,rom_->banks[bank].begin());
@@ -253,12 +259,40 @@ void CabinetActors::update_ending(std::span<std::byte> ram,std::uint64_t frame) 
     }
     update_inactive(ram,frame);
 }
+void CabinetActors::carry_flyers(std::span<std::byte> ram) const {
+    // The upper half's bank and the lower's: the ball's is at $3500, the
+    // other $1300 lower (01:46FD).
+    const std::size_t upper=ram[0x79]==std::byte{1}?0x1500:0x200,lower=0x1700-upper;
+    const auto b=[&](std::size_t bank,unsigned field,unsigned x) {return std::to_integer<unsigned>(ram[bank+field-0x3500+x]);};
+    const auto put=[&](std::size_t bank,unsigned field,unsigned x,unsigned value) {ram[bank+field-0x3500+x]=static_cast<std::byte>(value&255);};
+    for(unsigned x=4;x<64;++x) {
+        // Started, shown and on the table. $38C0 is free once 01:559C has
+        // taken the heading from it: here it marks a flyer already given.
+        if(b(upper,0x3500,x)!=55 || (b(upper,0x3540,x)&0xa1)!=0x80) continue;
+        const unsigned y=b(upper,0x3680,x)|(b(upper,0x36c0,x)<<8);
+        if(y<kFlyerCarryFrom || y>=0x140) continue;
+        if(b(upper,0x38c0,x)) {
+            if(y>=kFlyerCarryTo) for(unsigned field=0;field<32;++field) put(upper,0x3500+field*64,x,0); // 01:46AD
+            continue;
+        }
+        // 01:46CE: the first free slot from 4 to $3B. Without one the flyer
+        // stays the upper half's.
+        unsigned slot=4;
+        while(slot<0x3c && b(lower,0x3500,slot)) ++slot;
+        if(slot==0x3c) continue;
+        for(unsigned field=0;field<32;++field) put(lower,0x3500+field*64,slot,b(upper,0x3500+field*64,x));
+        const unsigned below=y-kFlyerHalfOffset;
+        put(lower,0x3680,slot,below);put(lower,0x36c0,slot,below>>8);
+        put(upper,0x38c0,x,1);
+    }
+}
 void CabinetActors::update_inactive(std::span<std::byte> ram,std::uint64_t frame) {
     if(ram.size()!=8192) throw std::runtime_error("Invalid cabinet actor update");
     const unsigned table=std::to_integer<unsigned>(ram[0x79]);
     inactive_table_=2;
     if(table>1 || !stored_half_) return;
     inactive_table_=1-table;
+    if(carries_flyers_) carry_flyers(ram);
     Bank bank(*rom_,ram,false,scope_==Scope::aliens,lowers_riser_);
     // The dispatcher reads each type as it goes, so actors spawned into later
     // slots run in the same pass, and removed ones do not.

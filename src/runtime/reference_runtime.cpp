@@ -243,6 +243,7 @@ public:
             throw std::runtime_error("Cabinet actors require continuous handoff");
         // The nudge factor is last: recorded_nudge_multiplier reads to the end.
         const auto marker=actor_mode==ActorMode::cabinet?kCabinetActorsRevision:
+            actor_mode==ActorMode::cabinet_actors2?kCabinetActors2Revision:
             actor_mode==ActorMode::cabinet_actors1?kCabinetActors1Revision:
             actor_mode==ActorMode::cabinet_aliens?kCabinetAliensRevision:std::string_view{};
         const auto suffix=std::string(marker)+
@@ -292,7 +293,7 @@ public:
         if(actor_mode!=ActorMode::original) {
             actors=std::make_unique<gameplay::CabinetActors>(core::read_file(path),
                 actor_mode==ActorMode::cabinet_aliens?gameplay::CabinetActors::Scope::aliens:gameplay::CabinetActors::Scope::table,
-                actor_mode!=ActorMode::verify,actor_mode!=ActorMode::cabinet_actors1);
+                actor_mode!=ActorMode::verify,actor_mode!=ActorMode::cabinet_actors1,actor_mode==ActorMode::cabinet);
             hooked=actors->entries();hooked.push_back(0x45a8);hooked.push_back(0xf292);
         }
 #ifdef AC_REFERENCE_VIDEO_OBSERVER
