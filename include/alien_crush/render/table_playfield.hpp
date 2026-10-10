@@ -6,6 +6,7 @@
 #include "alien_crush/diagnostics/reference_snapshot.hpp"
 #include "alien_crush/diagnostics/display_trace.hpp"
 #include "alien_crush/render/pce_graphics.hpp"
+#include <algorithm>
 #include <optional>
 namespace alien_crush::render {
 // Matching ROM side-wall tiles place the lower artwork at upper row 216.
@@ -13,6 +14,19 @@ namespace alien_crush::render {
 inline constexpr int table_half_offset=216;
 inline constexpr int table_playfield_height=table_half_offset+240;
 inline constexpr unsigned table_aspect_width=40,table_aspect_height=57;
+// The ball's Y in the game's world (the upper half's; the lower half's plus
+// 224) is drawn this much higher, taking up the eight pixels between the two
+// offsets across world Y 256..320 (TablePlayfield::transition_ball).
+inline double table_ball_seam_correction(double world_y) {
+    const double t=std::clamp((world_y-256.0)/64.0,0.0,1.0);
+    return (224-table_half_offset)*t*t*(3-2*t);
+}
+// The world Y drawn at `drawn`, which is world Y less its correction.
+inline double table_ball_world_y(double drawn) {
+    double world_y=drawn;
+    for(unsigned i=0;i<16;++i) world_y=drawn+table_ball_seam_correction(world_y);
+    return world_y;
+}
 // Read-only recognition of the original main-table RLE upload call. A host may
 // omit its presentation delay during an already-confirmed transition hold.
 bool table_transition_upload(const diagnostics::ReferenceSnapshot&,std::span<const std::byte> ram);

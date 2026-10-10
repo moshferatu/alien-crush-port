@@ -56,11 +56,13 @@ inline void check_cabinet_config() {
         shared.windows[host::playfield_window].artwork_rotation==90,"A Devil's Crush alien-crush.ini reads here");
     check(decode("version=1\ngame.near_max_score=1\n").play.near_max_score && !decode("version=1\n").play.near_max_score,
         "A start near the maximum score is read, and off without it");
+    check(decode("version=1\ngame.drag_ball=1\n").play.drag_ball && !decode("version=1\n").play.drag_ball,
+        "Carrying the ball with the mouse is read, and off without it");
     check(decode("version=1\ninput.one=A, A ,B\n").input[host::PadButton::one]==std::vector<std::string>{"A","B"},
         "A key bound twice to one input is kept once");
 
     for(const auto* bad:{"", "input.one=A\n", "version=2\n", "version=1\nversion=1\n", "version=1\n# comment\n",
-        "version=1\ngame.cabinet=2\n", "version=1\ngame.bonus_stage=5\n", "version=1\ngame.bonus_stage=\n", "version=1\ngame.near_max_score=2\n", "version=1\nvideo.smoothing=off\n", "version=1\naudio.music_voice_overlay=yes\n",
+        "version=1\ngame.cabinet=2\n", "version=1\ngame.bonus_stage=5\n", "version=1\ngame.bonus_stage=\n", "version=1\ngame.near_max_score=2\n", "version=1\ngame.drag_ball=yes\n", "version=1\nvideo.smoothing=off\n", "version=1\naudio.music_voice_overlay=yes\n",
         "version=1\ninput.nudge_multiplier=17\n", "version=1\ninput.nudge_multiplier=2x\n",
         "version=1\nplayfield.artwork_rotation=45\n", "version=1\ninput.left_flipper=left,sideways\n",
         "version=1\ninput.nudge.typo=1\n", "version=1\ninput.nudge.axis_y=0\n", "version=1\ninput.plunger.release=101\n",

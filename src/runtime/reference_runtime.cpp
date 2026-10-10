@@ -365,6 +365,12 @@ public:
         if(!memory || retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM)<8192) return false;
         return set_reference_score({memory,8192},points);
     }
+    bool hold_ball(double x,double y) override {
+        check_loaded();
+        auto* memory=static_cast<std::byte*>(retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM));
+        if(!memory || retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM)<8192) return false;
+        return hold_reference_ball({memory,8192},x,y);
+    }
     bool cancel_plunger_draw() override {
         check_loaded();
         const auto size=retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);

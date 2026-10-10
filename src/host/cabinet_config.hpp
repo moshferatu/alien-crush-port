@@ -105,6 +105,9 @@ struct PlaySettings {
     // game.near_max_score (--near-max-score): a new game starts 900 points
     // short of the maximum score, to play into the game's ending.
     bool near_max_score=false;
+    // game.drag_ball (--drag-ball): a cheat for testing; the left mouse
+    // button carries the ball over the playfield.
+    bool drag_ball=false;
     bool operator==(const PlaySettings&) const=default;
 };
 

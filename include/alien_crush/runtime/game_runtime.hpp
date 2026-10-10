@@ -72,6 +72,9 @@ public:
     // Give the game in play a score, from the shooter (set_reference_score).
     // Never used by canonical pad replays.
     virtual bool set_score(std::uint32_t points) = 0;
+    // Carry the ball in play to a place (hold_reference_ball). Never used by
+    // canonical pad replays.
+    virtual bool hold_ball(double x,double y) = 0;
     // The music's voices kept while sound effects play, on a second PSG that
     // only adds to the output (src/runtime/music_voice_overlay.hpp). Live sound
     // only: the machine and its states are untouched. After load; a new load

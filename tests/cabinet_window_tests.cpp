@@ -5,6 +5,7 @@
 #include "alien_crush/core/files.hpp"
 #include "alien_crush/render/pce_graphics.hpp"
 #include "alien_crush/core/recording.hpp"
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -96,6 +97,29 @@ int main(int argc,char** argv) {
                 }
                 SDL_DestroySurface(capture);
                 require(bottom && top,"Bonus viewport reaches physical bottom at every cabinet rotation");
+            }
+        }
+        {
+            // A place in the window leads back to the frame's pixel drawn
+            // there, whichever way the window's picture is turned.
+            host::Presentation playfield("Pointer mapping",384,768,true);
+            std::vector<std::uint32_t> pixels(256*240,0xff000000);
+            for(int y=60;y<76;++y) for(int x=40;x<56;++x) pixels[static_cast<std::size_t>(y)*256+x]=0xffffffff;
+            for(const int rotation:{0,90,180,270}) {
+                playfield.rotation(rotation);
+                playfield.show({1,256,240,pixels,{}},4,3,true);
+                const auto shown=playfield.capture();
+                double sum_x=0,sum_y=0,lit=0;
+                for(int y=0;y<shown.height;++y) for(int x=0;x<shown.width;++x)
+                    if((shown.pixels[static_cast<std::size_t>(y)*shown.width+x]&0xff00)>0x8000) {sum_x+=x+0.5;sum_y+=y+0.5;++lit;}
+                require(lit>0,"The marked pixels are shown");
+                float window_x{},window_y{};
+                require(SDL_RenderCoordinatesToWindow(SDL_GetRenderer(playfield.window()),static_cast<float>(sum_x/lit),
+                    static_cast<float>(sum_y/lit),&window_x,&window_y),"Window coordinates");
+                const auto point=playfield.frame_point(window_x,window_y);
+                if(!point || std::abs(point->x-48)>1 || std::abs(point->y-68)>1)
+                    std::cerr<<"rotation="<<rotation<<" point="<<(point?point->x:-1)<<','<<(point?point->y:-1)<<'\n';
+                require(point && std::abs(point->x-48)<=1 && std::abs(point->y-68)<=1,"A pointer over the window finds its frame pixel at every rotation");
             }
         }
         const auto data=core::path_from_utf8(argv[2]);

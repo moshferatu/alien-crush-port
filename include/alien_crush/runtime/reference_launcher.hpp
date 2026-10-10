@@ -36,4 +36,11 @@ inline constexpr std::uint32_t kMaximumScore=999999900,kNearMaximumScore=9999990
 // to redraw the HUD. Only with a ball seated in the shooter of an ordinary
 // game; false leaves every RAM byte intact.
 bool set_reference_score(std::span<std::byte> ram,std::uint32_t points);
+// The cheat that carries the ball: put it at X and Y in the game's own actor
+// coordinates and give it the velocity that took it there, so letting go
+// throws it. On the main table Y is the upper half's; the lower half's is 224
+// more, and the ball changes halves by the game's own crossing (03:894F),
+// which this only steers. Only for a ball in play on the table or in a bonus
+// room, not paused and not the demo's; false leaves every RAM byte intact.
+bool hold_reference_ball(std::span<std::byte> ram,double x,double y);
 }

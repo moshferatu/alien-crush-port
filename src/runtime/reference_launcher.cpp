@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "alien_crush/runtime/reference_launcher.hpp"
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 namespace alien_crush {
 namespace {
@@ -81,6 +83,44 @@ bool set_reference_score(std::span<std::byte> ram,std::uint32_t points) {
     ram[0x1224]=static_cast<std::byte>((hundreds>>8)&255);
     ram[0x122a]=static_cast<std::byte>(hundreds>>16);
     ram[0x68]|=std::byte{4};
+    return true;
+}
+bool hold_reference_ball(std::span<std::byte> ram,double x,double y) {
+    if(ram.size()!=8192 || !std::isfinite(x) || !std::isfinite(y)) return false;
+    auto b=[&](unsigned at){return std::to_integer<unsigned>(ram[at]);};
+    const unsigned table=b(0x79);
+    // The ball as the cabinet draws it: in play, shown and not swallowed.
+    if(b(0x1500)!=1 || (b(0x1540)&0xa0)!=0x80 || (b(0x1a00)&0xa0)!=0 || (b(0xf6)&2)!=0 || b(0x76)!=0) return false;
+    // The table's live loop at its frame wait (return $4088), which leaves
+    // out a change of halves still loading; or a bonus room still in play.
+    if(table<2?(b(0x1fe)|(b(0x1ff)<<8))!=0x4088:(table!=2 || b(0x83)>=4 || (b(0x78)&1)!=0)) return false;
+    const int origin=table==0?224*256:0;
+    const int from_x=static_cast<int>(b(0x1580)|(b(0x15c0)<<8)|(b(0x1600)<<16));
+    const int from_y=static_cast<int>(b(0x1640)|(b(0x1680)<<8)|(b(0x16c0)<<16))+origin;
+    const int to_x=static_cast<int>(std::lround(std::clamp(x,32.0,288.0)*256));
+    const int to_y=static_cast<int>(std::lround(std::clamp(y,48.0,table==2?319.0:543.0)*256));
+    // The motion since the last frame as a velocity, signed 8.8: none for
+    // under half a pixel, which is the fall the game added, nor for a jump
+    // across the table, and no faster than the shooter's.
+    auto velocity=[](int moved) {return std::abs(moved)<0x80 || std::abs(moved)>32*256?0:std::clamp(moved,-0x800,0x800);};
+    int velocity_x=velocity(to_x-from_x),velocity_y=velocity(to_y-from_y);
+    int local_y=to_y-origin;
+    // The halves meet at Y 288. 03:895C..8994 takes a rising ball above the
+    // lower half's Y $40 ($50 between the walls) to the upper half, and
+    // 03:89F7..8A07 one not rising at Y $120 to the lower. Have the change
+    // made at once, with no velocity to carry the ball on through it.
+    if(table<2 && (table==0)==(to_y<288*256)) {
+        velocity_x=0;velocity_y=table==0?-0x100:0;
+        local_y=table==0?std::max(local_y,48*256):std::min(local_y,304*256);
+    } else if(table==0 && local_y<80*256) velocity_y=std::max(velocity_y,0); // Not back up from under the seam.
+    auto put=[&](unsigned at,int value){ram[at]=static_cast<std::byte>(value&255);};
+    put(0x1580,to_x);put(0x15c0,to_x>>8);put(0x1600,to_x>>16);
+    put(0x1640,local_y);put(0x1680,local_y>>8);put(0x16c0,local_y>>16);
+    put(0x1700,velocity_x);put(0x1740,velocity_x>>8);
+    put(0x1780,velocity_y);put(0x17c0,velocity_y>>8);
+    // The ball moves by the eighths 03:9022 took of its last velocity. Without
+    // them it stays here this frame, and leaves with the new velocity after.
+    for(const unsigned at:{0x1900u,0x1940u,0x1980u,0x19c0u}) put(at,0);
     return true;
 }
 bool apply_reference_launcher_draw(std::span<std::byte> ram,std::uint8_t percent) {

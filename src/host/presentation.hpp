@@ -4,6 +4,7 @@
 #include "alien_crush/render/table_playfield.hpp"
 #include <SDL3/SDL.h>
 #include <memory>
+#include <optional>
 namespace alien_crush::host {
 class AnimationPresentation;
 class Presentation {
@@ -18,6 +19,7 @@ class Presentation {
     render::MotionSmoothing motion_;
     bool layered_{};
     int sw{},sh{},iw{},ih{};
+    int pad_x_{},pad_y_{};
     int rotation_{};
     SDL_FRect destination_{};
     bool deferred_{};
@@ -44,6 +46,9 @@ public:
     // Read back the presented output for renderer regression tests/screenshots.
     render::Image capture();
     void panel(const char* text);
+    // The pixel of the frame last shown that a place in the window is over,
+    // through the scaling and the window's rotation; it may lie outside.
+    std::optional<SDL_FPoint> frame_point(float window_x,float window_y);
     int rotation() const { return rotation_; }
     void rotation(int degrees) { rotation_=degrees; }
 };

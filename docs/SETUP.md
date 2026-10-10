@@ -25,12 +25,12 @@ has the focus.
 
 With no options the game plays as `alien-crush.ini` says, which is
 what the launcher edits: `game.rom`, `game.cabinet`, `game.bonus_stage`,
-`game.near_max_score`, `audio.music_voice_overlay`, `video.smoothing` and `input.nudge_multiplier`,
+`game.near_max_score`, `game.drag_ball`, `audio.music_voice_overlay`, `video.smoothing` and `input.nudge_multiplier`,
 beside the window, key, button, nudge and plunger fields described below. An
 option on the command line beats the file for that run (`--rom`, `--cabinet`
-or `--no-cabinet`, `--bonus-stage`, `--near-max-score`, `--music-voice-overlay` or `--no-music-voice-overlay`,
+or `--no-cabinet`, `--bonus-stage`, `--near-max-score`, `--drag-ball`, `--music-voice-overlay` or `--no-music-voice-overlay`,
 `--smooth` or `--no-smooth`, `--nudge-multiplier`), and replays and `--frames`
-runs ignore these seven, though `--bonus-stage` and `--near-max-score`
+runs ignore these eight, though `--bonus-stage` and `--near-max-score`
 themselves still work with `--frames`. F7 is remembered in `video.smoothing` when a cabinet session exits
 normally.
 
@@ -59,6 +59,17 @@ keep your own table. It combines with `--bonus-stage`.
 ```powershell
 alien-crush.exe --near-max-score --data-dir "D:\scratch\alien-crush-test"
 ```
+
+To put the ball where a table event needs it, add `--drag-ball`, or turn on
+Drag Ball With Mouse in the launcher. The mouse pointer then shows over the
+game, and while the left button is held on the playfield the ball is carried
+under it, on the table and in the bonus stages, in desktop and cabinet modes.
+The ball keeps the pointer's motion when the button is let go, so it can be
+thrown. The game's own rules still run: the ball changes table halves by the
+game's crossing (in desktop mode the other half loads, as it does in play), and
+holding it inside a wall or a flipper gets it pushed out again. It is a cheat
+for testing, so scores made with it are saved like any others, and it is not
+available while recording or replaying.
 
 ## Settings file
 

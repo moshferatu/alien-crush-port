@@ -54,7 +54,7 @@ int main(int argc,char** argv) {
         std::optional<unsigned> bonus_stage_override;
         // Flags beat alien-crush.ini's play settings, which fill in what they leave unsaid.
         std::optional<bool> smoothing_override,cabinet_override,overlay_override;
-        bool probe=false,probe_plunger=false,no_vsync=false,near_max_score_flag=false;
+        bool probe=false,probe_plunger=false,no_vsync=false,near_max_score_flag=false,drag_ball_flag=false;
         for(int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             auto value=[&](){if(++i>=argc) throw std::runtime_error("Missing value for "+arg); return std::string(argv[i]);};
@@ -88,6 +88,7 @@ int main(int argc,char** argv) {
                 bonus_stage_override=static_cast<unsigned>(text[0]-'0');
             }
             else if(arg=="--near-max-score") near_max_score_flag=true;
+            else if(arg=="--drag-ball") drag_ball_flag=true;
             else if(arg=="--input-probe") probe=true;
             else if(arg=="--cabinet-plunger-probe") probe_plunger=true;
             else if(arg=="--plunger-config") plunger_path=core::path_from_utf8(value());
@@ -101,11 +102,12 @@ int main(int argc,char** argv) {
                 "It, the high scores (alien-crush.hiscore), quick states and an optional backglass.bmp sit beside the executable, or in --data-dir.\n"
                 "An earlier build kept them in a portable-data folder, with the settings as cabinet.ini; they are moved out of it on the first start.\n"
                 "With no options, normal play takes game.rom, game.cabinet, game.bonus_stage, game.near_max_score,\n"
-                "audio.music_voice_overlay, video.smoothing and\n"
+                "game.drag_ball, audio.music_voice_overlay, video.smoothing and\n"
                 "input.nudge_multiplier from it; a flag beats the file for that run.\n"
                 "--no-cabinet: one window, whatever alien-crush.ini says.\n"
                 "--bonus-stage <1-4>: start a game in that bonus stage, through the game's own bonus transition.\n"
                 "--near-max-score: start a game with 999,999,000 points, 900 short of the maximum, to see the game's ending.\n"
+                "--drag-ball: a cheat for testing; hold the left mouse button on the playfield to carry the ball, let go to throw it.\n"
                 "--music-voice-overlay / --no-music-voice-overlay: keep the music's voices while effects play (default on).\n"
                 "--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F7 toggles.\n"
                 "--refresh <Hz>: override the detected playfield refresh rate; --no-vsync uses timer pacing.\n"
@@ -118,6 +120,7 @@ int main(int argc,char** argv) {
         if(!record_path.empty() && !replay_path.empty()) throw std::runtime_error("Choose recording or replay");
         if(bonus_stage_override && !replay_path.empty()) throw std::runtime_error("--bonus-stage does not apply to a replay");
         if(near_max_score_flag && !replay_path.empty()) throw std::runtime_error("--near-max-score does not apply to a replay");
+        if(drag_ball_flag && !(replay_path.empty() && record_path.empty())) throw std::runtime_error("--drag-ball does not apply to a recording or a replay");
         SdlLifetime sdl;
         if(probe_plunger) return host::plunger_probe();
         if(probe) return host::input_probe(limit);
@@ -159,6 +162,9 @@ int main(int argc,char** argv) {
         const bool cabinet_mode=cabinet_override.value_or(play.cabinet);
         const unsigned bonus_stage=bonus_stage_override.value_or(play.bonus_stage);
         const bool near_max_score=near_max_score_flag || play.near_max_score;
+        // The mouse's hold on the ball is not in a recording's inputs.
+        const bool drag_ball=drag_ball_flag || (play.drag_ball && record_path.empty());
+        if(drag_ball && !SDL_ShowCursor()) throw std::runtime_error(SDL_GetError());
         bool smoothing=smoothing_override.value_or(play.smoothing),smoothing_toggled=false;
         // The overlay is live sound only; replays and --frames keep the original's.
         const bool music_voice_overlay=overlay_override.value_or(replay_path.empty() && !limit && play.music_voice_overlay);
@@ -227,6 +233,14 @@ int main(int argc,char** argv) {
         if(cabinet_mode) viewport_actors=std::make_unique<assets::ActorAssets>(core::read_file(rom_path));
         render::TableTransitionHold transition;
         if(cabinet_mode) table=std::make_unique<render::TablePlayfield>(core::read_file(rom_path));
+        // The ball's sprite, from its actor position (descriptor 0).
+        assets::ActorPiece ball_piece;
+        if(drag_ball) {
+            const auto pieces=assets::ActorAssets(core::read_file(rom_path)).pieces(0);
+            if(pieces.size()!=1) throw std::runtime_error("The ROM's ball sprite was not found");
+            ball_piece=pieces[0];
+        }
+        bool whole_table_shown=false;
         Audio audio;
         const SDL_AudioSpec spec{SDL_AUDIO_S16,2,runtime->sample_rate()};
         audio.stream=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&spec,nullptr,nullptr);
@@ -328,6 +342,19 @@ int main(int argc,char** argv) {
                 input.player_one|=Pad::button_ii;
             if(!playback) input=input_router.route(input,runtime->work_ram());
             const auto command=playback?playback->plunger_at(static_cast<std::size_t>(count)):cabinet_plunger.apply(*runtime,input,focused);
+            float mouse_x{},mouse_y{};
+            if(drag_ball && focused && (SDL_GetMouseState(&mouse_x,&mouse_y)&SDL_BUTTON_LMASK) && SDL_GetMouseFocus()==display.window())
+                if(const auto point=display.frame_point(mouse_x,mouse_y)) {
+                    // The sprite's center under the pointer. A sprite at (32,64) is
+                    // the picture's corner; the whole table draws world Y, a
+                    // single half or a bonus room its own, less the camera's shake.
+                    const auto ram=runtime->work_ram();
+                    const auto half=std::to_integer<unsigned>(ram[0x79]);
+                    const auto camera=static_cast<std::int16_t>(std::to_integer<unsigned>(ram[0x16])|(std::to_integer<unsigned>(ram[0x17])<<8));
+                    const double drawn=point->y-8-ball_piece.y+64;
+                    runtime->hold_ball(point->x-8-ball_piece.x+32,
+                        whole_table_shown?render::table_ball_world_y(drawn):drawn+camera+(half==0?224:0));
+                }
             const auto frame_started=SDL_GetTicksNS();
             if(table_raster) runtime->observe_display(true);
             auto frame=playback?recording::advance(*runtime,input,command):runtime->advance(input);
@@ -366,6 +393,7 @@ int main(int argc,char** argv) {
                 auto stitched=table->cabinet_frame(snapshot,previous_video?&*previous_video:nullptr,
                     runtime->work_ram(),table_raster?&raster:nullptr,transition);
                 if(timing.is_open()) compose_ended=SDL_GetTicksNS();
+                whole_table_shown=stitched.has_value();
                 if(stitched) {
                     render::MotionPosition position;
                     const auto ram=runtime->work_ram();

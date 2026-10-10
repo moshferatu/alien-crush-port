@@ -507,9 +507,7 @@ std::optional<Sprite> TablePlayfield::transition_ball(unsigned table,std::span<c
     // the join. Fractional input avoids a new rounding step at each half change.
     const unsigned local_y=b(0x1680)|(b(0x16c0)<<8);
     const double world_y=local_y+b(0x1640)/256.0+(table==0?224:0);
-    const double t=std::clamp((world_y-256.0)/64.0,0.0,1.0);
-    const double correction=(224-table_half_offset)*t*t*(3-2*t);
-    ball.y=static_cast<int>(std::floor(world_y-correction))+piece.y-64;
+    ball.y=static_cast<int>(std::floor(world_y-table_ball_seam_correction(world_y)))+piece.y-64;
     // Interpolate the same raster endpoints as unsmoothed presentation. Stored
     // fractional residue must not displace a stationary ball in the launcher.
     if(subpixel) *subpixel={double(ball.x),double(ball.y)};

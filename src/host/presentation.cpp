@@ -4,6 +4,7 @@
 #include "alien_crush/render/sharp_pixel_scaler.hpp"
 #include <stdexcept>
 #include <algorithm>
+#include <cmath>
 namespace alien_crush::host {
 namespace { void checked(bool ok) { if(!ok) throw std::runtime_error(SDL_GetError()); } }
 Presentation::Presentation(const char* title,int width,int height,bool hidden) {
@@ -49,6 +50,7 @@ void Presentation::show(const Frame& input,std::uint32_t aspect_width,std::uint3
     }
     render::AnimationScene padded_animation;
     std::vector<std::uint32_t> extended;
+    pad_x_=pad_y_=0;
     if(!background_tile.pixels.empty() && background_tile.width>0 && background_tile.height>0) {
         // Extend in source pixels before sharp scaling and rotation, preserving
         // the pattern phase at both edges of the centered original viewport.
@@ -80,6 +82,7 @@ void Presentation::show(const Frame& input,std::uint32_t aspect_width,std::uint3
             layout.stage_height=padded_height*std::max(4,layout.prescale_y);
         }
         frame.width=padded_width;frame.height=padded_height;frame.pixels=extended;
+        pad_x_=extra_x;pad_y_=extra_y;
     }
     if(sw!=frame.width || sh!=frame.height) {
         SDL_DestroyTexture(foreground_);foreground_=nullptr;
@@ -157,6 +160,16 @@ render::Image Presentation::capture() {
     for(int y=0;y<converted->h;++y)
         std::copy_n(reinterpret_cast<const std::uint32_t*>(static_cast<const unsigned char*>(converted->pixels)+y*converted->pitch),converted->w,result.pixels.begin()+y*converted->w);
     SDL_DestroySurface(converted);return result;
+}
+std::optional<SDL_FPoint> Presentation::frame_point(float window_x,float window_y) {
+    if(sw<=0 || sh<=0 || destination_.w<=0 || destination_.h<=0) return std::nullopt;
+    float x{},y{};
+    if(!SDL_RenderCoordinatesFromWindow(renderer_,window_x,window_y,&x,&y)) return std::nullopt;
+    // render_window turns the picture clockwise about its center.
+    const double angle=rotation_*3.14159265358979323846/180,c=std::cos(angle),s=std::sin(angle);
+    const double dx=x-(destination_.x+destination_.w/2),dy=y-(destination_.y+destination_.h/2);
+    return SDL_FPoint{static_cast<float>(((dx*c+dy*s)/destination_.w+0.5)*sw-pad_x_),
+        static_cast<float>(((dy*c-dx*s)/destination_.h+0.5)*sh-pad_y_)};
 }
 void Presentation::panel(const char* text) {
     int width{},height{}; checked(SDL_GetRenderOutputSize(renderer_,&width,&height));
