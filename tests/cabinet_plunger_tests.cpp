@@ -10,6 +10,10 @@ int main(int argc,char** argv) {
     try {
         require(argc==2,"Expected ROM path");
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"1");
+        // Only the virtual board: an axis-only binding takes the first
+        // joystick with that axis, which a connected controller would be.
+        for(const auto* driver:{SDL_HINT_JOYSTICK_HIDAPI,SDL_HINT_JOYSTICK_RAWINPUT,SDL_HINT_JOYSTICK_DIRECTINPUT,
+            SDL_HINT_JOYSTICK_GAMEINPUT,SDL_HINT_JOYSTICK_WGI,SDL_HINT_XINPUT_ENABLED}) SDL_SetHint(driver,"0");
         require(SDL_Init(SDL_INIT_JOYSTICK),"SDL initialization");
         bool controls_supported=false;
         for(const auto controls:{ControlMode::original,ControlMode::cabinet}) {
