@@ -261,8 +261,8 @@ constexpr Choice cabinet_choices[] = {{1, "Cabinet (three windows)"}, {0, "Deskt
 template <typename T, std::size_t N>
 constexpr int count_of(const T (&)[N]) { return static_cast<int>(N); }
 
-enum { TAB_GAME, TAB_VIDEO, TAB_AUDIO, TAB_CABINET, TAB_KEYBOARD, TAB_COUNT };
-constexpr const char* tab_names[TAB_COUNT] = {"Game", "Video", "Audio", "Cabinet", "Keyboard"};
+enum { TAB_GAME, TAB_VIDEO, TAB_AUDIO, TAB_CABINET, TAB_KEYBOARD, TAB_MISC, TAB_COUNT };
+constexpr const char* tab_names[TAB_COUNT] = {"Game", "Video", "Audio", "Cabinet", "Keyboard", "Misc."};
 constexpr int kRowsMax = 64;
 std::array<std::vector<Row>, TAB_COUNT> rows;
 
@@ -297,13 +297,13 @@ void build_rows()
     add_choice(TAB_GAME, S_CABINET, "Mode", cabinet_choices, count_of(cabinet_choices),
         "Cabinet: the playfield, the backglass and the score display, each in a window of its own, "
         "for a virtual pinball cabinet. Desktop: the game in one window.");
-    add_range(TAB_GAME, S_BONUS_STAGE, "Starting Bonus Stage", 0, 4, 1, false,
+    add_range(TAB_MISC, S_BONUS_STAGE, "Starting Bonus Stage", 0, 4, 1, false,
         "Off starts at the title. A stage from 1 to 4 starts a new game there, through the "
         "game's own bonus transition.");
-    add_choice(TAB_GAME, S_NEAR_MAX_SCORE, "Start Near Maximum Score", on_off, 2,
+    add_choice(TAB_MISC, S_NEAR_MAX_SCORE, "Start Near Maximum Score", on_off, 2,
         "For testing the game's ending. On: a new game starts with 999,999,000 points, 900 short "
         "of the maximum; reaching it ends the game and puts the score at the top of the table.");
-    add_choice(TAB_GAME, S_DRAG_BALL, "Drag Ball With Mouse", on_off, 2,
+    add_choice(TAB_MISC, S_DRAG_BALL, "Drag Ball With Mouse", on_off, 2,
         "A cheat for testing the table. On: the mouse pointer shows over the game, and holding the "
         "left button on the playfield carries the ball there. Let go while moving to throw it.");
 
