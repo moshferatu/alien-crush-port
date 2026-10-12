@@ -109,8 +109,8 @@ int main(int argc,char** argv) {
                 require(scene.demo_play,"Natural attract rankings retain demo selector");
                 require(!table.cabinet_frame(runtime->video_snapshot(),nullptr,runtime->work_ram(),nullptr,ranking_hold),
                     "Post-demo rankings use original viewport, not stitched table");
-                auto normal_rankings=scene;normal_rankings.demo_play=false;
-                require(panel.compose(scene).pixels==panel.compose(normal_rankings).pixels,"DMD displays full rankings after demo");
+                auto demo_page=scene;demo_page.high_score_menu=false;
+                require(panel.compose(scene).pixels==panel.compose(demo_page).pixels,"DMD keeps the demo's high-score pages through its rankings");
                 require((ranking_input.route({Pad::run,0},runtime->work_ram()).player_one&Pad::run)!=0,
                     "Post-demo viewer retains Run instead of initials routing");
                 if(std::count_if(frame.pixels.begin(),frame.pixels.end(),[](auto p){return (p&0xffffff)!=0;})>1000) {

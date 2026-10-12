@@ -7,8 +7,8 @@
 namespace alien_crush::render {
 namespace {
 // Five-bit rows. Labels are host UI, not claimed as cartridge font assets.
-constexpr std::string_view letters="SCOREHIGBALPUNDMVTFJKQWXYZ.";
-constexpr std::array<std::array<unsigned,7>,27> labels{{
+constexpr std::string_view letters="SCOREHIGBALPUNDMVTFJKQWXYZ.#1234";
+constexpr std::array<std::array<unsigned,7>,32> labels{{
     {15,16,16,14,1,1,30},{14,17,16,16,16,17,14},
     {14,17,17,17,17,17,14},{30,17,17,30,20,18,17},
     {31,16,16,30,16,16,31},{17,17,17,31,17,17,17},
@@ -22,7 +22,9 @@ constexpr std::array<std::array<unsigned,7>,27> labels{{
     {17,18,20,24,20,18,17},{14,17,17,17,21,18,13},
     {17,17,17,21,21,21,10},{17,17,10,4,10,17,17},
     {17,17,10,4,4,4,4},{31,1,2,4,8,16,31},
-    {0,0,0,0,0,6,6}}};
+    {0,0,0,0,0,6,6},{10,10,31,10,31,10,10},
+    {4,12,4,4,4,4,14},{14,17,1,2,4,8,31},
+    {30,1,1,14,1,1,30},{2,6,10,18,31,2,2}}};
 void label(Image& image,std::string_view text,int x,int y,std::uint32_t color=0xffddd4e8) {
     for(const char c:text) {
         if(c==' ' || c=='\0') {x+=6;continue;}
@@ -50,7 +52,7 @@ ScorePanel ScorePanel::from_rom(std::span<const std::byte> rom) {
     for(unsigned i=0;i<10;++i) digits[i]=decoded[i].image;
     return ScorePanel(std::move(digits));
 }
-Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) const {
+Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball,unsigned rank,bool entering) const {
     Image result{256,96,std::vector<std::uint32_t>(256*96,0xff000000)};
     auto number=[&](std::uint32_t value,int center,int y,int scale,unsigned places=0) {
         auto text=std::to_string(value);
@@ -66,24 +68,22 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
             x+=10*scale;
         }
     };
-    // Initials in the logo's orange. On the title and demo the top score's sit centred between its heading and the score.
+    // Initials in the logo's orange, centred between the heading and the score.
     constexpr std::uint32_t orange=0xfffc6c00;
-    auto initials=[&](int center,int y) {label(result,{state.high_score_initials[0].data(),3},center-8,y,orange);};
+    auto centred=[&](std::string_view text,int y,std::uint32_t color=0xffddd4e8) {
+        label(result,text,128-static_cast<int>(text.size())*3,y,color);
+    };
     if(state.title_transition) return result;
-    if(state.title_menu || (state.demo_play && !state.high_score_menu)) {
-        label(result,"HIGH SCORE",98,3);
-        initials(128,18);
-        number(state.high_scores[0],128,29,2);
-        if(state.demo_play && !state.title_menu) label(result,"DEMO",116,65);
-        label(result,"PUSH RUN BUTTON",83,78);
-        return result;
-    }
-    if(state.high_score_menu) {
-        label(result,"HIGH SCORES",95,2);
-        for(unsigned rank=0;rank<state.high_scores.size();++rank) {
-            number(rank+1,38,16+static_cast<int>(rank)*16,1);
-            label(result,{state.high_score_initials[rank].data(),3},64,20+static_cast<int>(rank)*16,orange);
-            number(state.high_scores[rank],160,16+static_cast<int>(rank)*16,1);
+    if(state.title_menu || state.demo_play || state.high_score_menu) {
+        // One ranked score to a page, named as a pinball cabinet names them.
+        rank=std::min<unsigned>(rank,static_cast<unsigned>(state.high_scores.size())-1);
+        centred(rank?"HIGH SCORE #"+std::to_string(rank):"GRAND CHAMPION",3);
+        centred({state.high_score_initials[rank].data(),3},18,orange);
+        number(state.high_scores[rank],128,29,2);
+        if(entering) centred("ENTER YOUR INITIALS",78);
+        else if(state.title_menu || state.demo_play) {
+            if(!state.title_menu) centred("DEMO",65);
+            centred("PUSH RUN BUTTON",78);
         }
         return result;
     }
@@ -100,7 +100,25 @@ Image ScorePanel::compose(const diagnostics::AlienState& state,unsigned ball) co
     return result;
 }
 const Image& PanelHold::update(const ScorePanel& panel,const diagnostics::AlienState& state,BallNumber& ball) {
-    if(!state.title_transition || image_.pixels.empty()) image_=panel.compose(state,ball.update(state));
+    const bool pages=state.title_menu || state.demo_play || state.high_score_menu;
+    if(!pages && !state.title_transition) {
+        // In play: the next pages open on the Grand Champion.
+        tick_=0;score_=state.score_points;settle_=kSettleFrames;
+    } else if(!state.high_score_menu) settle_=0;
+    unsigned rank=static_cast<unsigned>(tick_/kPageFrames%state.high_scores.size());
+    if(pages || state.title_transition) ++tick_;
+    // The ranking opens a few frames before the game has sorted the table.
+    // The panel keeps the game's score until then, so no page flashes up in
+    // front of a name to enter.
+    const bool settling=state.high_score_menu && settle_ && settle_--;
+    // A score that ranked has left the live column for its place in the
+    // table (1C:4B2E), below any it equals. Its page stays up for the name.
+    bool entering=false;
+    if(state.high_score_menu && !state.demo_play && score_ && state.score_points!=*score_)
+        for(unsigned i=static_cast<unsigned>(state.high_scores.size());i-- && !entering;)
+            if(state.high_scores[i]==*score_) {rank=i;entering=true;}
+    if(!(state.title_transition || settling) || image_.pixels.empty())
+        image_=panel.compose(state,ball.update(state),rank,entering);
     return image_;
 }
 unsigned BallNumber::update(const diagnostics::AlienState& state) {

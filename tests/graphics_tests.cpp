@@ -139,13 +139,15 @@ int main() {
                 auto named=diagnostics::observe_alien_state(scene);
                 named.high_score_menu=true;
                 const char expected=code==0x40?'.':code<=0x5a?static_cast<char>('A'+code-0x41):' ';
-                const auto image=panel.compose(named);
-                for(unsigned rank=0;rank<5;++rank) for(unsigned letter=0;letter<3;++letter) {
-                    require(named.high_score_initials[rank][letter]==expected,"Decode every ranked initial, dot and space; invalid codes blank");
-                    unsigned ink=0;
-                    for(unsigned y=0;y<7;++y) for(unsigned x=0;x<5;++x)
-                        ink+=image.pixels[(20+rank*16+y)*256+64+letter*6+x]!=0xff000000;
-                    require((ink!=0)==(expected!=' '),"Each nonblank initial is visible in every DMD ranking row");
+                for(unsigned rank=0;rank<5;++rank) {
+                    const auto page=panel.compose(named,0,rank);
+                    for(unsigned letter=0;letter<3;++letter) {
+                        require(named.high_score_initials[rank][letter]==expected,"Decode every ranked initial, dot and space; invalid codes blank");
+                        unsigned ink=0;
+                        for(unsigned y=0;y<7;++y) for(unsigned x=0;x<5;++x)
+                            ink+=page.pixels[(18+y)*256+119+letter*6+x]!=0xff000000;
+                        require((ink!=0)==(expected!=' '),"Each nonblank initial is visible on its rank's DMD page");
+                    }
                 }
             }
             scene={};
@@ -153,14 +155,51 @@ int main() {
             state.high_scores={4294967295U,123456700,1000000,100,0};
             const auto ranks=panel.compose(state);
             for(unsigned rank=0;rank<5;++rank) {
-                require(ranks.pixels[(18+rank*16)*256+30]==0xff100001+rank,"Every rank is visible");
+                const auto page=panel.compose(state,0,rank);
                 const auto text=std::to_string(state.high_scores[rank]);
-                const auto start=160-((text.size()-1)*10+16)/2;
+                const auto start=128-((text.size()-1)*20+32)/2;
                 for(unsigned digit=0;digit<text.size();++digit)
-                    require(ranks.pixels[(18+rank*16)*256+start+digit*10]==0xff100000+static_cast<unsigned>(text[digit]-'0'),"Every ranked score fits without clipping");
+                    require(page.pixels[31*256+start+digit*20]==0xff100000+static_cast<unsigned>(text[digit]-'0'),"Every ranked score fits its page without clipping");
+                require((page.pixels==ranks.pixels)==(rank==0),"Each rank has its own page and the Grand Champion is the first");
+                const auto entry=panel.compose(state,0,rank,true);
+                require(entry.pixels!=page.pixels && std::equal(entry.pixels.begin(),entry.pixels.begin()+64*256,page.pixels.begin()),
+                    "Entering a name keeps the rank's page and adds its prompt");
             }
+            require(panel.compose(state,0,9).pixels==panel.compose(state,0,4).pixels,"A page past the table is the last rank's");
             state.score_points=999;state.ball_counter=2;state.game_over=true;
             require(panel.compose(state).pixels==ranks.pixels,"Score viewer hides stale gameplay fields");
+            {
+                // The pages turn every three seconds whatever the screen shows.
+                render::PanelHold hold;render::BallNumber ball;
+                diagnostics::AlienState idle;idle.title_menu=true;idle.high_scores={500,400,300,200,100};
+                for(unsigned lap=0;lap<2;++lap) for(unsigned rank=0;rank<5;++rank) {
+                    // The demo, its rankings and the title all share the cycle.
+                    idle.title_menu=rank==0;idle.demo_play=rank!=0;idle.high_score_menu=rank>=3;
+                    for(unsigned n=0;n<render::PanelHold::kPageFrames;++n)
+                        require(hold.update(panel,idle,ball).pixels==panel.compose(idle,0,rank).pixels,"DMD turns through every high score in order and wraps");
+                }
+                diagnostics::AlienState reset;reset.title_transition=true;
+                idle.title_menu=true;idle.demo_play=idle.high_score_menu=false;
+                const auto before=hold.update(panel,idle,ball).pixels;
+                for(unsigned n=1;n<render::PanelHold::kPageFrames;++n)
+                    require(hold.update(panel,reset,ball).pixels==before,"The title reset keeps the page it found");
+                require(hold.update(panel,idle,ball).pixels==panel.compose(idle,0,1).pixels,"The pages keep their time through the title reset");
+                // A game of 350 points, then its ranking.
+                diagnostics::AlienState game;game.high_scores=idle.high_scores;game.score_points=350;game.ball_counter=1;
+                const auto playing_panel=hold.update(panel,game,ball).pixels;
+                require(playing_panel==panel.compose(game,3).pixels,"Play replaces the pages with the score");
+                auto ranking=game;ranking.high_score_menu=true;
+                for(unsigned n=0;n<render::PanelHold::kSettleFrames;++n)
+                    require(hold.update(panel,ranking,ball).pixels==playing_panel,"The score stays while the game sorts its table");
+                require(hold.update(panel,ranking,ball).pixels==panel.compose(ranking).pixels,"A score that did not rank opens the pages on the Grand Champion");
+                ranking.high_scores={500,400,350,350,300};ranking.score_points=100;
+                for(unsigned n=0;n<2*render::PanelHold::kPageFrames;++n)
+                    require(hold.update(panel,ranking,ball).pixels==panel.compose(ranking,0,3,true).pixels,"A ranked score's page stays for its name, below a score it equals");
+                ranking.demo_play=true;
+                require(hold.update(panel,ranking,ball).pixels!=panel.compose(ranking,0,3,true).pixels,"The demo's rankings never ask for a name");
+                hold.reset();ranking.demo_play=false;
+                require(hold.update(panel,ranking,ball).pixels==panel.compose(ranking).pixels,"A restored ranking without its game's score shows the pages");
+            }
             state.title_menu=true;const auto title_ranks=panel.compose(state);
             state.high_score_menu=false;
             require(panel.compose(state).pixels==title_ranks.pixels,"Title takes precedence over stale score viewer");
