@@ -290,27 +290,18 @@ constexpr std::array<const char*, kPadButtonCount> pad_names = {
 
 void build_rows()
 {
-    add(TAB_GAME, Row{K_PATH, S_ROM, "ROM File",
-        "The HuCard image, a .pce file: the one dump the port supports (see README.md). A path "
-        "that is not absolute is taken from the launcher's folder. Browse, type it after Enter, or "
-        "drop the file on this window."});
+    add(TAB_GAME, Row{K_PATH, S_ROM, "ROM File", "The original game ROM file."});
     add_choice(TAB_GAME, S_CABINET, "Mode", cabinet_choices, count_of(cabinet_choices),
-        "Cabinet: the playfield, the backglass and the score display, each in a window of its own, "
-        "for a virtual pinball cabinet. Desktop: the game in one window.");
+        "How the game should be displayed, either in multiple windows or a single one.");
     add_range(TAB_MISC, S_BONUS_STAGE, "Starting Bonus Stage", 0, 4, 1, false,
-        "Off starts at the title. A stage from 1 to 4 starts a new game there, through the "
-        "game's own bonus transition.");
+        "Whether to start the game on a bonus stage.");
     add_choice(TAB_MISC, S_NEAR_MAX_SCORE, "Start Near Maximum Score", on_off, 2,
-        "For testing the game's ending. On: a new game starts with 999,999,000 points, 900 short "
-        "of the maximum; reaching it ends the game and puts the score at the top of the table.");
+        "Start with 999,999,000 points, for testing the game's ending.");
     add_choice(TAB_MISC, S_DRAG_BALL, "Drag Ball With Mouse", on_off, 2,
-        "A cheat for testing the table. On: the mouse pointer shows over the game, and holding the "
-        "left button on the playfield carries the ball there. Let go while moving to throw it.");
+        "Allows the player to drag the ball with the mouse, for testing purposes.");
 
     add_choice(TAB_VIDEO, S_SMOOTHING, "Smoothing", on_off, 2,
-        "On: on a playfield display faster than 66 Hz, a picture for every refresh, the table's "
-        "sprites, poses and palettes eased between the game's sixty a second. Off: the game's "
-        "frames only. Cabinet mode only. F7 changes it while playing, and a cabinet remembers.");
+        "Whether to enable smoothing for the game's visuals on higher refresh rates.");
     static const char monitor_help[] =
         "The monitor the window opens on. F10 in the game moves the focused window too, and the "
         "game remembers where it was left.";
