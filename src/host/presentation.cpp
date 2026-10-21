@@ -7,8 +7,10 @@
 #include <cmath>
 namespace alien_crush::host {
 namespace { void checked(bool ok) { if(!ok) throw std::runtime_error(SDL_GetError()); } }
-Presentation::Presentation(const char* title,int width,int height,bool hidden) {
-    checked(SDL_CreateWindowAndRenderer(title,width,height,SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|SDL_WINDOW_HIDDEN,&window_,&renderer_));
+Presentation::Presentation(const char* title,int width,int height,bool hidden,bool floating) {
+    SDL_WindowFlags flags=SDL_WINDOW_RESIZABLE|SDL_WINDOW_HIGH_PIXEL_DENSITY|SDL_WINDOW_HIDDEN;
+    if(floating) flags|=SDL_WINDOW_NOT_FOCUSABLE|SDL_WINDOW_ALWAYS_ON_TOP;
+    checked(SDL_CreateWindowAndRenderer(title,width,height,flags,&window_,&renderer_));
     SDL_SetRenderVSync(renderer_,0); // Auxiliary windows never wait on another monitor.
     if(!hidden) reveal();
 }

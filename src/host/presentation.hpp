@@ -27,7 +27,8 @@ class Presentation {
     void render_stage(double fraction);
     void render_window();
 public:
-    Presentation(const char* title,int width,int height,bool hidden=false);
+    // A floating window never takes the keyboard and stays above the others.
+    Presentation(const char* title,int width,int height,bool hidden=false,bool floating=false);
     ~Presentation();
     Presentation(const Presentation&)=delete;
     Presentation& operator=(const Presentation&)=delete;

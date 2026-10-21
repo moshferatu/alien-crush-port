@@ -7,7 +7,7 @@ layers onto a larger GPU target so fractional console pixels survive.
 Cabinet smoothing covers both main-table actor banks, the ball, all four bonus
 rooms, title/score-view sprites, palette animations, title background scrolling,
 and the backglass logo's color transitions. The DMD's changing numbers remain
-instantaneous. Desktop mode retains the original viewport. F7 toggles smoothing;
+instantaneous. Desktop mode retains the original viewport. F6 toggles smoothing;
 `--no-smooth` disables it at startup. It activates when the playfield refresh
 exceeds 1.1 times the original 59.826 Hz game rate. `--refresh <Hz>` overrides
 detection; `--no-vsync` selects timer pacing.

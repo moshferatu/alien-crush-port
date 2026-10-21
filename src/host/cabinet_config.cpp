@@ -166,6 +166,10 @@ void append_bindings(std::string& out,const InputBindings& input) {
     out+="input.left_flipper="+join_inputs(input.flippers.left)+'\n';
     out+="input.right_flipper="+join_inputs(input.flippers.right)+'\n';
     out+="input.launch="+join_keys(input.launch_keys)+'\n';
+    out+="input.smoothing="+join_keys(input.smoothing_keys)+'\n';
+    out+="input.next_window="+join_keys(input.next_window_keys)+'\n';
+    out+="input.fullscreen="+join_keys(input.fullscreen_keys)+'\n';
+    out+="input.next_monitor="+join_keys(input.next_monitor_keys)+'\n';
     const auto& n=input.nudge;
     out+="input.nudge.device="+escape_value(n.device)+'\n';
     out+="input.nudge.enabled="+std::to_string(n.enabled)+'\n';
@@ -195,6 +199,10 @@ void parse_bindings(const Fields& fields,InputBindings& input) {
     if(const auto* text=field(fields,"input.left_flipper")) input.flippers.left=parse_inputs(*text,"input.left_flipper");
     if(const auto* text=field(fields,"input.right_flipper")) input.flippers.right=parse_inputs(*text,"input.right_flipper");
     if(const auto* text=field(fields,"input.launch")) input.launch_keys=parse_keys(*text,"input.launch");
+    if(const auto* text=field(fields,"input.smoothing")) input.smoothing_keys=parse_keys(*text,"input.smoothing");
+    if(const auto* text=field(fields,"input.next_window")) input.next_window_keys=parse_keys(*text,"input.next_window");
+    if(const auto* text=field(fields,"input.fullscreen")) input.fullscreen_keys=parse_keys(*text,"input.fullscreen");
+    if(const auto* text=field(fields,"input.next_monitor")) input.next_monitor_keys=parse_keys(*text,"input.next_monitor");
 
     auto& n=input.nudge;
     for(const auto& [key,value]:fields) {
@@ -285,14 +293,16 @@ void parse_play_settings(const Fields& fields,PlaySettings& play) {
 // key=value file with `window.<role>` and `input.buttons` in their own
 // encodings, and whatever it lacked from the separate files beside it.
 std::array<WindowPlacement,kCabinetWindowCount> parse_legacy_windows(const std::string& text) {
+    // That file listed the backglass before the score window.
     constexpr std::array<const char*,kCabinetWindowCount> roles{"playfield","backglass","score"};
+    constexpr std::array<CabinetWindow,kCabinetWindowCount> slots{playfield_window,backglass_window,score_window};
     std::istringstream stream(text);
     std::string magic;int version{};
     if(!(stream>>magic>>version) || magic!="ACWINDOWS" || version!=1) fail("unsupported window placement");
     std::array<WindowPlacement,kCabinetWindowCount> out;
     for(std::size_t i=0;i<out.size();++i) {
         std::string role;int x{},y{},w{},h{},fullscreen{},rotation{};
-        auto& p=out[i];
+        auto& p=out[slots[i]];
         if(!(stream>>role>>std::quoted(p.display_identity)>>x>>y>>w>>h>>fullscreen>>rotation) || role!=roles[i] ||
             p.display_identity.size()>1024 || w<64 || h<64 || (fullscreen!=0 && fullscreen!=1) || !quarter_turn(rotation))
             fail("invalid window placement");
@@ -368,6 +378,10 @@ InputBindings default_input_bindings() {
     bindings.flippers.left={PadButton::left};
     bindings.flippers.right={PadButton::right,PadButton::up};
     bindings.launch_keys={"Return"};
+    bindings.smoothing_keys={"F6"};
+    bindings.next_window_keys={"F10"};
+    bindings.fullscreen_keys={"F11"};
+    bindings.next_monitor_keys={"F12"};
     return bindings;
 }
 
@@ -375,11 +389,10 @@ std::vector<std::byte> encode_cabinet_config(const CabinetConfig& config) {
     if(config.format_version!=kCabinetConfigVersion) return {};
     for(const auto& window:config.windows) if(!quarter_turn(window.artwork_rotation)) return {};
     std::string text="version="+std::to_string(config.format_version)+'\n';
-    // Devil's Crush's order: playfield, DMD, backglass.
-    for(const auto index:{playfield_window,score_window,backglass_window})
+    for(std::size_t index=0;index<kCabinetWindowCount;++index)
         append_placement(text,kCabinetWindowFields[index],config.windows[index]);
     append_bindings(text,config.input);
-    for(const auto index:{playfield_window,score_window,backglass_window})
+    for(std::size_t index=0;index<kCabinetWindowCount;++index)
         text+=std::string(kCabinetWindowFields[index])+".artwork_rotation="+std::to_string(config.windows[index].artwork_rotation)+'\n';
     if(!append_play_settings(text,config.play)) return {};
     const auto bytes=std::as_bytes(std::span(text));

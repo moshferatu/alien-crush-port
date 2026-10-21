@@ -238,8 +238,8 @@ int main(int argc,char** argv) {
             for(int i=0;i<count;++i) {
                 require_black_window(all[i]);
                 const std::string title=SDL_GetWindowTitle(all[i]);
-                if(title=="Alien Crush - Backglass") ids[1]=SDL_GetWindowID(all[i]);
-                if(title=="Alien Crush - Score") ids[2]=SDL_GetWindowID(all[i]);
+                if(title=="Alien Crush - Score") ids[1]=SDL_GetWindowID(all[i]);
+                if(title=="Alien Crush - Backglass") ids[2]=SDL_GetWindowID(all[i]);
             }
             SDL_free(all);
             require(ids[0] && ids[1] && ids[2],"Find cabinet roles");
@@ -248,27 +248,62 @@ int main(int argc,char** argv) {
                 event.scancode=code;event.repeat=repeat;event.mod=reverse?SDL_KMOD_SHIFT:SDL_KMOD_NONE;
                 return cabinet.handle_key(event);
             };
+            // The score and backglass float: they never take the keyboard and
+            // stay above a fullscreen playfield.
+            for(std::size_t i=1;i<ids.size();++i) {
+                const auto flags=SDL_GetWindowFlags(SDL_GetWindowFromID(ids[i]));
+                require((flags&SDL_WINDOW_NOT_FOCUSABLE)!=0 && (flags&SDL_WINDOW_ALWAYS_ON_TOP)!=0,"Auxiliary windows float");
+            }
+            require((SDL_GetWindowFlags(playfield.window())&SDL_WINDOW_NOT_FOCUSABLE)==0,"Playfield takes the keyboard");
             require(!key(0,SDL_SCANCODE_R),"Ignore unknown window");
             require(!key(ids[0],SDL_SCANCODE_R,false,true),"Ignore key repeat");
             require(!key(ids[0],SDL_SCANCODE_Z),"Leave gameplay keys alone");
-            for(unsigned i=0;i<3;++i) for(unsigned turn=0;turn<=i;++turn)
-                require(key(ids[i],SDL_SCANCODE_R),"Rotate selected window");
+            require(!key(ids[0],SDL_SCANCODE_F6),"Smoothing is the host's, not the cabinet's");
+            require(cabinet.selected()==playfield.window(),"The playfield starts selected");
+            // The keys arrive at the playfield, which has the keyboard; F10 picks
+            // the window they act on.
+            auto select=[&](std::size_t role) {
+                for(int tries=0;tries<3 && cabinet.selected()!=SDL_GetWindowFromID(ids[role]);++tries)
+                    require(key(ids[0],SDL_SCANCODE_F10),"Select next cabinet window");
+                require(cabinet.selected()==SDL_GetWindowFromID(ids[role]),"Select a cabinet window");
+            };
+            for(std::size_t i=0;i<3;++i) {
+                select(i);
+                for(std::size_t turn=0;turn<=i;++turn) require(key(ids[0],SDL_SCANCODE_R),"Rotate selected window");
+            }
             require(playfield.rotation()==90,"Auxiliary rotation leaves playfield alone");
-            require(key(ids[1],SDL_SCANCODE_R,true),"Reverse rotation");
-            for(int turn=0;turn<4;++turn) require(key(ids[2],SDL_SCANCODE_R),"Rotation wraps");
-            for(const auto id:ids) {
-                auto* window=SDL_GetWindowFromID(id);
-                require(key(id,SDL_SCANCODE_F11),"Enter fullscreen");
+            require(key(ids[0],SDL_SCANCODE_F10,true),"Select previous cabinet window");
+            require(cabinet.selected()==SDL_GetWindowFromID(ids[1]),"Shift goes back one window");
+            require(key(ids[0],SDL_SCANCODE_R,true),"Reverse rotation");
+            select(2);
+            for(int turn=0;turn<4;++turn) require(key(ids[0],SDL_SCANCODE_R),"Rotation wraps");
+            for(std::size_t i=0;i<ids.size();++i) {
+                select(i);
+                auto* window=SDL_GetWindowFromID(ids[i]);
+                require(key(ids[0],SDL_SCANCODE_F11),"Enter fullscreen");
                 require((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0,"Selected window fullscreen");
+                if(i!=0) require((SDL_GetWindowFlags(playfield.window())&SDL_WINDOW_FULLSCREEN)==0,"Fullscreen leaves the playfield alone");
                 require(cabinet.recover_displays(),"Recover connected fullscreen topology");
                 require((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0,"Recovery retains fullscreen");
-                require(key(id,SDL_SCANCODE_F10),"Single-display cycle");
+                require(key(ids[0],SDL_SCANCODE_F12),"Single-display cycle");
                 require((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0,"Monitor cycle retains fullscreen");
-                require(key(id,SDL_SCANCODE_F11),"Leave fullscreen");
+                require(key(ids[0],SDL_SCANCODE_F11),"Leave fullscreen");
                 require((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)==0,"Selected window windowed");
-                require(key(id,SDL_SCANCODE_F10,true),"Reverse single-display cycle");
-                require(key(id,SDL_SCANCODE_F6),"Select next cabinet role");
-                require(key(id,SDL_SCANCODE_F6,true),"Select previous cabinet role");
+                require(key(ids[0],SDL_SCANCODE_F12,true),"Reverse single-display cycle");
+            }
+            {
+                // Rebound keys replace the defaults.
+                auto bindings=host::default_input_bindings();
+                bindings.next_window_keys={"F2"};bindings.fullscreen_keys={};
+                host::Presentation other("Rebound playfield",320,240,true);
+                host::Cabinet rebound(other,host::load_cabinet_config(data).config.windows,data,rom,host::resolve_host_keys(bindings));
+                SDL_KeyboardEvent event{};event.type=SDL_EVENT_KEY_DOWN;event.windowID=SDL_GetWindowID(other.window());
+                event.scancode=SDL_SCANCODE_F10;
+                require(!rebound.handle_key(event),"An unbound default does nothing");
+                event.scancode=SDL_SCANCODE_F11;
+                require(!rebound.handle_key(event),"An empty binding does nothing");
+                event.scancode=SDL_SCANCODE_F2;
+                require(rebound.handle_key(event) && rebound.selected()!=other.window(),"A rebound key selects");
             }
             for(const auto id:ids) {
                 auto* window=SDL_GetWindowFromID(id);

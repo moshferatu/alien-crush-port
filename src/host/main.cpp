@@ -95,8 +95,10 @@ int main(int argc,char** argv) {
             else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\n"
                 "Keys (rebindable under input. in alien-crush.ini): Enter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper;\n"
                 "Right Shift/Right right flipper; Space nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm.\n"
-                "F5/F9 quick save/load, F11 fullscreen, Escape exit.\n"
-                "Cabinet: move/resize three windows; F11 toggles the focused window, R rotates it, F10 moves it to the next monitor. Layout saves on normal exit.\n"
+                "F5/F9 quick save/load, F6 smoothing, F11 fullscreen, Escape exit (F6, F10, F11 and F12 are rebindable too).\n"
+                "Cabinet: the score and backglass float above the playfield. F10/Shift+F10 select the next/previous window;\n"
+                "F11 toggles the selected window's fullscreen, R rotates it, F12/Shift+F12 move it to the next/previous monitor.\n"
+                "Layout saves on normal exit.\n"
                 "alien-crush.ini holds every setting in Devil's Crush's format: windows, keys, flipper inputs, launch keys, cabinet buttons,\n"
                 "nudge, plunger and the play settings below (see README). alien-crush-launcher.exe edits it.\n"
                 "It, the high scores (alien-crush.hiscore), quick states and an optional backglass.bmp sit beside the executable, or in --data-dir.\n"
@@ -109,7 +111,7 @@ int main(int argc,char** argv) {
                 "--near-max-score: start a game with 999,999,000 points, 900 short of the maximum, to see the game's ending.\n"
                 "--drag-ball: a cheat for testing; hold the left mouse button on the playfield to carry the ball, let go to throw it.\n"
                 "--music-voice-overlay / --no-music-voice-overlay: keep the music's voices while effects play (default on).\n"
-                "--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F7 toggles.\n"
+                "--smooth / --no-smooth: high-refresh cabinet animation smoothing (default on); F6 toggles.\n"
                 "--refresh <Hz>: override the detected playfield refresh rate; --no-vsync uses timer pacing.\n"
                 "--nudge-multiplier <factor>: nudge force from 0 to 16 (default 1); applies to keyboard, buttons and physical nudges.\n"
                 "--cabinet-plunger-probe: guided plunger calibration (no ROM needed).\n"
@@ -181,6 +183,7 @@ int main(int argc,char** argv) {
         host::CabinetInput cabinet_input(cabinet_devices?bindings.buttons:host::CabinetButtons{},bindings.flippers);
         host::CabinetPlunger cabinet_plunger(plunger);
         host::KeyboardInput keys(bindings);
+        const auto host_keys=host::resolve_host_keys(bindings);
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) playback=recording::read(replay_path);
         const auto mode=playback?((playback->initial.core_revision.find("-handoff1")!=std::string::npos || playback->initial.core_revision.find("-h1-")!=std::string::npos)?HandoffMode::continuous:HandoffMode::original):
@@ -225,7 +228,7 @@ int main(int argc,char** argv) {
         const bool vsync=!no_vsync && display.enable_vsync();
         if(!no_vsync && !vsync) std::cerr<<"Playfield VSync unavailable; using timer pacing: "<<SDL_GetError()<<'\n';
         std::unique_ptr<host::Cabinet> cabinet;
-        if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,placements,data_path,core::read_file(rom_path));
+        if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,placements,data_path,core::read_file(rom_path),host_keys);
         std::unique_ptr<render::TablePlayfield> table;
         std::optional<diagnostics::ReferenceSnapshot> previous_video;
         std::array<std::byte,8192> previous_actor_ram{};
@@ -255,7 +258,7 @@ int main(int argc,char** argv) {
         auto refresh_check=deadline;
         double refresh_hz=refresh_override?refresh_override:display.refresh_rate();
         bool smooth_active=cabinet_mode && smoothing && refresh_hz>runtime->frames_per_second()*1.1;
-        std::cout<<"Cabinet animation smoothing: "<<(smooth_active?"on":"off")<<" ("<<refresh_hz<<" Hz; F7 toggles)\n";
+        std::cout<<"Cabinet animation smoothing: "<<(smooth_active?"on":"off")<<" ("<<refresh_hz<<" Hz; the smoothing key, F6 by default, toggles)\n";
         std::uint64_t count=0,stitched_frames=0;
         host::StartupDisplay startup_display;
         unsigned catch_up=0;
@@ -271,15 +274,15 @@ int main(int argc,char** argv) {
                 if(event.type==SDL_EVENT_GAMEPAD_ADDED) open_pad(gamepad);
                 if(event.type==SDL_EVENT_GAMEPAD_REMOVED && gamepad.pad && SDL_GetGamepadID(gamepad.pad)==event.gdevice.which) { SDL_CloseGamepad(gamepad.pad); gamepad.pad=nullptr; open_pad(gamepad); }
                 if(event.type==SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-                    if(event.key.scancode==SDL_SCANCODE_F7) {
+                    if(host::HostKeys::has(host_keys.smoothing,event.key.scancode)) {
                         smoothing=!smoothing;smoothing_toggled=true;display.reset_smoothing();
                         std::cout<<"Cabinet animation smoothing: "<<(smoothing?"enabled for high-refresh displays":"off")<<'\n';
                     }
                     if(cabinet && cabinet->handle_key(event.key)) continue;
                     if(event.key.scancode==SDL_SCANCODE_ESCAPE) running=false;
-                    if(event.key.scancode==SDL_SCANCODE_F11) {
-                        auto* window=cabinet?SDL_GetWindowFromID(event.key.windowID):display.window();
-                        if(window && !SDL_SetWindowFullscreen(window,!(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN))) throw std::runtime_error(SDL_GetError());
+                    if(!cabinet && host::HostKeys::has(host_keys.fullscreen,event.key.scancode)) {
+                        auto* window=display.window();
+                        if(!SDL_SetWindowFullscreen(window,!(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN))) throw std::runtime_error(SDL_GetError());
                     }
                     if(event.key.scancode==SDL_SCANCODE_F5 || event.key.scancode==SDL_SCANCODE_F9) {
                         try {
@@ -475,7 +478,7 @@ int main(int argc,char** argv) {
         if(!record_path.empty()) recording::write(record_path,recorded);
         if(cabinet) {
             // The whole file, as it is on disk now, with where the windows were
-            // left and what F7 was; a file in the older format becomes this one.
+            // left and what F6 was; a file in the older format becomes this one.
             // A replay keeps its window layout too, and changes nothing else.
             auto saved=host::load_cabinet_config(data_path);
             if(saved.loaded() || saved.status==host::ConfigLoadStatus::not_found) {

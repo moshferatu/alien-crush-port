@@ -33,6 +33,10 @@ inline void check_cabinet_config() {
     chosen.input[host::PadButton::select]={};
     chosen.input.flippers={{host::PadButton::left,host::PadButton::down},{}};
     chosen.input.launch_keys={"Space"};
+    chosen.input.smoothing_keys={"F7"};
+    chosen.input.next_window_keys={"Tab","F10"};
+    chosen.input.fullscreen_keys={};
+    chosen.input.next_monitor_keys={"F12"};
     chosen.input.nudge={false,"Clev, Soft",2,3,30,10,500};
     chosen.input.plunger.device="PinOne Board%";
     chosen.input.plunger.axis=2;
@@ -44,7 +48,8 @@ inline void check_cabinet_config() {
     for(const auto* line:{"version=1\n","input.nudge_multiplier=2.5\n","input.plunger.device=PinOne Board%25\n",
         "input.run=Space,Keypad Enter\n","input.select=\n","input.left_flipper=left,down\n","input.right_flipper=\n",
         "playfield.display=Display %3D 1%25\n","playfield.rotation=3\n","dmd.artwork_rotation=270\n",
-        "audio.music_voice_overlay=0\n","input.buttons.select=-1\n","input.nudge.device=Clev%2C Soft\n"})
+        "audio.music_voice_overlay=0\n","input.buttons.select=-1\n","input.nudge.device=Clev%2C Soft\n",
+        "input.smoothing=F7\n","input.next_window=Tab,F10\n","input.fullscreen=\n","input.next_monitor=F12\n"})
         check(written.find(line)!=std::string::npos,"Written in Devil's Crush's form");
     check(written.find("game.rom=D:\\Games\\Alien Crush %28USA%29 %C3%A9.pce\n")!=std::string::npos,"A path is escaped byte by byte");
 
@@ -58,6 +63,13 @@ inline void check_cabinet_config() {
         "A start near the maximum score is read, and off without it");
     check(decode("version=1\ngame.drag_ball=1\n").play.drag_ball && !decode("version=1\n").play.drag_ball,
         "Carrying the ball with the mouse is read, and off without it");
+    {
+        const auto defaults=decode("version=1\n").input;
+        check(defaults.smoothing_keys==std::vector<std::string>{"F6"} && defaults.next_window_keys==std::vector<std::string>{"F10"} &&
+            defaults.fullscreen_keys==std::vector<std::string>{"F11"} && defaults.next_monitor_keys==std::vector<std::string>{"F12"},
+            "The window keys default to F6, F10, F11 and F12");
+        check(decode("version=1\ninput.next_window=\n").input.next_window_keys.empty(),"An empty window key is unbound");
+    }
     check(decode("version=1\ninput.one=A, A ,B\n").input[host::PadButton::one]==std::vector<std::string>{"A","B"},
         "A key bound twice to one input is kept once");
 

@@ -31,6 +31,16 @@ inline ResolvedKeys resolve_keys(const InputBindings& bindings) {
     return resolved;
 }
 
+// The keys the game itself answers to, outside the pad.
+struct HostKeys {
+    std::vector<SDL_Scancode> smoothing,next_window,fullscreen,next_monitor;
+    static bool has(const std::vector<SDL_Scancode>& keys,SDL_Scancode key) {return std::ranges::find(keys,key)!=keys.end();}
+};
+inline HostKeys resolve_host_keys(const InputBindings& bindings) {
+    return {resolve_key_names(bindings.smoothing_keys,"smoothing"),resolve_key_names(bindings.next_window_keys,"next_window"),
+        resolve_key_names(bindings.fullscreen_keys,"fullscreen"),resolve_key_names(bindings.next_monitor_keys,"next_monitor")};
+}
+
 // The keyboard, as alien-crush.ini binds it. While the ball is seated in the
 // shooter a launch key sends I and nothing else -- its ordinary input is
 // suppressed, so a launch key that is also Run launches rather than pausing --

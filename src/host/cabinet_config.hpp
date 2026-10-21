@@ -54,9 +54,9 @@ struct WindowPlacement {
     bool operator==(const WindowPlacement&) const=default;
 };
 // The cabinet's windows in the game's order, and the prefix each has in the file.
-enum CabinetWindow : std::size_t {playfield_window=0,backglass_window=1,score_window=2};
+enum CabinetWindow : std::size_t {playfield_window=0,score_window=1,backglass_window=2};
 inline constexpr std::size_t kCabinetWindowCount=3;
-inline constexpr std::array<const char*,kCabinetWindowCount> kCabinetWindowFields{"playfield","backglass","dmd"};
+inline constexpr std::array<const char*,kCabinetWindowCount> kCabinetWindowFields{"playfield","dmd","backglass"};
 
 // Keys are SDL scancode names ("Left Shift", "Return", "Space"), so the file stays
 // hand-editable. An input bound to no keys is unbound; one not in the file
@@ -67,6 +67,9 @@ struct InputBindings {
     // Keys that send button I, and only I, while the ball is seated in the
     // shooter, so that a key bound to Run launches there instead of pausing.
     std::vector<std::string> launch_keys;
+    // Keys the game answers to outside the pad: smoothing, and the cabinet
+    // window that fullscreen and next-monitor act on (Shift goes back).
+    std::vector<std::string> smoothing_keys,next_window_keys,fullscreen_keys,next_monitor_keys;
     input::PlungerBinding plunger;
     NudgeBinding nudge;
     // A cabinet board's own buttons (Alien Crush only).
@@ -94,7 +97,7 @@ struct PlaySettings {
     bool cabinet=false;
     // audio.music_voice_overlay (--music-voice-overlay / --no-music-voice-overlay).
     bool music_voice_overlay=true;
-    // video.smoothing (--smooth / --no-smooth); F7 changes it, and a cabinet
+    // video.smoothing (--smooth / --no-smooth); F6 changes it, and a cabinet
     // session remembers.
     bool smoothing=true;
     // input.nudge_multiplier (--nudge-multiplier), 0 to 16.

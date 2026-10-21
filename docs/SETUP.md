@@ -31,7 +31,7 @@ option on the command line beats the file for that run (`--rom`, `--cabinet`
 or `--no-cabinet`, `--bonus-stage`, `--near-max-score`, `--drag-ball`, `--music-voice-overlay` or `--no-music-voice-overlay`,
 `--smooth` or `--no-smooth`, `--nudge-multiplier`), and replays and `--frames`
 runs ignore these eight, though `--bonus-stage` and `--near-max-score`
-themselves still work with `--frames`. F7 is remembered in `video.smoothing` when a cabinet session exits
+themselves still work with `--frames`. F6 is remembered in `video.smoothing` when a cabinet session exits
 normally.
 
 ## Start options
@@ -123,6 +123,7 @@ Live play uses the Devil's Crush cabinet control layout (the keys are [rebindabl
 | Space / east button | Nudge |
 | Backspace / gamepad Back | Select speed/music |
 | F5 / F9 | Save / restore quick state |
+| F6 | Toggle high-refresh cabinet animation smoothing |
 | F11 | Borderless fullscreen |
 | Escape | Exit |
 
@@ -197,16 +198,22 @@ Quick-state operations are disabled during recording and replay to retain a line
 
 ## Cabinet windows
 
-For the three-window cabinet host with a stitched playfield, add `--cabinet`. Move and resize the
-playfield, backglass and score windows onto your monitors, or use these keys:
+For the three-window cabinet host with a stitched playfield, add `--cabinet`. The score and
+backglass windows float: they stay above the playfield, even a fullscreen one, and never take the
+keyboard, which stays with the playfield. Move and resize them onto your monitors, or use these
+keys, which act on the selected window (the playfield to begin with):
 
 | Cabinet key | Action |
 | --- | --- |
-| F6 / Shift+F6 | Focus the next / previous window: playfield, backglass, score |
-| F7 | Toggle high-refresh cabinet animation smoothing |
-| F10 / Shift+F10 | Move the focused window to the next / previous connected monitor |
-| R / Shift+R | Rotate the focused window clockwise / counterclockwise by 90 degrees |
-| F11 | Toggle fullscreen for the focused window |
+| F10 / Shift+F10 | Select the next / previous window: playfield, score, backglass |
+| F11 | Toggle fullscreen for the selected window |
+| F12 / Shift+F12 | Move the selected window to the next / previous connected monitor |
+| R / Shift+R | Rotate the selected window clockwise / counterclockwise by 90 degrees |
+
+F6, F10, F11 and F12 can be rebound on the launcher's Keyboard tab (`input.smoothing`,
+`input.next_window`, `input.fullscreen` and `input.next_monitor` in `alien-crush.ini`). Only
+one window can be fullscreen on a monitor, so F11 does nothing while another cabinet window
+fills that monitor, and F12 passes over such a monitor for a fullscreen window.
 
 Monitor changes center the window on the destination, fit its size to the usable
 area, and retain its rotation and fullscreen setting. Placement, monitor names and

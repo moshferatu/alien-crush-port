@@ -6,6 +6,7 @@
 #include "alien_crush/core/data_files.hpp"
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include <algorithm>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 namespace alien_crush::host {
@@ -33,8 +34,8 @@ std::vector<Monitor> monitors(bool required=true) {
 }
 }
 Cabinet::Cabinet(Presentation& playfield,const std::array<WindowPlacement,kCabinetWindowCount>& placements,
-    const std::filesystem::path& data,std::span<const std::byte> rom)
-    : windows_{&playfield,&backglass_,&score_},score_panel_(render::ScorePanel::from_rom(rom)),
+    const std::filesystem::path& data,std::span<const std::byte> rom,const HostKeys& keys)
+    : windows_{&playfield,&score_,&backglass_},keys_(keys),score_panel_(render::ScorePanel::from_rom(rom)),
       backglass_image_(load_backglass(data/core::kBackglassFileName)) {
     if(!backglass_image_) backglass_animation_.emplace(rom);
     const auto displays=monitors();
@@ -71,39 +72,57 @@ bool Cabinet::owns(SDL_Window* window) const {
 }
 bool Cabinet::handle_key(const SDL_KeyboardEvent& key) {
     if(key.type!=SDL_EVENT_KEY_DOWN || key.repeat) return false;
-    auto* window=SDL_GetWindowFromID(key.windowID);
-    const auto found=std::find_if(windows_.begin(),windows_.end(),[&](const auto* output){return output->window()==window;});
-    if(found==windows_.end()) return false;
+    if(!owns(SDL_GetWindowFromID(key.windowID))) return false;
     const bool reverse=(key.mod&SDL_KMOD_SHIFT)!=0;
+    auto* output=windows_[selected_];
+    auto* window=output->window();
     if(key.scancode==SDL_SCANCODE_R) {
-        auto* output=*found;
         output->rotation((output->rotation()+(reverse?270:90))%360);
-    } else if(key.scancode==SDL_SCANCODE_F6) {
-        const auto index=static_cast<std::size_t>(found-windows_.begin());
-        checked(SDL_RaiseWindow(windows_[(index+(reverse?2:1))%windows_.size()]->window()));
-    } else if(key.scancode==SDL_SCANCODE_F11) {
-        checked(SDL_SetWindowFullscreen(window,!(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)));
-    } else if(key.scancode==SDL_SCANCODE_F10) {
+    } else if(HostKeys::has(keys_.next_window,key.scancode)) {
+        selected_=(selected_+(reverse?windows_.size()-1:1))%windows_.size();
+        static constexpr std::array names{"playfield","score","backglass"};
+        std::cout<<"Selected cabinet window: "<<names[selected_]<<'\n';
+    } else if(HostKeys::has(keys_.fullscreen,key.scancode)) {
+        const bool fullscreen=(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0;
+        if(!fullscreen && fullscreen_beside(window,SDL_GetDisplayForWindow(window))) {
+            std::cout<<"Another cabinet window is fullscreen on that monitor; take it out of fullscreen first.\n";
+            return true;
+        }
+        checked(SDL_SetWindowFullscreen(window,!fullscreen));
+    } else if(HostKeys::has(keys_.next_monitor,key.scancode)) {
         const auto displays=monitors(false);
         if(displays.size()<2) return true;
         const auto current=SDL_GetDisplayForWindow(window);
         const auto display=std::find_if(displays.begin(),displays.end(),[&](const auto& m){return m.id==current;});
         const auto index=display==displays.end()?0:static_cast<std::size_t>(display-displays.begin());
-        const auto& target=displays[(index+(reverse?displays.size()-1:1))%displays.size()];
         const bool fullscreen=(SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)!=0;
+        // A fullscreen window passes over a monitor another one fills.
+        const Monitor* target=nullptr;
+        for(std::size_t step=1;step<displays.size() && !target;++step) {
+            const auto& m=displays[(index+(reverse?displays.size()-step:step))%displays.size()];
+            if(!fullscreen || !fullscreen_beside(window,m.id)) target=&m;
+        }
+        if(!target) return true;
         // Leave fullscreen before changing its windowed placement; wait for the
         // platform to finish so the next request uses the new display.
         if(fullscreen) {checked(SDL_SetWindowFullscreen(window,false));checked(SDL_SyncWindow(window));}
         int w{},h{};checked(SDL_GetWindowSize(window,&w,&h));
-        const auto& b=target.bounds;
+        const auto& b=target->bounds;
         w=std::min(w,b.w);h=std::min(h,b.h);
         checked(SDL_SetWindowSize(window,w,h));
         checked(SDL_SetWindowPosition(window,b.x+(b.w-w)/2,b.y+(b.h-h)/2));
         checked(SDL_SyncWindow(window));
         if(fullscreen) checked(SDL_SetWindowFullscreen(window,true));
-        checked(SDL_RaiseWindow(window));
     } else return false;
     return true;
+}
+// SDL fills a monitor with one window: making a second fullscreen there
+// minimizes the first, and a minimized playfield loses the keyboard.
+bool Cabinet::fullscreen_beside(SDL_Window* window,SDL_DisplayID display) const {
+    return std::any_of(windows_.begin(),windows_.end(),[&](const auto* output) {
+        auto* other=output->window();
+        return other!=window && (SDL_GetWindowFlags(other)&SDL_WINDOW_FULLSCREEN) && SDL_GetDisplayForWindow(other)==display;
+    });
 }
 bool Cabinet::recover_displays() {
     const auto displays=monitors(false);
