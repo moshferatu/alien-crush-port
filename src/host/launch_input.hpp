@@ -5,7 +5,7 @@
 #include "alien_crush/diagnostics/alien_state.hpp"
 #include "pad_bindings.hpp"
 namespace alien_crush::host {
-// Device-independent routing also covers raw cabinet boards. I is exclusively
+// Routing for every device. I is exclusively
 // launch/confirm; neither flipper sends it. Enter/Run launches in the shooter.
 inline PadInput route_game_input(PadInput input,bool launching,const FlipperInputs& flippers={}) {
     if(input.player_one&Pad::run) {

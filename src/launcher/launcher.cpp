@@ -7,7 +7,7 @@
 // -- the play settings, the music voice overlay, the cabinet's windows, the
 // keys, the nudge board and the plunger -- and
 // nothing else: the launcher is for the player who would rather not open a
-// text file to turn smoothing off or rebind a flipper. It reads the file the
+// text file to turn smoothing off or rebind a key. It reads the file the
 // game would read, shows it a tab at a time, writes it back where it was, and
 // starts the game from the folder the file is in, so the two cannot find
 // different ones.
@@ -45,8 +45,7 @@
 //   * A key binding is a row of keys. Enter, South or a click on + waits for
 //     a key and adds it, and every key can be bound, Escape too, so a click,
 //     a controller's button or five seconds stop waiting. Backspace (or West)
-//     takes the last off, and a click on a key's x takes that one. A
-//     flipper's pad inputs are added from +'s list the same way.
+//     takes the last off, and a click on a key's x takes that one.
 //   * A path, a name or a number is typed after Enter or a click. The ROM can
 //     also be chosen with Browse, or dropped on the window.
 //   * Ctrl+S saves; Ctrl+Enter, F5 or Start plays; Escape quits at once,
@@ -115,7 +114,6 @@ namespace {
 
 using Config = alien_crush::host::CabinetConfig;
 using alien_crush::host::kPadButtonCount;
-using alien_crush::host::PadButton;
 using alien_crush::host::WindowPlacement;
 
 constexpr const char* kTitle = "Alien Crush";
@@ -221,7 +219,7 @@ bool same_ignoring_case(std::string_view a, std::string_view b)
 
 // --- what there is to set ----------------------------------------------------
 
-enum Kind { K_HEAD, K_CHOICE, K_RANGE, K_PATH, K_TEXT, K_NUMBER, K_KEYS, K_INPUTS };
+enum Kind { K_HEAD, K_CHOICE, K_RANGE, K_PATH, K_TEXT, K_NUMBER, K_KEYS };
 
 enum Setting {
     S_ROM, S_CABINET, S_BONUS_STAGE, S_NEAR_MAX_SCORE, S_DRAG_BALL,
@@ -235,7 +233,7 @@ enum Setting {
 };
 
 // A binding row's list, as a group and an index into it.
-enum { G_KEYS = 1, G_LAUNCH, G_FLIPPER, G_HOTKEY };
+enum { G_KEYS = 1, G_HOTKEY };
 constexpr int bind(int g, int i) { return g << 8 | i; }
 
 struct Choice {
@@ -283,10 +281,6 @@ constexpr std::array<const char*, kPadButtonCount> pad_rows = {
     "I (Launch, Confirm)", "II (Nudge)", "Select", "Run (Start, Pause)",
     "Up", "Right (Right Flipper)", "Down", "Left (Left Flipper)",
 };
-// ...and as they are named in a flipper's list.
-constexpr std::array<const char*, kPadButtonCount> pad_names = {
-    "I", "II", "Select", "Run", "Up", "Right", "Down", "Left",
-};
 
 void build_rows()
 {
@@ -303,13 +297,11 @@ void build_rows()
     add_choice(TAB_VIDEO, S_SMOOTHING, "Smoothing", on_off, 2,
         "Whether to enable smoothing for the game's visuals on higher refresh rates.");
     static const char monitor_help[] =
-        "The monitor the window opens on. F12 in the game moves the selected window too, and the "
-        "game remembers where it was left.";
+        "The monitor to open the window on.";
     static const char rotation_help[] =
-        "How far the window's picture is turned clockwise, for a monitor that is mounted on its "
-        "side. R and Shift+R turn the selected window while playing, and the game remembers.";
+        "How much the window's picture is rotated clockwise.";
     static const char fullscreen_help[] =
-        "Whether the window fills its monitor. F11 in the game toggles the selected window.";
+        "Whether the window fills the monitor.";
     add_head(TAB_VIDEO, "Windows", "For the cabinet's windows; a desktop window ignores them.");
     static std::array<std::array<std::string, 3>, kWindows> labels;
     for (int i = 0; i < kWindows; ++i) {
@@ -324,74 +316,49 @@ void build_rows()
     }
 
     add_choice(TAB_AUDIO, S_OVERLAY, "Music Voice Overlay", on_off, 2,
-        "On: the music keeps all its voices while sound effects play, on a second sound generator. "
-        "Off: an effect takes a music voice's channel, as on the original hardware.");
+        "Whether to play music where the original game wouldn't due to limited sound channels.");
 
     static const char nudge_help[] =
-        "A nudge board, such as a PinOne's accelerometer, read as two axes of a controller in "
-        "cabinet mode: a shove past the threshold nudges the table, once, until it settles below "
-        "the release.";
+        "Whether to use an accelerometer, such as the one inside a PinOne controller, for nudging.";
     add_head(TAB_CABINET, "Nudge", nudge_help);
     add_range(TAB_CABINET, S_NUDGE_STRENGTH, "Nudge Strength", 0, 160, 5, true,
-        "How hard every nudge is, keyboard, controller and board alike, as a multiple of the "
-        "game's own.");
+        "How hard every nudge is as a multiple of the original game.");
     add_choice(TAB_CABINET, S_NUDGE_ENABLED, "Nudge Board", on_off, 2, nudge_help);
     add(TAB_CABINET, Row{K_TEXT, S_NUDGE_DEVICE, "Nudge Device",
-        "Part of the controller's name, any case. The first controller whose name has it in is "
-        "the board."});
+        "The name of the board / controller to use for nudging (can be part of the full name)."});
     add_range(TAB_CABINET, S_NUDGE_X, "Nudge X Axis", 0, 255, 1, false, "The axis that reads side to side.");
-    add_range(TAB_CABINET, S_NUDGE_Y, "Nudge Y Axis", 0, 255, 1, false,
-        "The axis that reads front to back. Not the X axis.");
+    add_range(TAB_CABINET, S_NUDGE_Y, "Nudge Y Axis", 0, 255, 1, false, "The axis that reads front to back.");
     add_range(TAB_CABINET, S_NUDGE_THRESHOLD, "Nudge Threshold", 1, 100, 1, true,
-        "How far a shove has to reach to nudge, as a percentage of the axis.");
+        "How far the accelerometer has to move to trigger a nudge, as a percentage of the axis.");
     add_range(TAB_CABINET, S_NUDGE_RELEASE, "Nudge Release", 0, 99, 1, true,
-        "How still the board has to settle before it can nudge again, as a percentage of the "
-        "axis. Below the threshold.");
+        "How still the board has to settle before it can nudge again, as a percentage of the axis.");
     add_range(TAB_CABINET, S_NUDGE_COOLDOWN, "Nudge Cooldown", 100, 5000, 50, true,
-        "The least time from one nudge to the next.");
+        "The minimum time from one nudge to the next.");
     static const char plunger_help[] =
         "An analog plunger, read as one axis of a controller in cabinet mode. Run alien-crush.exe "
         "--cabinet-plunger-probe and pull the rod a few times: it prints the axis and the two "
         "values to put here.";
     add_head(TAB_CABINET, "Plunger", plunger_help);
     add(TAB_CABINET, Row{K_TEXT, S_PLUNGER_DEVICE, "Plunger Device",
-        "Part of the controller's name, any case. Empty: the first controller that has the axis."});
+        "The name of the board / controller to use for the plunger (can be part of the full name or empty to use the first available with the specified axis)."});
     add_range(TAB_CABINET, S_PLUNGER_AXIS, "Plunger Axis", -1, 255, 1, false,
-        "Off until one is named, because a plunger and a thumbstick look the same from here. A "
-        "PinOne's is axis 2.");
+        "The controller axis to use for the plunger.");
     add(TAB_CABINET, Row{K_NUMBER, S_PLUNGER_REST, "Plunger Rest",
-        "The axis value with the rod at rest, as the probe prints it.", nullptr, 0, -2147483647 - 1,
-        2147483647});
+        "The axis value of the plunger rod at rest.", nullptr, 0, -2147483647 - 1, 2147483647});
     add(TAB_CABINET, Row{K_NUMBER, S_PLUNGER_DRAWN, "Plunger Drawn",
-        "The axis value with the rod drawn fully back. The wrong way round with Rest, and every "
-        "shot dribbles.", nullptr, 0, -2147483647 - 1, 2147483647});
+        "The axis value with the plunger rod fully drawn." , nullptr, 0, -2147483647 - 1, 2147483647});
     add_range(TAB_CABINET, S_PLUNGER_DEADZONE, "Plunger Deadzone", 0, 100, 1, true,
-        "How much of the travel nearest rest still reads as rest, as a percentage.");
+        "How much travel from rest still reads as rest, as a percentage of the axis.");
     add_range(TAB_CABINET, S_PLUNGER_RELEASE, "Plunger Release", 0, 100, 1, true,
-        "How sudden a fall forward counts as letting go, as a percentage of the travel.");
+        "How much movement counts as a release, as a percentage of the travel.");
 
     static const char key_help[] =
-        "The PC Engine pad, from the keyboard. Enter waits for a key to add; Backspace takes the last "
-        "one off. Every key can be bound, Escape too, so click or wait five seconds to stop waiting.";
-    add_head(TAB_KEYBOARD, "Pad", key_help);
+        "What to map the TurboGrafx-16 / PC Engine controller button to on the keyboard.";
+    add_head(TAB_KEYBOARD, "Buttons", key_help);
     for (std::size_t i = 0; i < kPadButtonCount; ++i) {
         add(TAB_KEYBOARD, Row{K_KEYS, bind(G_KEYS, static_cast<int>(i)), pad_rows[i], key_help});
     }
-    static const char launch_help[] =
-        "Keys that send button I alone while the ball is seated in the shooter, so they launch it "
-        "rather than pause, and do what they are bound to above everywhere else.";
-    add_head(TAB_KEYBOARD, "Launch", launch_help);
-    add(TAB_KEYBOARD, Row{K_KEYS, bind(G_LAUNCH, 0), "Launch", launch_help});
-    static const char flipper_help[] =
-        "The pad inputs each flipper answers to during play. A key works a flipper through the "
-        "input it is bound to, and elsewhere is still that input, so a flipper on Left moves a "
-        "letter at high-score entry. None: the cartridge's own.";
-    add_head(TAB_KEYBOARD, "Flippers", flipper_help);
-    add(TAB_KEYBOARD, Row{K_INPUTS, bind(G_FLIPPER, 0), "Left Flipper", flipper_help});
-    add(TAB_KEYBOARD, Row{K_INPUTS, bind(G_FLIPPER, 1), "Right Flipper", flipper_help});
-    static const char window_help[] =
-        "Keys the game answers to outside the pad. Next Window picks the cabinet window that "
-        "Fullscreen and Next Monitor act on; Shift goes the other way.";
+    static const char window_help[] = "What to map the hotkey to on the keyboard.";
     add_head(TAB_KEYBOARD, "Hotkeys", window_help);
     add(TAB_KEYBOARD, Row{K_KEYS, bind(G_HOTKEY, 0), "Toggle Smoothing", window_help});
     add(TAB_KEYBOARD, Row{K_KEYS, bind(G_HOTKEY, 1), "Select Next Window", window_help});
@@ -583,13 +550,9 @@ std::vector<std::string>& keys_of(Config& c, int id)
         default: return in.next_monitor_keys;
         }
     }
-    return (id >> 8) == G_LAUNCH ? c.input.launch_keys : c.input.keys[static_cast<std::size_t>(id & 0xFF)];
+    return c.input.keys[static_cast<std::size_t>(id & 0xFF)];
 }
 
-std::vector<PadButton>& inputs_of(Config& c, int id)
-{
-    return (id & 0xFF) == 0 ? c.input.flippers.left : c.input.flippers.right;
-}
 
 std::string range_text(const Row& r, int v)
 {
@@ -647,7 +610,6 @@ void row_copy(Config& to, Config& from, const Row& r)
     case K_PATH:
     case K_TEXT: text_of(to, r.id) = text_of(from, r.id); break;
     case K_KEYS: keys_of(to, r.id) = keys_of(from, r.id); break;
-    case K_INPUTS: inputs_of(to, r.id) = inputs_of(from, r.id); break;
     default: break;
     }
 }
@@ -1169,7 +1131,7 @@ void start_capture(int i)
     ui.status.clear();
 }
 
-// Backspace, or West: a key row's last key, or a flipper's last input. A
+// Backspace, or West: a key row's last key. A
 // click on a key's x: that one.
 void remove_binding(int i, int which)
 {
@@ -1182,7 +1144,7 @@ void remove_binding(int i, int which)
         list.erase(list.begin() + k);
         return true;
     };
-    if ((r->kind == K_KEYS && take(keys_of(ui.cfg, r->id))) || (r->kind == K_INPUTS && take(inputs_of(ui.cfg, r->id))))
+    if (r->kind == K_KEYS && take(keys_of(ui.cfg, r->id)))
         changed();
 }
 
@@ -1236,8 +1198,7 @@ constexpr int kDropShown = 10;
 
 // The values of a row with a fixed list, in the order the list shows them;
 // none for a row without one. An axis the file had that is past the usual
-// sixteen is in the list in its place. A flipper's list is the pad inputs it does not have yet, and
-// what is picked from it is added.
+// sixteen is in the list in its place.
 std::vector<int> row_options(const Row& r)
 {
     std::vector<int> out;
@@ -1246,10 +1207,6 @@ std::vector<int> row_options(const Row& r)
         if (setting_get(ui.cfg, r.id) == kMonitorAbsent) out.push_back(kMonitorAbsent);
     } else if (r.kind == K_CHOICE) {
         for (int i = 0; i < r.count; ++i) out.push_back(r.choices[i].value);
-    } else if (r.kind == K_INPUTS) {
-        const auto& have = inputs_of(ui.cfg, r.id);
-        for (std::size_t b = 0; b < kPadButtonCount; ++b)
-            if (std::ranges::find(have, static_cast<PadButton>(b)) == have.end()) out.push_back(static_cast<int>(b));
     } else if (r.kind == K_RANGE && !r.slider) {
         const int shown_hi = r.hi > 15 ? 15 : r.hi;
         for (int v = r.lo; v <= shown_hi; v += r.step) out.push_back(v);
@@ -1271,7 +1228,6 @@ std::string option_text(const Row& r, int v)
             if (r.choices[k].value == v) return r.choices[k].label;
         return std::to_string(v);
     }
-    if (r.kind == K_INPUTS) return pad_names[static_cast<std::size_t>(v)];
     return range_text(r, v);
 }
 
@@ -1294,15 +1250,12 @@ void drop_open(int i)
     if (ui.editing) commit_edit();
     const Row* r = row_at(i);
     const auto opts = r != nullptr ? row_options(*r) : std::vector<int>{};
-    if (opts.empty()) {
-        if (r != nullptr && r->kind == K_INPUTS) say("Every pad input is here already.");
-        return;
-    }
+    if (opts.empty()) return;
     ui.focus = i;
     ui.on_buttons = false;
     reveal(i);
     ui.drop_row = i;
-    ui.drop_sel = r->kind == K_INPUTS ? 0 : option_index(opts, setting_get(ui.cfg, r->id));
+    ui.drop_sel = option_index(opts, setting_get(ui.cfg, r->id));
     // The value in the middle of what shows, where there is room.
     ui.drop_shown = kDropShown;
     ui.drop_first = ui.drop_sel - kDropShown / 2;
@@ -1325,10 +1278,7 @@ void drop_pick()
     drop_close();
     if (ui.drop_sel < 0 || ui.drop_sel >= static_cast<int>(opts.size())) return;
     const int v = opts[static_cast<std::size_t>(ui.drop_sel)];
-    if (r->kind == K_INPUTS) {
-        inputs_of(ui.cfg, r->id).push_back(static_cast<PadButton>(v));
-        changed();
-    } else if (v != setting_get(ui.cfg, r->id)) {
+    if (v != setting_get(ui.cfg, r->id)) {
         setting_set(ui.cfg, r->id, v);
         changed();
     }
@@ -1385,8 +1335,7 @@ bool activate(bool from_pad)
     if (r == nullptr) return false;
     switch (r->kind) {
     case K_CHOICE:
-    case K_RANGE:
-    case K_INPUTS: drop_open(ui.focus); break;
+    case K_RANGE: drop_open(ui.focus); break;
     case K_PATH:
         if (from_pad) {
             std::string path;
@@ -1624,18 +1573,9 @@ void draw_bindings(int i, const Row& r, float x, float y, float h, bool focused)
     float cx = x;
     std::vector<std::string> names;
     std::vector<bool> bad;
-    std::size_t most = kKeysMax;
-    if (r.kind == K_KEYS) {
-        for (const auto& k : keys_of(ui.cfg, r.id)) {
-            names.push_back(k);
-            bad.push_back(SDL_GetScancodeFromName(k.c_str()) == SDL_SCANCODE_UNKNOWN);
-        }
-    } else {
-        for (const auto b : inputs_of(ui.cfg, r.id)) {
-            names.emplace_back(pad_names[static_cast<std::size_t>(b)]);
-            bad.push_back(false);
-        }
-        most = kPadButtonCount;
+    for (const auto& k : keys_of(ui.cfg, r.id)) {
+        names.push_back(k);
+        bad.push_back(SDL_GetScancodeFromName(k.c_str()) == SDL_SCANCODE_UNKNOWN);
     }
     draw_chips(i, names, bad, cx, y, h);
     if (ui.capturing && ui.capture_row == i) {
@@ -1645,23 +1585,16 @@ void draw_bindings(int i, const Row& r, float x, float y, float h, bool focused)
         const float cw = text_width(ui.body, msg) + L(20);
         outline(cx, y, cw, h, L(2), C_ACCENT);
         text(ui.ren, ui.body, cx + L(10), y + (h - ui.body.height) / 2, msg, C_ACCENT);
-    } else if (names.size() < most) {
+    } else if (names.size() < kKeysMax) {
         if (names.empty()) {
             const float e = text(ui.ren, ui.body, cx, y + (h - ui.body.height) / 2,
-                                 r.kind == K_INPUTS ? "The cartridge's own" : "None", C_DIM);
+                                 "None", C_DIM);
             cx = e + L(12);
         }
         outline(cx, y, h, h, L(1), focused ? C_DIM : C_FAINT);
         const float pw = text_width(ui.bold, "+");
         text(ui.ren, ui.bold, cx + (h - pw) / 2, y + (h - ui.bold.height) / 2, "+", focused ? C_ACCENT : C_DIM);
         hot(cx, y, h, h, P_ADD, i, 0);
-        // A flipper's list opens from its +.
-        if (r.kind == K_INPUTS && ui.drop_row == i) {
-            ui.drop_x = cx;
-            ui.drop_y = y;
-            ui.drop_w = L(200);
-            ui.drop_h = h;
-        }
     }
 }
 
@@ -1787,10 +1720,10 @@ void draw()
     std::string warn = ui.status;
     if (ui.on_buttons) {
         static const char* const button_help[UI_BUTTONS] = {
-            "Put this tab back to its defaults. Nothing is written until Save or Play.",
-            "Write these settings to the file. Ctrl+S.",
-            "Close the launcher. Escape.",
-            "Save, then start the game. Ctrl+Enter or F5, or Start on a controller.",
+            "Restore settings to defaults.",
+            "Save settings.",
+            "Quit the launcher.",
+            "Start the game.",
         };
         help = button_help[ui.button];
     } else if (const Row* r = row_at(ui.focus)) {
@@ -1930,10 +1863,7 @@ bool click(float mx, float my)
         break;
     }
     case P_CHIP: remove_binding(at.row, at.index); break;
-    case P_ADD:
-        if (row_at(at.row)->kind == K_INPUTS) drop_open(at.row);
-        else start_capture(at.row);
-        break;
+    case P_ADD: start_capture(at.row); break;
     default: break;
     }
     return false;

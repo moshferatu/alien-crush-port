@@ -130,31 +130,6 @@ std::vector<std::string> parse_keys(std::string_view text,std::string_view key) 
     }
     return keys;
 }
-std::optional<PadButton> pad_button_named(std::string_view name) {
-    for(std::size_t i=0;i<kPadButtonCount;++i)
-        if(pad_button_field(static_cast<PadButton>(i))==name) return static_cast<PadButton>(i);
-    return std::nullopt;
-}
-std::string join_inputs(const std::vector<PadButton>& inputs) {
-    std::string out;
-    for(const auto input:inputs) {if(!out.empty()) out+=',';out+=pad_button_field(input);}
-    return out;
-}
-std::vector<PadButton> parse_inputs(std::string_view text,std::string_view key) {
-    std::vector<PadButton> inputs;
-    for(std::size_t start=0;start<=text.size();) {
-        const auto comma=text.find(',',start);
-        const auto piece=trim(text.substr(start,comma==text.npos?text.npos:comma-start));
-        if(!piece.empty()) {
-            const auto input=pad_button_named(piece);
-            if(!input) fail(std::string(key)+" names no pad input \""+std::string(piece)+'"');
-            if(std::ranges::find(inputs,*input)==inputs.end()) inputs.push_back(*input);
-        }
-        if(comma==text.npos) break;
-        start=comma+1;
-    }
-    return inputs;
-}
 
 // Written as plain numbers and a name, because the numbers are what the
 // probes print for them and are typed straight back in here.
@@ -163,9 +138,6 @@ void append_bindings(std::string& out,const InputBindings& input) {
         const auto button=static_cast<PadButton>(i);
         out+="input.";out+=pad_button_field(button);out+='=';out+=join_keys(input[button]);out+='\n';
     }
-    out+="input.left_flipper="+join_inputs(input.flippers.left)+'\n';
-    out+="input.right_flipper="+join_inputs(input.flippers.right)+'\n';
-    out+="input.launch="+join_keys(input.launch_keys)+'\n';
     out+="input.smoothing="+join_keys(input.smoothing_keys)+'\n';
     out+="input.next_window="+join_keys(input.next_window_keys)+'\n';
     out+="input.fullscreen="+join_keys(input.fullscreen_keys)+'\n';
@@ -185,9 +157,6 @@ void append_bindings(std::string& out,const InputBindings& input) {
     out+="input.plunger.drawn="+std::to_string(p.calibration.drawn)+'\n';
     out+="input.plunger.deadzone="+std::to_string(static_cast<unsigned>(p.calibration.deadzone))+'\n';
     out+="input.plunger.release="+std::to_string(static_cast<unsigned>(p.calibration.release))+'\n';
-    out+="input.buttons.device="+escape_value(input.buttons.device)+'\n';
-    for(std::size_t i=0;i<kCabinetButtonFields.size();++i)
-        out+=std::string("input.buttons.")+kCabinetButtonFields[i]+'='+std::to_string(input.buttons.buttons[i])+'\n';
 }
 void parse_bindings(const Fields& fields,InputBindings& input) {
     input=default_input_bindings();
@@ -196,9 +165,6 @@ void parse_bindings(const Fields& fields,InputBindings& input) {
         const auto key="input."+std::string(pad_button_field(button));
         if(const auto* text=field(fields,key)) input[button]=parse_keys(*text,key);
     }
-    if(const auto* text=field(fields,"input.left_flipper")) input.flippers.left=parse_inputs(*text,"input.left_flipper");
-    if(const auto* text=field(fields,"input.right_flipper")) input.flippers.right=parse_inputs(*text,"input.right_flipper");
-    if(const auto* text=field(fields,"input.launch")) input.launch_keys=parse_keys(*text,"input.launch");
     if(const auto* text=field(fields,"input.smoothing")) input.smoothing_keys=parse_keys(*text,"input.smoothing");
     if(const auto* text=field(fields,"input.next_window")) input.next_window_keys=parse_keys(*text,"input.next_window");
     if(const auto* text=field(fields,"input.fullscreen")) input.fullscreen_keys=parse_keys(*text,"input.fullscreen");
@@ -234,20 +200,6 @@ void parse_bindings(const Fields& fields,InputBindings& input) {
         } else fail("unknown setting "+key);
     }
     if(p.device.find_first_of(std::string_view("\r\n\0",3))!=std::string::npos) fail("input.plunger.device cannot hold a line break");
-
-    auto& b=input.buttons;
-    for(const auto& [key,value]:fields) {
-        if(!key.starts_with("input.buttons.")) continue;
-        if(key=="input.buttons.device") {b.device=unescape_value(trim(value),key);continue;}
-        const auto name=std::string_view(key).substr(14);
-        const auto found=std::ranges::find(kCabinetButtonFields,name);
-        if(found==kCabinetButtonFields.end()) fail("unknown setting "+key);
-        const auto button=integer<int>(value,key);
-        if(button<-1 || button>255) fail(key+" must be -1 (off) or 0 to 255");
-        b.buttons[static_cast<std::size_t>(found-kCabinetButtonFields.begin())]=button;
-    }
-    if(b.device.size()>1024 || b.device.find_first_of(std::string_view("\r\n\0",3))!=std::string::npos)
-        fail("input.buttons.device must be a controller's name");
 }
 
 // The multiplier as the shortest text that reads back as the same double, so
@@ -290,8 +242,8 @@ void parse_play_settings(const Fields& fields,PlaySettings& play) {
 }
 
 // The older format, as the game read it before this one: a lenient
-// key=value file with `window.<role>` and `input.buttons` in their own
-// encodings, and whatever it lacked from the separate files beside it.
+// key=value file with `window.<role>` in its own encoding, and whatever it
+// lacked from the separate files beside it.
 std::array<WindowPlacement,kCabinetWindowCount> parse_legacy_windows(const std::string& text) {
     // That file listed the backglass before the score window.
     constexpr std::array<const char*,kCabinetWindowCount> roles{"playfield","backglass","score"};
@@ -330,7 +282,6 @@ CabinetConfig load_legacy(const CabinetSettings& settings,const std::filesystem:
         play.nudge_multiplier=*value;
     }
     config.input.nudge=parse_cabinet_nudge(settings);
-    config.input.buttons=load_cabinet_buttons(data/"cabinet-inputs.txt");
     const bool plunger_here=std::ranges::any_of(settings,[](const auto& f){return f.first.starts_with("input.plunger.");});
     config.input.plunger=load_cabinet_plunger(plunger_here?data/core::kConfigFileName:data/"cabinet-plunger.txt");
     std::error_code error;
@@ -363,8 +314,8 @@ DisplayRotation display_rotation(SDL_DisplayOrientation orientation) {
 InputBindings default_input_bindings() {
     InputBindings bindings;
     // Return is I and Run together: it confirms and advances an initial as I,
-    // starts and pauses as Run, and as a launch key sends I alone from the
-    // shooter. Neither flipper sends I, so no flipper press can launch.
+    // starts and pauses as Run, and as I sends I alone from the shooter.
+    // Neither flipper sends I, so no flipper press can launch.
     bindings[PadButton::one]={"Return"};
     bindings[PadButton::two]={"Space"};
     bindings[PadButton::select]={"Backspace"};
@@ -373,11 +324,6 @@ InputBindings default_input_bindings() {
     bindings[PadButton::right]={"Right Shift","Right"};
     bindings[PadButton::down]={"Down"};
     bindings[PadButton::left]={"Left Shift","Left"};
-    // The masks cabinet controls have always written: the left flipper on
-    // Left, the right on Right with Up as its stand-in while both are held.
-    bindings.flippers.left={PadButton::left};
-    bindings.flippers.right={PadButton::right,PadButton::up};
-    bindings.launch_keys={"Return"};
     bindings.smoothing_keys={"F6"};
     bindings.next_window_keys={"F10"};
     bindings.fullscreen_keys={"F11"};

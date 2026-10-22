@@ -15,7 +15,7 @@ and starts the game, then comes back when the game closes.
 | Video | Smoothing, and for the cabinet: which monitor each window is on and whether it is fullscreen, and the playfield's rotation |
 | Audio | The music voice overlay |
 | Cabinet | The nudge strength and nudge board, and the analog plunger |
-| Keyboard | The keys for each PC Engine pad input, the launch keys, and each flipper's pad inputs |
+| Keyboard | The keys for each PC Engine pad input, and the window hotkeys |
 
 It is worked by mouse, keyboard or controller: Up and Down move, Left and
 Right change a value, Enter opens a list, starts editing, or waits for a key, Tab (or L1 and R1) turns the tabs, Ctrl+S saves, and
@@ -88,9 +88,6 @@ playfield.rotation=1
 playfield.fullscreen=0
 input.one=Return
 input.right=Right Shift,Right
-input.left_flipper=left
-input.right_flipper=right,up
-input.launch=Return
 game.cabinet=1
 audio.music_voice_overlay=1
 ```
@@ -103,12 +100,12 @@ Crush. Each window has `display`, `x`, `y`, `width`, `height`, `rotation` (the
 monitor's own orientation, as SDL numbers it) and `fullscreen`, all or none;
 a window with none, or no size, opens where the game first puts it. What only
 Alien Crush has is added in the same style: `<window>.artwork_rotation` for
-each window (Devil's Crush has only the playfield's), and `input.buttons.*`
-for a cabinet board's buttons. The file before this format, with its
-`window.*` and `input.buttons=ACINPUTS...` lines, and the separate
-`cabinet-windows.txt`, `cabinet-inputs.txt` and `cabinet-plunger.txt` before
-that, are still read; the launcher's Save, or a cabinet session's exit,
-rewrites them in this format.
+each window (Devil's Crush has only the playfield's). The file before this
+format, with its `window.*` lines, and the separate `cabinet-windows.txt` and
+`cabinet-plunger.txt` before that, are still read; the launcher's Save, or a
+cabinet session's exit, rewrites them in this format. Earlier builds also read
+a board's raw buttons from `input.buttons.*` (or `cabinet-inputs.txt`); those
+are now ignored, and dropped on the next save.
 
 ## Controls
 
@@ -155,22 +152,16 @@ input.one=Return
 input.run=Return
 input.left=Left Shift,Left
 input.right=Right Shift,Right
-input.launch=Return
-input.left_flipper=left
-input.right_flipper=right,up
 ```
 
-`input.launch` lists keys that send button I alone while the ball is seated in
-the shooter, so a key that is also Run launches there rather than pausing; a
-held launch stays one until it is let go. `input.left_flipper` and
-`input.right_flipper` are the pad inputs each flipper answers to during play,
-by name (`one`, `two`, `select`, `run`, `up`, `right`, `down`, `left`); empty
-leaves the cartridge's own. The right flipper's Up is its stand-in while both
-flippers are held, since the pad cannot send Left and Right at once. Gamepad
-shoulders and a cabinet board's flipper buttons send the first input on their
-flipper's list. Flipper inputs other than the defaults are part of the
-runtime's identity, as a nudge multiplier is: recordings replay with the
-flippers they were made with, and quick states need the same ones.
+The keys bound to I launch: while the ball is seated in the shooter they send
+I alone, so a key that is also Run launches there rather than pausing, and a
+held launch stays one until it is let go. The flippers are Left and Right, so
+they are whatever keys those two are bound to. The right flipper sends Up
+while both are held, since the pad cannot send Left and Right at once.
+Gamepad shoulders send Left and Right.
+Earlier builds had `input.launch`, `input.left_flipper` and
+`input.right_flipper` settings; they are now ignored.
 
 ## Files
 
@@ -229,8 +220,12 @@ backglass rotation. Black borders fill unused space. Restart to change artwork.
 
 ## Cabinet buttons
 
-Raw cabinet buttons can be configured for boards such as PinOne, including devices
-SDL does not recognize as gamepads. First run the hardware probe (no ROM required):
+A cabinet's buttons need to arrive as key presses or as a gamepad: bind the keys
+on the launcher's Keyboard tab. A gamepad's shoulders work the flippers, its
+south button launches and confirms, and Start starts and pauses.
+
+To find a board's axes for the plunger and nudging, run the hardware probe (no
+ROM required):
 
 ```powershell
 .\out\build\windows-vs2022\Release\alien-crush.exe --input-probe
@@ -238,47 +233,9 @@ SDL does not recognize as gamepads. First run the hardware probe (no ROM require
 
 The window and console show controller names, zero-based pressed button numbers,
 and raw axis readings. Pull the plunger to identify its axis and rest/full-pull
-endpoints; these readings are diagnostic and do not control launch power yet.
-Escape closes the probe. `--frames N` limits it to N samples at 100ms intervals.
-
-A cabinet whose buttons arrive as key presses needs none of this: bind the keys
-on the launcher's Keyboard tab. For a board that reports its buttons as a
-joystick instead, set them under `input.buttons.` in `alien-crush.ini`
-(they are not on a launcher tab) using the observed controller name and button
-numbers:
-
-```text
-input.buttons.device=PinOne
-input.buttons.left_flipper=0
-input.buttons.right_flipper=1
-input.buttons.nudge=2
-input.buttons.run=3
-input.buttons.select=4
-input.buttons.up=-1
-input.buttons.down=-1
-input.buttons.right=-1
-input.buttons.launch=5
-```
-
-`left_flipper` and `right_flipper` send their flipper's first input (see
-[Keys](#keys)); `nudge` is II, `run` starts, confirms and pauses and launches
-while the ball is seated, `select`, `up`, `down` and `right` are those pad
-inputs, and `launch` is a dedicated launch/confirm button (I). **The numbers
-above are examples, not verified PinOne defaults.** Use `-1` to disable a
-mapping; valid indices are 0–255. The older `input.buttons=ACINPUTS1 "PinOne"
-0 1 2 3 4 -1 -1 -1` line (or `ACINPUTS2` with a ninth, launch, index) is still
-read, and rewritten in these keys.
-The name is a nonempty case-insensitive substring; the first matching device with
-all configured buttons is selected. Choose a distinctive name when several boards
-are connected. Settings load at startup in `--cabinet` mode.
-An empty `input.buttons.device=` leaves raw buttons disabled; malformed settings report an error.
-Keyboard controls and other gamepads remain available. The selected board's default
-gamepad mapping is suppressed to prevent duplicate actions.
-
-Release all mapped buttons after startup, reconnect, quick-load or returning from
-another application before using them. Disconnecting clears held raw input and
-reconnecting finds the board by name even if its SDL instance ID changes. Recordings
-store the resulting controller bits and accepted plunger commands; replay ignores hardware mappings.
+endpoints. Escape closes the probe. `--frames N` limits it to N samples at 100ms
+intervals. Recordings store the resulting controller bits and accepted plunger
+commands; replay ignores hardware settings.
 
 ## Nudging
 
@@ -380,8 +337,8 @@ The five numbers are **axis index, rest value, full-pull value, deadzone percent
 release-fall percent**. These are examples; measure your board with `--input-probe`.
 Endpoints may run in either direction and must be distinct values in -32768..32767.
 The deadzone is 0..99; release threshold is 1..100. Choose a specific device name
-substring in the legacy format; the first matching board with that axis is used. Buttons and the plunger
-may use different boards. Missing configuration disables analog input; invalid
+substring in the legacy format; the first matching board with that axis is used.
+Missing configuration disables analog input; invalid
 configuration reports an error without overwriting it. Restart after editing.
 
 The rod must rest after startup, reconnect and quick-load. A seated ball follows

@@ -1,79 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "cabinet_input.hpp"
-#include "cabinet_settings.hpp"
-#include "alien_crush/core/files.hpp"
-#include "alien_crush/core/data_files.hpp"
-#include <algorithm>
+#include <SDL3/SDL.h>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace alien_crush::host {
 namespace {
-bool name_matches(const char* name,const std::string& needle) {
-    return name && SDL_strcasestr(name,needle.c_str());
-}
 using Joystick=std::unique_ptr<SDL_Joystick,decltype(&SDL_CloseJoystick)>;
-}
-CabinetButtons parse_cabinet_buttons(std::string_view text) {
-    if(text.size()>4096) throw std::runtime_error("Cabinet input configuration exceeds 4096 bytes");
-    std::istringstream stream{std::string(text)};
-    CabinetButtons result;
-    std::string header;
-    if(!(stream>>header) || (header!="ACINPUTS1" && header!="ACINPUTS2") || !(stream>>std::quoted(result.device)) ||
-        result.device.empty() || result.device.size()>1024 ||
-        result.device.find_first_of("\r\n\0",0,3)!=std::string::npos)
-        throw std::runtime_error("Invalid cabinet input header/device; name a specific controller");
-    for(unsigned i=0;i<(header=="ACINPUTS2"?9u:8u);++i)
-        if(!(stream>>result.buttons[i]) || result.buttons[i] < -1 || result.buttons[i]>255)
-            throw std::runtime_error("Cabinet button indices must be -1 (disabled) or 0..255");
-    stream>>std::ws;
-    if(!stream.eof()) throw std::runtime_error("Unexpected trailing cabinet input configuration");
-    return result;
-}
-CabinetButtons load_cabinet_buttons(const std::filesystem::path& path) {
-    const auto settings=read_cabinet_settings(path.parent_path()/core::kConfigFileName);
-    if(const auto found=settings.find("input.buttons");found!=settings.end())
-        return found->second.empty()?CabinetButtons{}:parse_cabinet_buttons(found->second);
-    if(!std::filesystem::exists(path)) return {};
-    const auto bytes=core::read_file(path,4096);
-    return parse_cabinet_buttons({reinterpret_cast<const char*>(bytes.data()),bytes.size()});
-}
-CabinetInput::CabinetInput(CabinetButtons binding,const FlipperInputs& flippers):binding_(std::move(binding)),
-    masks_{flipper_pad(flippers.left,false),flipper_pad(flippers.right,true),Pad::button_ii,Pad::run,
-        Pad::select,Pad::up,Pad::down,Pad::right,Pad::button_i} { refresh(); }
-CabinetInput::~CabinetInput() { SDL_CloseJoystick(joystick_); }
-SDL_JoystickID CabinetInput::id() const { return joystick_?SDL_GetJoystickID(joystick_):0; }
-void CabinetInput::refresh() {
-    if(joystick_ && SDL_JoystickConnected(joystick_)) return;
-    SDL_CloseJoystick(joystick_); joystick_=nullptr; rearm();
-    const auto highest=*std::max_element(binding_.buttons.begin(),binding_.buttons.end());
-    if(binding_.device.empty() || highest<0) return;
-    int count{};
-    auto* ids=SDL_GetJoysticks(&count);
-    for(int i=0;i<count;++i) {
-        if(!name_matches(SDL_GetJoystickNameForID(ids[i]),binding_.device)) continue;
-        auto* candidate=SDL_OpenJoystick(ids[i]);
-        if(!candidate) continue;
-        if(SDL_GetNumJoystickButtons(candidate)<=highest) {SDL_CloseJoystick(candidate);continue;}
-        joystick_=candidate;
-        std::cout<<"Cabinet buttons: "<<SDL_GetJoystickName(joystick_)<<'\n';
-        break;
-    }
-    SDL_free(ids);
-}
-PadInput CabinetInput::read() {
-    PadInput result;
-    if(!joystick_ || !SDL_JoystickConnected(joystick_)) {rearm();return result;}
-    for(std::size_t i=0;i<masks_.size();++i)
-        if(binding_.buttons[i]>=0 && SDL_GetJoystickButton(joystick_,binding_.buttons[i]))
-            result.player_one|=masks_[i];
-    // Held start/flippers must not act immediately after reconnect or focus return.
-    if(!armed_) {armed_=result.player_one==0;return {};}
-    return result;
 }
 int input_probe(std::uint64_t samples) {
     std::unique_ptr<SDL_Window,decltype(&SDL_DestroyWindow)> window(

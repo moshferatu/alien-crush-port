@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
-#include "cabinet_input.hpp"
+#include <SDL3/SDL.h>
 #include "cabinet_nudge.hpp"
 #include "pad_bindings.hpp"
 #include "alien_crush/input/plunger.hpp"
@@ -21,14 +21,15 @@
 // are Devil's Crush's wherever the two games share a setting, so one file's
 // window, key, nudge and plunger lines read the same in either; the score
 // window is `dmd`, as the display that shows the score is there. What only
-// Alien Crush has -- a rotation for every window, and a cabinet board's raw
-// buttons -- is added in the same style.
+// Alien Crush has -- a rotation for every window -- is added in the same style.
 //
 // The game writes the whole file on a cabinet session's exit, and the launcher
 // (src/launcher/launcher.cpp) whenever it saves. Files from before this
-// format -- the older settings file with its `window.*` and `input.buttons`
-// lines, and the separate cabinet-windows.txt, cabinet-inputs.txt and
-// cabinet-plunger.txt -- are still read, and the first write replaces them.
+// format -- the older settings file with its `window.*` lines, and the
+// separate cabinet-windows.txt and cabinet-plunger.txt -- are still read, and
+// the first write replaces them. A board's raw buttons (`input.buttons`,
+// cabinet-inputs.txt) are no longer read: a cabinet's buttons are keys or a
+// gamepad.
 namespace alien_crush::host {
 inline constexpr std::uint32_t kCabinetConfigVersion=1;
 
@@ -62,18 +63,14 @@ inline constexpr std::array<const char*,kCabinetWindowCount> kCabinetWindowField
 // hand-editable. An input bound to no keys is unbound; one not in the file
 // takes the default.
 struct InputBindings {
+    // While the ball is seated in the shooter, a key bound to I sends I alone,
+    // so that a key bound to I and Run launches there instead of pausing.
     std::array<std::vector<std::string>,kPadButtonCount> keys;
-    FlipperInputs flippers;
-    // Keys that send button I, and only I, while the ball is seated in the
-    // shooter, so that a key bound to Run launches there instead of pausing.
-    std::vector<std::string> launch_keys;
     // Keys the game answers to outside the pad: smoothing, and the cabinet
     // window that fullscreen and next-monitor act on (Shift goes back).
     std::vector<std::string> smoothing_keys,next_window_keys,fullscreen_keys,next_monitor_keys;
     input::PlungerBinding plunger;
     NudgeBinding nudge;
-    // A cabinet board's own buttons (Alien Crush only).
-    CabinetButtons buttons;
     const std::vector<std::string>& operator[](PadButton b) const {return keys[static_cast<std::size_t>(b)];}
     std::vector<std::string>& operator[](PadButton b) {return keys[static_cast<std::size_t>(b)];}
     bool operator==(const InputBindings&) const=default;
@@ -82,9 +79,6 @@ struct InputBindings {
 // Return confirms, starts and pauses, and launches from the shooter; Space nudges;
 // Backspace is Select; Up and Down move through menus.
 InputBindings default_input_bindings();
-// The board's buttons under `input.buttons.`, in CabinetButtons' order.
-inline constexpr std::array<const char*,9> kCabinetButtonFields{
-    "left_flipper","right_flipper","nudge","run","select","up","down","right","launch"};
 
 // The settings a player chooses once rather than per run. Each was a flag
 // first, and the flag still beats the file. They apply to normal play only;

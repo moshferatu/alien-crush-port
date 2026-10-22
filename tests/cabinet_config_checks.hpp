@@ -31,8 +31,6 @@ inline void check_cabinet_config() {
     chosen.windows[host::score_window].artwork_rotation=270;
     chosen.input[host::PadButton::run]={"Space","Keypad Enter"};
     chosen.input[host::PadButton::select]={};
-    chosen.input.flippers={{host::PadButton::left,host::PadButton::down},{}};
-    chosen.input.launch_keys={"Space"};
     chosen.input.smoothing_keys={"F7"};
     chosen.input.next_window_keys={"Tab","F10"};
     chosen.input.fullscreen_keys={};
@@ -41,23 +39,25 @@ inline void check_cabinet_config() {
     chosen.input.plunger.device="PinOne Board%";
     chosen.input.plunger.axis=2;
     chosen.input.plunger.calibration={1000,-1000,12,30};
-    chosen.input.buttons={"PinOne",{0,1,2,3,-1,5,6,7,8}};
     const auto encoded=host::encode_cabinet_config(chosen);
     check(!encoded.empty() && decode(text_of(encoded))==chosen,"Every setting round trips through alien-crush.ini");
     const auto written=text_of(encoded);
     for(const auto* line:{"version=1\n","input.nudge_multiplier=2.5\n","input.plunger.device=PinOne Board%25\n",
-        "input.run=Space,Keypad Enter\n","input.select=\n","input.left_flipper=left,down\n","input.right_flipper=\n",
+        "input.run=Space,Keypad Enter\n","input.select=\n",
         "playfield.display=Display %3D 1%25\n","playfield.rotation=3\n","dmd.artwork_rotation=270\n",
-        "audio.music_voice_overlay=0\n","input.buttons.select=-1\n","input.nudge.device=Clev%2C Soft\n",
+        "audio.music_voice_overlay=0\n","input.nudge.device=Clev%2C Soft\n",
         "input.smoothing=F7\n","input.next_window=Tab,F10\n","input.fullscreen=\n","input.next_monitor=F12\n"})
         check(written.find(line)!=std::string::npos,"Written in Devil's Crush's form");
+    check(written.find("input.buttons.")==std::string::npos,"No raw board buttons are written");
+    check(decode("version=1\ninput.buttons.device=PinOne\ninput.buttons.launch=256\ninput.buttons.jump=1\n")==decode("version=1\n"),
+        "The old raw board-button settings are ignored");
     check(written.find("game.rom=D:\\Games\\Alien Crush %28USA%29 %C3%A9.pce\n")!=std::string::npos,"A path is escaped byte by byte");
 
     // Devil's Crush's own file: its keys read the same, and what it has that
     // this game does not is ignored.
     const auto shared=decode("version=1\ninput.one=Return\ninput.launch=Return,Space\ngame.bonus_stage=3\ngame.native=1\n"
         "input.plunger.axis=2\nplayfield.artwork_rotation=90\n");
-    check(shared.input.launch_keys==std::vector<std::string>{"Return","Space"} && shared.input.plunger.axis==2 &&
+    check(shared.input[host::PadButton::one]==std::vector<std::string>{"Return"} && shared.input.plunger.axis==2 &&
         shared.windows[host::playfield_window].artwork_rotation==90,"A Devil's Crush alien-crush.ini reads here");
     check(decode("version=1\ngame.near_max_score=1\n").play.near_max_score && !decode("version=1\n").play.near_max_score,
         "A start near the maximum score is read, and off without it");
@@ -76,9 +76,9 @@ inline void check_cabinet_config() {
     for(const auto* bad:{"", "input.one=A\n", "version=2\n", "version=1\nversion=1\n", "version=1\n# comment\n",
         "version=1\ngame.cabinet=2\n", "version=1\ngame.bonus_stage=5\n", "version=1\ngame.bonus_stage=\n", "version=1\ngame.near_max_score=2\n", "version=1\ngame.drag_ball=yes\n", "version=1\nvideo.smoothing=off\n", "version=1\naudio.music_voice_overlay=yes\n",
         "version=1\ninput.nudge_multiplier=17\n", "version=1\ninput.nudge_multiplier=2x\n",
-        "version=1\nplayfield.artwork_rotation=45\n", "version=1\ninput.left_flipper=left,sideways\n",
+        "version=1\nplayfield.artwork_rotation=45\n",
         "version=1\ninput.nudge.typo=1\n", "version=1\ninput.nudge.axis_y=0\n", "version=1\ninput.plunger.release=101\n",
-        "version=1\ninput.plunger.device=Bad%G1\n", "version=1\ninput.buttons.launch=256\n", "version=1\ninput.buttons.jump=1\n",
+        "version=1\ninput.plunger.device=Bad%G1\n",
         "version=1\nplayfield.x=0\n", "version=1\n=value\n"})
         check(rejected(bad),"A file the game cannot read is refused, not guessed at");
     auto past=chosen;past.play.nudge_multiplier=16.5;
@@ -100,7 +100,7 @@ inline void check_cabinet_config() {
         "window.score=\"Right\" 1920 400 640 200 0 180\n");
     auto legacy=host::load_cabinet_config(older);
     check(legacy.loaded() && legacy.legacy && legacy.config.play.cabinet && !legacy.config.play.smoothing &&
-        legacy.config.input.buttons.buttons[8]==8 && legacy.config.input.nudge.threshold==30 &&
+        legacy.config.input.nudge.threshold==30 &&
         legacy.config.input.plunger.device=="Pin=One" && legacy.config.windows[host::playfield_window].fullscreen &&
         legacy.config.windows[host::playfield_window].artwork_rotation==90 &&
         legacy.config.windows[host::score_window].artwork_rotation==180 &&
@@ -110,12 +110,12 @@ inline void check_cabinet_config() {
     check(migrated.loaded() && !migrated.legacy && migrated.config==legacy.config,"A save rewrites it in the current format");
     std::filesystem::remove(older/"alien-crush.ini");
     write("cabinet-windows.txt","ACWINDOWS 1\nplayfield \"A\" 0 0 540 720 0 0\nbackglass \"A\" 0 0 640 360 0 90\nscore \"A\" 0 0 640 200 0 0\n");
-    write("cabinet-inputs.txt","ACINPUTS1 \"Board\" 0 1 2 3 4 5 6 7\n");
+    write("cabinet-inputs.txt","ACINPUTS1 \"Board\" 256\n");
     write("cabinet-plunger.txt","ACPLUNGER1 \"PinOne\" 2 -32768 32767 8 25\n");
     legacy=host::load_cabinet_config(older);
     check(legacy.loaded() && legacy.legacy && legacy.config.windows[host::backglass_window].artwork_rotation==90 &&
-        legacy.config.input.buttons.device=="Board" && legacy.config.input.plunger.calibration.rest==-32768,
-        "The older separate files are read when there is no alien-crush.ini");
+        legacy.config.input.plunger.calibration.rest==-32768,
+        "The older separate files are read when there is no alien-crush.ini, except the board's buttons");
     write("alien-crush.ini","version=1\ngame.cabinet=2\n");
     check(host::load_cabinet_config(older).status==host::ConfigLoadStatus::invalid,"A bad file is reported, not replaced");
     std::filesystem::remove_all(older);
@@ -158,23 +158,24 @@ inline void check_cabinet_config() {
     std::array<bool,SDL_SCANCODE_COUNT> keys{};
     host::KeyboardInput keyboard;
     keys[SDL_SCANCODE_RETURN]=true;
-    check(keyboard.read(keys,true).player_one==Pad::button_i,"A launch key sends I alone from the shooter");
+    check(keyboard.read(keys,true).player_one==Pad::button_i,"A key bound to I sends I alone from the shooter");
     check(keyboard.read(keys,false).player_one==Pad::button_i,"A held launch stays a launch after the ball leaves");
     keys={};(void)keyboard.read(keys,false);keys[SDL_SCANCODE_RETURN]=true;
     check(keyboard.read(keys,false).player_one==(Pad::button_i|Pad::run),"A fresh press elsewhere is I and Run");
     auto bindings=host::default_input_bindings();
-    bindings.launch_keys={"Space"};
+    bindings[host::PadButton::one]={"Space"};
     bindings[host::PadButton::two]={"Z","Not a key"};
     host::KeyboardInput custom(bindings);
     keys={};keys[SDL_SCANCODE_SPACE]=true;
     check(custom.read(keys,true).player_one==Pad::button_i && custom.read(keys,false).player_one==Pad::button_i,
-        "A launch key bound to nothing else launches");
-    keys={};(void)custom.read(keys,false);keys[SDL_SCANCODE_SPACE]=true;
-    check(custom.read(keys,false).player_one==0,"...and does nothing outside the shooter");
+        "A key rebound to I launches");
+    keys={};keys[SDL_SCANCODE_RETURN]=true;
+    check(custom.read(keys,true).player_one==Pad::run,"...and a key no longer on I does not");
     keys={};keys[SDL_SCANCODE_Z]=true;
     check(custom.read(keys,false).player_one==Pad::button_ii,"A rebound key sends its input, and a bad name is skipped");
     keys={};keys[SDL_SCANCODE_X]=true;
     check(custom.read(keys,false).player_one==0,"A key no longer bound sends nothing");
+    check(decode("version=1\ninput.launch=Space\ninput.left_flipper=down\n").input==host::default_input_bindings(),"The old launch and flipper settings are ignored");
 
     // Flippers on their own inputs, and the runtime identity that carries them.
     const host::FlipperInputs moved{{host::PadButton::two},{host::PadButton::right,host::PadButton::up}};

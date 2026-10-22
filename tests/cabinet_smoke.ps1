@@ -30,8 +30,8 @@ foreach($role in 'playfield','backglass','dmd') {
 foreach($oldFile in 'cabinet-windows.txt','cabinet-inputs.txt','cabinet-plunger.txt') {
     if(Test-Path (Join-Path $directory $oldFile)) { throw 'Fresh cabinets must use only alien-crush.ini' }
 }
-if((Get-Field 'input.plunger.axis') -ne '-1' -or $null -eq (Get-Field 'input.buttons.device') -or (Get-Field 'input.one') -ne 'Return') {
-    throw 'Main alien-crush.ini must include key, button and plunger settings'
+if((Get-Field 'input.plunger.axis') -ne '-1' -or (Get-Field 'input.one') -ne 'Return' -or $null -ne (Get-Field 'input.buttons.device')) {
+    throw 'Main alien-crush.ini must include key and plunger settings, and no raw board buttons'
 }
 # A disconnected monitor and off-screen geometry must recover to a usable display.
 Set-Fields @{'playfield.display'='Disconnected test monitor'; 'playfield.x'='99000'; 'playfield.y'='-99000'; 'playfield.artwork_rotation'='90'}
@@ -51,24 +51,21 @@ if([IO.File]::ReadAllText($config) -ne $invalid) { throw 'Invalid configuration 
 # settings carried into the current alien-crush.ini on exit.
 $legacy="# Alien Crush cabinet settings`ninput.plunger.axis=-1`nwindow.playfield=`"Test`" 0 0 540 720 0 90`nwindow.backglass=`"Test`" 0 0 640 360 0 0`nwindow.score=`"Test`" 0 0 640 200 0 0`n"
 [IO.File]::WriteAllText($config,$legacy)
+# The old raw board-button file is no longer read, even when it is unreadable.
 $inputConfig=Join-Path $directory 'cabinet-inputs.txt'
-$validInput="ACINPUTS1`n`"Absent test cabinet board`"`n0 1 2 3 4 -1 -1 -1`n"
-[IO.File]::WriteAllText($inputConfig,$validInput)
+$oldInput="ACINPUTS1`n`"Test board`"`n256 1 2 3 4 -1 -1 -1`n"
+[IO.File]::WriteAllText($inputConfig,$oldInput)
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
-if($LASTEXITCODE -ne 0) { throw 'Absent configured controller must allow startup' }
-if([IO.File]::ReadAllText($inputConfig) -ne $validInput) { throw 'Input settings were overwritten' }
-if((Get-Field 'version') -ne '1' -or (Get-Field 'input.buttons.device') -ne 'Absent test cabinet board' -or
-    (Get-Field 'input.buttons.nudge') -ne '2' -or (Get-Field 'input.buttons.launch') -ne '-1' -or (Get-Field 'playfield.artwork_rotation') -ne '90') {
-    throw 'Legacy buttons and windows were not migrated into alien-crush.ini'
+if($LASTEXITCODE -ne 0) { throw 'The old board-button file must be ignored' }
+if([IO.File]::ReadAllText($inputConfig) -ne $oldInput) { throw 'The old board-button file was changed' }
+if((Get-Field 'version') -ne '1' -or $null -ne (Get-Field 'input.buttons.device') -or (Get-Field 'playfield.artwork_rotation') -ne '90') {
+    throw 'Legacy windows were not migrated into alien-crush.ini, or raw board buttons were kept'
 }
-$invalidInput="ACINPUTS1`n`"Test board`"`n256 1 2 3 4 -1 -1 -1`n"
-[IO.File]::WriteAllText($inputConfig,$invalidInput)
-[IO.File]::WriteAllText($config,$legacy)
+$badLegacy=$legacy -replace '720 0 90','720 0 45'
+[IO.File]::WriteAllText($config,$badLegacy)
 & $Executable --rom $Rom --cabinet --frames 3 --data-dir $directory
-if($LASTEXITCODE -eq 0) { throw 'Invalid input settings were accepted' }
-if([IO.File]::ReadAllText($inputConfig) -ne $invalidInput) { throw 'Invalid input settings were overwritten' }
-if([IO.File]::ReadAllText($config) -ne $legacy) { throw 'An unreadable older configuration was overwritten' }
-[IO.File]::WriteAllText($inputConfig,$validInput)
+if($LASTEXITCODE -eq 0) { throw 'An unreadable older configuration was accepted' }
+if([IO.File]::ReadAllText($config) -ne $badLegacy) { throw 'An unreadable older configuration was overwritten' }
 $plungerConfig=Join-Path $directory 'cabinet-plunger.txt'
 $validPlunger="ACPLUNGER1`n`"Absent test cabinet board`"`n2 1000 -1000 8 25`n"
 [IO.File]::WriteAllText($plungerConfig,$validPlunger)

@@ -27,7 +27,7 @@ inline ResolvedKeys resolve_keys(const InputBindings& bindings) {
     ResolvedKeys resolved;
     for(std::size_t i=0;i<kPadButtonCount;++i)
         resolved.pads[i]=resolve_key_names(bindings.keys[i],pad_button_field(static_cast<PadButton>(i)));
-    resolved.launch=resolve_key_names(bindings.launch_keys,"launch");
+    resolved.launch=resolved.pads[static_cast<std::size_t>(PadButton::one)];
     return resolved;
 }
 
@@ -42,8 +42,8 @@ inline HostKeys resolve_host_keys(const InputBindings& bindings) {
 }
 
 // The keyboard, as alien-crush.ini binds it. While the ball is seated in the
-// shooter a launch key sends I and nothing else -- its ordinary input is
-// suppressed, so a launch key that is also Run launches rather than pausing --
+// shooter a key bound to I sends I and nothing else -- its other inputs are
+// suppressed, so a key that is I and Run launches rather than pausing --
 // and a press that began as a launch stays one until it is let go, so the ball
 // leaving the shooter cannot turn the held key into a pause.
 class KeyboardInput {

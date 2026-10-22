@@ -36,12 +36,12 @@ void open_pad(PadDevice& device) {
     if(count>0) device.pad=SDL_OpenGamepad(ids[0]);
     SDL_free(ids);
 }
-PadInput read_input(host::KeyboardInput& keyboard,SDL_Gamepad* pad,const host::FlipperInputs& flippers,bool in_shooter) {
+PadInput read_input(host::KeyboardInput& keyboard,SDL_Gamepad* pad,bool in_shooter) {
     int count{};const bool* keys=SDL_GetKeyboardState(&count);
     std::array<bool,SDL_GAMEPAD_BUTTON_COUNT> buttons{};
     for(int i=0;pad && i<SDL_GAMEPAD_BUTTON_COUNT;++i) buttons[static_cast<std::size_t>(i)]=SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(i));
     auto input=keyboard.read({keys,static_cast<std::size_t>(count)},in_shooter);
-    input.player_one|=host::gamepad_game_input(buttons,flippers).player_one;
+    input.player_one|=host::gamepad_game_input(buttons).player_one;
     return input;
 }
 }
@@ -99,7 +99,7 @@ int main(int argc,char** argv) {
                 "Cabinet: the score and backglass float above the playfield. F10/Shift+F10 select the next/previous window;\n"
                 "F11 toggles the selected window's fullscreen, R rotates it, F12/Shift+F12 move it to the next/previous monitor.\n"
                 "Layout saves on normal exit.\n"
-                "alien-crush.ini holds every setting in Devil's Crush's format: windows, keys, flipper inputs, launch keys, cabinet buttons,\n"
+                "alien-crush.ini holds every setting in Devil's Crush's format: windows, keys, cabinet buttons,\n"
                 "nudge, plunger and the play settings below (see README). alien-crush-launcher.exe edits it.\n"
                 "It, the high scores (alien-crush.hiscore), quick states and an optional backglass.bmp sit beside the executable, or in --data-dir.\n"
                 "An earlier build kept them in a portable-data folder, with the settings as cabinet.ini; they are moved out of it on the first start.\n"
@@ -180,7 +180,6 @@ int main(int argc,char** argv) {
         auto nudge=bindings.nudge;
         nudge.enabled=nudge.enabled && cabinet_devices;
         host::CabinetNudge cabinet_nudge(nudge);
-        host::CabinetInput cabinet_input(cabinet_devices?bindings.buttons:host::CabinetButtons{},bindings.flippers);
         host::CabinetPlunger cabinet_plunger(plunger);
         host::KeyboardInput keys(bindings);
         const auto host_keys=host::resolve_host_keys(bindings);
@@ -192,10 +191,9 @@ int main(int argc,char** argv) {
         const auto multiplier=playback?input::recorded_nudge_multiplier(playback->initial.core_revision):requested_nudge_multiplier.value_or(1);
         if(playback && requested_nudge_multiplier && *requested_nudge_multiplier!=multiplier)
             throw std::runtime_error("Nudge multiplier differs from the recorded session");
-        // Which pad inputs each flipper piece answers to, as alien-crush.ini says,
-        // or as the recording was made.
-        const auto flipper_masks=playback?input::recorded_flipper_masks(playback->initial.core_revision):
-            input::FlipperMasks{host::flipper_input_mask(bindings.flippers.left),host::flipper_input_mask(bindings.flippers.right)};
+        // Which pad inputs each flipper piece answers to: the fixed ones, or as
+        // the recording was made.
+        const auto flipper_masks=playback?input::recorded_flipper_masks(playback->initial.core_revision):input::FlipperMasks{};
         // Cabinet play runs the table's actors natively; a replay, as recorded.
         const auto actors=playback?recorded_actor_mode(playback->initial.core_revision):
             cabinet_mode?ActorMode::cabinet:ActorMode::original;
@@ -250,7 +248,7 @@ int main(int argc,char** argv) {
         if(!audio.stream) throw std::runtime_error(SDL_GetError());
         if(!SDL_ResumeAudioStreamDevice(audio.stream)) throw std::runtime_error(SDL_GetError());
         PadDevice gamepad; open_pad(gamepad);
-        host::GameInputRouter input_router(bindings.flippers);
+        host::GameInputRouter input_router;
         bool running=true,focused=true,display_layout_changed=false;
         const auto frame_ns=static_cast<std::uint64_t>(1e9/runtime->frames_per_second());
         auto deadline=SDL_GetTicksNS();
@@ -268,9 +266,9 @@ int main(int argc,char** argv) {
                 if(event.type==SDL_EVENT_QUIT || event.type==SDL_EVENT_WINDOW_CLOSE_REQUESTED) running=false;
                 if(cabinet && event.type>=SDL_EVENT_DISPLAY_FIRST && event.type<=SDL_EVENT_DISPLAY_LAST) {
                     display_layout_changed=true;
-                    SDL_ClearAudioStream(audio.stream);cabinet_input.rearm();cabinet_nudge.rearm();cabinet_plunger.interrupt();
+                    SDL_ClearAudioStream(audio.stream);cabinet_nudge.rearm();cabinet_plunger.interrupt();
                 }
-                if(event.type==SDL_EVENT_JOYSTICK_ADDED || event.type==SDL_EVENT_JOYSTICK_REMOVED) {cabinet_input.refresh();cabinet_plunger.refresh();cabinet_nudge.refresh();}
+                if(event.type==SDL_EVENT_JOYSTICK_ADDED || event.type==SDL_EVENT_JOYSTICK_REMOVED) {cabinet_plunger.refresh();cabinet_nudge.refresh();}
                 if(event.type==SDL_EVENT_GAMEPAD_ADDED) open_pad(gamepad);
                 if(event.type==SDL_EVENT_GAMEPAD_REMOVED && gamepad.pad && SDL_GetGamepadID(gamepad.pad)==event.gdevice.which) { SDL_CloseGamepad(gamepad.pad); gamepad.pad=nullptr; open_pad(gamepad); }
                 if(event.type==SDL_EVENT_KEY_DOWN && !event.key.repeat) {
@@ -291,7 +289,7 @@ int main(int argc,char** argv) {
                             if(event.key.scancode==SDL_SCANCODE_F5) {
                                 if(cabinet_plunger.owns_draw()) throw std::runtime_error("Release the plunger before saving a quick state");
                                 core::write_file_atomic(path,state::encode(runtime->save()));
-                            } else { auto decoded=state::decode(core::read_file(path)); if(!decoded.decoded) throw std::runtime_error(decoded.message); runtime->restore(decoded.container); previous_video.reset(); transition.reset(); display.reset_smoothing(); cabinet_input.rearm();cabinet_nudge.rearm(); cabinet_plunger.restored(); if(cabinet) cabinet->restored(); SDL_ClearAudioStream(audio.stream); }
+                            } else { auto decoded=state::decode(core::read_file(path)); if(!decoded.decoded) throw std::runtime_error(decoded.message); runtime->restore(decoded.container); previous_video.reset(); transition.reset(); display.reset_smoothing(); cabinet_nudge.rearm(); cabinet_plunger.restored(); if(cabinet) cabinet->restored(); SDL_ClearAudioStream(audio.stream); }
                             SDL_SetWindowTitle(display.window(),"Alien Crush");
                         } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; SDL_SetWindowTitle(display.window(),e.what()); }
                     }
@@ -304,7 +302,7 @@ int main(int argc,char** argv) {
             }
             const auto* keyboard=SDL_GetKeyboardFocus();
             const bool now_focused=cabinet?cabinet->owns(SDL_GetKeyboardFocus()):keyboard==display.window();
-            if(focused && !now_focused) {SDL_ClearAudioStream(audio.stream);cabinet_input.rearm();cabinet_nudge.rearm();cabinet_plunger.interrupt();}
+            if(focused && !now_focused) {SDL_ClearAudioStream(audio.stream);cabinet_nudge.rearm();cabinet_plunger.interrupt();}
             if(!focused && now_focused) {deadline=SDL_GetTicksNS();display.reset_smoothing();}
             focused=now_focused;
             if(!running) break;
@@ -336,11 +334,9 @@ int main(int argc,char** argv) {
                 }
                 SDL_DelayPrecise(deadline-picture_now);continue;
             }
-            // A mapped raw cabinet board must not also trigger SDL's default gamepad buttons.
-            auto* standard_pad=gamepad.pad && SDL_GetGamepadID(gamepad.pad)!=cabinet_input.id() &&
-                SDL_GetGamepadID(gamepad.pad)!=cabinet_plunger.id()?gamepad.pad:nullptr;
-            auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(keys,standard_pad,bindings.flippers,reference_launcher_active(runtime->work_ram()));
-            if(!playback && focused) input.player_one|=cabinet_input.read().player_one;
+            // The plunger's board must not also trigger SDL's default gamepad buttons.
+            auto* standard_pad=gamepad.pad && SDL_GetGamepadID(gamepad.pad)!=cabinet_plunger.id()?gamepad.pad:nullptr;
+            auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(keys,standard_pad,reference_launcher_active(runtime->work_ram()));
             if(cabinet_mode && !playback && cabinet_nudge.read(SDL_GetTicks(),focused && host::nudge_play_active(runtime->work_ram())))
                 input.player_one|=Pad::button_ii;
             if(!playback) input=input_router.route(input,runtime->work_ram());

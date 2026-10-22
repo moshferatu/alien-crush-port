@@ -22,9 +22,11 @@ inline std::uint8_t pad_button_bit(PadButton button) {
     return static_cast<std::uint8_t>(1U<<static_cast<unsigned>(button));
 }
 
-// Which pad inputs work each flipper during play. Cabinet controls rewrite
-// each flipper piece's input mask at `$3900,X` (src/runtime/handoff_hook.inc)
-// to these; an empty list leaves the cartridge's own.
+// Which pad inputs work each flipper during play: Left for the left, Right for
+// the right with Up as its stand-in while both are held. Fixed, so a flipper is
+// whatever keys the pad's Left and Right are bound to. Cabinet controls write
+// these into each flipper piece's input mask at `$3900,X`
+// (src/runtime/handoff_hook.inc).
 struct FlipperInputs {
     std::vector<PadButton> left{PadButton::left},right{PadButton::right,PadButton::up};
     bool operator==(const FlipperInputs&) const=default;
@@ -34,9 +36,8 @@ inline std::uint8_t flipper_input_mask(std::span<const PadButton> inputs) {
     for(const auto input:inputs) mask=static_cast<std::uint8_t>(mask|pad_button_bit(input));
     return mask;
 }
-// The input a flipper button that is not a key -- a gamepad shoulder, a
-// board's flipper button -- sends: the first on the flipper's list, or its own
-// side's direction when the list is empty.
+// The input a gamepad shoulder sends for its flipper: the first on the
+// flipper's list, or its own side's direction when the list is empty.
 inline std::uint16_t flipper_pad(std::span<const PadButton> inputs,bool right) {
     return inputs.empty()?(right?Pad::right:Pad::left):pad_button_bit(inputs.front());
 }
