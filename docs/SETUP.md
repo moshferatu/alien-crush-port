@@ -189,7 +189,8 @@ Quick-state operations are disabled during recording and replay to retain a line
 
 ## Cabinet windows
 
-For the three-window cabinet host with a stitched playfield, add `--cabinet`. The score and
+The game opens as the three-window cabinet host with a stitched playfield by default; Mode in
+the launcher or `--no-cabinet` gives one window instead. The score and
 backglass windows float: they stay above the playfield, even a fullscreen one, and never take the
 keyboard, which stays with the playfield. Move and resize them onto your monitors, or use these
 keys, which act on the selected window (the playfield to begin with):
@@ -239,8 +240,9 @@ commands; replay ignores hardware settings.
 
 ## Nudging
 
-Physical nudging is enabled automatically in `--cabinet` for a connected joystick
-whose name contains `PinOne` (case insensitive). Shake the cabinet to trigger the
+Physical nudging is off by default. Turn on Nudge Board in the launcher (or set
+`input.nudge.enabled=1`) and cabinet mode reads a connected joystick whose name
+contains `PinOne` (case insensitive). Shake the cabinet to trigger the
 same nudge as Space / button II. Both directions on the accelerometer's X/Y axes
 (0 and 1) trigger this single original-game action; shake strength does not change
 the in-game impulse. The plunger's Z axis is ignored. No Steam mapping or separate
@@ -366,8 +368,8 @@ overrides discovery. It works from any current directory.
 The package includes the game, its launcher, the ROM, licenses, documentation
 and `Launch-Cabinet.cmd`. SDL and the Microsoft runtime are linked statically.
 Run `alien-crush-launcher.exe` or `Launch-Cabinet.cmd` on the cabinet, or
-configure your frontend to launch `alien-crush.exe --cabinet` (or
-`alien-crush.exe` alone, once the launcher has saved cabinet mode). Close the game before syncing an executable update.
+configure your frontend to launch `alien-crush.exe`, which opens in cabinet mode
+unless the launcher has saved desktop mode. Close the game before syncing an executable update.
 Republishing preserves local settings and other files in the destination.
 
 Point Syncthing at **only the published folder**. Before the first sync, add

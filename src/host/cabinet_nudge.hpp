@@ -6,7 +6,8 @@
 
 namespace alien_crush::host {
 struct NudgeBinding {
-    bool enabled=true;
+    // Off until the player turns it on: most players have no nudge board.
+    bool enabled=false;
     std::string device="PinOne";
     int axis_x=0,axis_y=1;
     int threshold=20,release=8,cooldown_ms=250;

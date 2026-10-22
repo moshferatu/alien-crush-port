@@ -155,7 +155,9 @@ int main(int argc,char** argv) {
                 placements=config.windows;
             } else if(loaded.loaded()) placements=loaded.config.windows;
         }
-        const auto play=replay_path.empty() && !limit?config.play:host::PlaySettings{};
+        auto play=replay_path.empty() && !limit?config.play:host::PlaySettings{};
+        // Replays and --frames runs open one window unless --cabinet asks for three.
+        if(!replay_path.empty() || limit) play.cabinet=false;
         if(rom_path.empty() && !play.rom.empty()) {
             const auto chosen=core::path_from_utf8(play.rom);
             rom_path=chosen.is_absolute()?chosen:base/chosen;

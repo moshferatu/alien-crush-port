@@ -6,9 +6,10 @@ inline void check_cabinet_nudge() {
     using namespace alien_crush;
     auto check=[](bool ok,const char* why){if(!ok) throw std::runtime_error(why);};
     const auto defaults=host::parse_cabinet_nudge({});
-    check(defaults.enabled && defaults.device=="PinOne" && defaults.axis_x==0 && defaults.axis_y==1,
-        "PinOne nudge works without configuration");
-    check(!host::parse_cabinet_nudge({{"input.nudge.enabled","0"}}).enabled,"Disable physical nudge");
+    check(!defaults.enabled && defaults.device=="PinOne" && defaults.axis_x==0 && defaults.axis_y==1,
+        "Physical nudge is off until enabled, and then looks for a PinOne");
+    check(host::parse_cabinet_nudge({{"input.nudge.enabled","1"}}).enabled,"Enable physical nudge");
+    auto enabled=defaults;enabled.enabled=true;
     for(const auto& settings:{host::CabinetSettings{{"input.nudge.threshold","0"}},
         {{"input.nudge.release","20"}},{{"input.nudge.axis_x","1"}},{{"input.nudge.axis_y","256"}},
         {{"input.nudge.enabled","2"}},{{"input.nudge.cooldown_ms","10"}},
@@ -22,7 +23,7 @@ inline void check_cabinet_nudge() {
         const auto id=SDL_AttachVirtualJoystick(&desc);check(id!=0,"Attach nudge device");return id;
     };
     const auto other=attach("Unrelated gamepad");
-    host::CabinetNudge input(defaults);
+    host::CabinetNudge input(enabled);
     check(input.id()==0,"Do not interpret arbitrary joystick motion as a cabinet shake");
     auto selected=attach("Clev Soft PinOne");
     auto* device=SDL_OpenJoystick(selected);

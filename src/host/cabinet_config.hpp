@@ -88,7 +88,7 @@ struct PlaySettings {
     // relative path is taken from the executable's folder.
     std::string rom;
     // game.cabinet: three windows (--cabinet), or one (--no-cabinet).
-    bool cabinet=false;
+    bool cabinet=true;
     // audio.music_voice_overlay (--music-voice-overlay / --no-music-voice-overlay).
     bool music_voice_overlay=true;
     // video.smoothing (--smooth / --no-smooth); F6 changes it, and a cabinet
