@@ -34,7 +34,7 @@ std::vector<Monitor> monitors(bool required=true) {
 }
 }
 Cabinet::Cabinet(Presentation& playfield,const std::array<WindowPlacement,kCabinetWindowCount>& placements,
-    const std::filesystem::path& data,std::span<const std::byte> rom,const HostKeys& keys)
+    const std::filesystem::path& data,std::span<const std::byte> rom,const HostKeys& keys,bool borderless)
     : windows_{&playfield,&score_,&backglass_},keys_(keys),score_panel_(render::ScorePanel::from_rom(rom)),
       backglass_image_(load_backglass(data/core::kBackglassFileName)) {
     if(!backglass_image_) backglass_animation_.emplace(rom);
@@ -42,6 +42,7 @@ Cabinet::Cabinet(Presentation& playfield,const std::array<WindowPlacement,kCabin
     for(std::size_t i=0;i<windows_.size();++i) {
         auto* output=windows_[i]; auto* window=output->window();
         checked(SDL_SetWindowMinimumSize(window,64,64));
+        if(borderless) checked(SDL_SetWindowBordered(window,false));
         const auto& p=placements[i];
         const auto& g=p.geometry;
         const bool saved=g.valid();

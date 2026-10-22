@@ -105,7 +105,7 @@ int main(int argc,char** argv) {
                 "It, the high scores (alien-crush.hiscore), quick states and an optional backglass.bmp sit beside the executable, or in --data-dir.\n"
                 "An earlier build kept them in a portable-data folder, with the settings as cabinet.ini; they are moved out of it on the first start.\n"
                 "With no options, normal play takes game.rom, game.cabinet, game.bonus_stage, game.near_max_score,\n"
-                "game.drag_ball, audio.music_voice_overlay, video.smoothing and\n"
+                "game.drag_ball, audio.music_voice_overlay, video.smoothing, video.borderless and\n"
                 "input.nudge_multiplier from it; a flag beats the file for that run.\n"
                 "--no-cabinet: one window, whatever alien-crush.ini says.\n"
                 "--bonus-stage <1-4>: start a game in that bonus stage, through the game's own bonus transition.\n"
@@ -230,11 +230,11 @@ int main(int argc,char** argv) {
             timing.exceptions(std::ios::failbit|std::ios::badbit);timing.open(timing_path);
             timing<<"frame,start_ns,end_ns,audio_samples,queued_bytes,runtime_end_ns,compose_end_ns,playfield_end_ns,cabinet_end_ns,table_half\n";
         }
-        host::Presentation display(cabinet_mode?"Alien Crush - Playfield":"Alien Crush",cabinet_mode?540:960,720,cabinet_mode);
+        host::Presentation display(cabinet_mode?"Alien Crush - Playfield":"Alien Crush",cabinet_mode?540:960,720,cabinet_mode,false,play.borderless);
         const bool vsync=!no_vsync && display.enable_vsync();
         if(!no_vsync && !vsync) std::cerr<<"Playfield VSync unavailable; using timer pacing: "<<SDL_GetError()<<'\n';
         std::unique_ptr<host::Cabinet> cabinet;
-        if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,placements,data_path,core::read_file(rom_path),host_keys);
+        if(cabinet_mode) cabinet=std::make_unique<host::Cabinet>(display,placements,data_path,core::read_file(rom_path),host_keys,play.borderless);
         std::unique_ptr<render::TablePlayfield> table;
         std::optional<diagnostics::ReferenceSnapshot> previous_video;
         std::array<std::byte,8192> previous_actor_ram{};

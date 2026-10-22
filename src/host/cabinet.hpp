@@ -30,9 +30,10 @@ class Cabinet {
 public:
     // Opens each window where `placements` (alien-crush.ini) left it; one never
     // placed opens on the monitor of its turn. `data` holds backglass.bmp.
+    // `borderless` takes the title bar and border off every window.
     Cabinet(Presentation& playfield,const std::array<WindowPlacement,kCabinetWindowCount>& placements,
         const std::filesystem::path& data,std::span<const std::byte> rom,
-        const HostKeys& keys=resolve_host_keys(default_input_bindings()));
+        const HostKeys& keys=resolve_host_keys(default_input_bindings()),bool borderless=false);
     void show(std::span<const std::byte> ram,bool smoothing=false,double fraction=1);
     void repeat(double fraction) {backglass_.repeat(fraction);}
     // After a quick state: the ball number starts again from the balls left.

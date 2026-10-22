@@ -223,7 +223,7 @@ enum Kind { K_HEAD, K_CHOICE, K_RANGE, K_PATH, K_TEXT, K_NUMBER, K_KEYS };
 
 enum Setting {
     S_ROM, S_CABINET, S_BONUS_STAGE, S_NEAR_MAX_SCORE, S_DRAG_BALL,
-    S_SMOOTHING,
+    S_SMOOTHING, S_BORDERLESS,
     S_MONITOR, S_ROTATION = S_MONITOR + kWindows, S_FULLSCREEN = S_ROTATION + kWindows,
     S_OVERLAY = S_FULLSCREEN + kWindows,
     S_NUDGE_STRENGTH, S_NUDGE_ENABLED, S_NUDGE_DEVICE, S_NUDGE_X, S_NUDGE_Y,
@@ -296,6 +296,8 @@ void build_rows()
 
     add_choice(TAB_VIDEO, S_SMOOTHING, "Smoothing", on_off, 2,
         "Whether to enable smoothing for the game's visuals on higher refresh rates.");
+    add_choice(TAB_VIDEO, S_BORDERLESS, "Borderless Windows", on_off, 2,
+        "Whether to hide the title bar and border of windows that aren't fullscreen.");
     static const char monitor_help[] =
         "The monitor to open the window on.";
     static const char rotation_help[] =
@@ -475,6 +477,7 @@ int setting_get(Config& c, int id)
     case S_NEAR_MAX_SCORE: return c.play.near_max_score;
     case S_DRAG_BALL: return c.play.drag_ball;
     case S_SMOOTHING: return c.play.smoothing;
+    case S_BORDERLESS: return c.play.borderless;
     case S_OVERLAY: return c.play.music_voice_overlay;
     case S_NUDGE_STRENGTH: return static_cast<int>(std::lround(c.play.nudge_multiplier * 10.0));
     case S_NUDGE_ENABLED: return n.enabled;
@@ -513,6 +516,7 @@ void setting_set(Config& c, int id, int v)
     case S_NEAR_MAX_SCORE: c.play.near_max_score = v != 0; break;
     case S_DRAG_BALL: c.play.drag_ball = v != 0; break;
     case S_SMOOTHING: c.play.smoothing = v != 0; break;
+    case S_BORDERLESS: c.play.borderless = v != 0; break;
     case S_OVERLAY: c.play.music_voice_overlay = v != 0; break;
     case S_NUDGE_STRENGTH: c.play.nudge_multiplier = v / 10.0; break;
     case S_NUDGE_ENABLED: n.enabled = v != 0; break;

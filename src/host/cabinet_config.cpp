@@ -217,6 +217,7 @@ bool append_play_settings(std::string& out,const PlaySettings& play) {
     out+="game.drag_ball="+std::to_string(play.drag_ball?1:0)+'\n';
     out+="audio.music_voice_overlay="+std::to_string(play.music_voice_overlay?1:0)+'\n';
     out+="video.smoothing="+std::to_string(play.smoothing?1:0)+'\n';
+    out+="video.borderless="+std::to_string(play.borderless?1:0)+'\n';
     out+="input.nudge_multiplier=";out.append(multiplier.data(),end);out+='\n';
     return true;
 }
@@ -234,6 +235,7 @@ void parse_play_settings(const Fields& fields,PlaySettings& play) {
     if(const auto* text=field(fields,"game.drag_ball")) play.drag_ball=flag(*text,"game.drag_ball");
     if(const auto* text=field(fields,"audio.music_voice_overlay")) play.music_voice_overlay=flag(*text,"audio.music_voice_overlay");
     if(const auto* text=field(fields,"video.smoothing")) play.smoothing=flag(*text,"video.smoothing");
+    if(const auto* text=field(fields,"video.borderless")) play.borderless=flag(*text,"video.borderless");
     if(const auto* text=field(fields,"input.nudge_multiplier")) {
         const auto value=input::parse_nudge_multiplier(trim(*text));
         if(!value) fail("input.nudge_multiplier must be a number from 0 to 16");

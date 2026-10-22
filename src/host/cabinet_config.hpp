@@ -106,6 +106,9 @@ struct PlaySettings {
     // game.drag_ball (--drag-ball): a cheat for testing; the left mouse
     // button carries the ball over the playfield.
     bool drag_ball=false;
+    // video.borderless: windows that are not fullscreen have no title bar or
+    // border, so they cannot be dragged; each still opens where it was left.
+    bool borderless=false;
     bool operator==(const PlaySettings&) const=default;
 };
 

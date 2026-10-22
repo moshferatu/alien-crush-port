@@ -26,14 +26,19 @@ has the focus.
 
 With no options the game plays as `alien-crush.ini` says, which is
 what the launcher edits: `game.rom`, `game.cabinet`, `game.bonus_stage`,
-`game.near_max_score`, `game.drag_ball`, `audio.music_voice_overlay`, `video.smoothing` and `input.nudge_multiplier`,
+`game.near_max_score`, `game.drag_ball`, `audio.music_voice_overlay`, `video.smoothing`, `video.borderless` and `input.nudge_multiplier`,
 beside the window, key, button, nudge and plunger fields described below. An
 option on the command line beats the file for that run (`--rom`, `--cabinet`
 or `--no-cabinet`, `--bonus-stage`, `--near-max-score`, `--drag-ball`, `--music-voice-overlay` or `--no-music-voice-overlay`,
 `--smooth` or `--no-smooth`, `--nudge-multiplier`), and replays and `--frames`
-runs ignore these eight, though `--bonus-stage` and `--near-max-score`
+runs ignore these nine, though `--bonus-stage` and `--near-max-score`
 themselves still work with `--frames`. F6 is remembered in `video.smoothing` when a cabinet session exits
 normally.
+
+`video.borderless=1` (Borderless Windows in the launcher) takes the title bar
+and border off every window that is not fullscreen, for recording the
+desktop. A window without one cannot be dragged: place the windows with it
+off, or move one with the next-monitor key; each opens where it was left.
 
 ## Start options
 
