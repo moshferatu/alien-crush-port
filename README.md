@@ -2,6 +2,8 @@
 
 An unofficial PC port of the 1988 TurboGrafx-16 pinball game *[Alien Crush](https://en.wikipedia.org/wiki/Alien_Crush)*, built to be played on a virtual pinball cabinet.
 
+![Alien Crush Cabinet Mode](docs/images/screenshot.png)
+
 It plays like the original game, with some additional features:
 
 * Cabinet mode shows the whole table at once, with the backglass and the score on their own screens
