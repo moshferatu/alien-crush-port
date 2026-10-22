@@ -14,6 +14,7 @@
 #include "alien_crush/runtime/reference_launcher.hpp"
 #include "alien_crush/render/table_playfield.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/core/rom_image.hpp"
 #include "alien_crush/core/data_files.hpp"
 #include "alien_crush/core/recording.hpp"
 #include "alien_crush/input/nudge_multiplier.hpp"
@@ -158,11 +159,16 @@ int main(int argc,char** argv) {
         auto play=replay_path.empty() && !limit?config.play:host::PlaySettings{};
         // Replays and --frames runs open one window unless --cabinet asks for three.
         if(!replay_path.empty() || limit) play.cabinet=false;
+        const bool rom_given=!rom_path.empty();
         if(rom_path.empty() && !play.rom.empty()) {
             const auto chosen=core::path_from_utf8(play.rom);
             rom_path=chosen.is_absolute()?chosen:base/chosen;
         }
         if(rom_path.empty()) rom_path=base/"Alien Crush.pce";
+        // Without --rom, any copy of the supported ROM beside the game will do
+        // when the one named is not there.
+        if(!rom_given && !rom::validate_file(rom_path).supported())
+            if(auto found=rom::find_supported_rom(base); !found.empty()) rom_path=std::move(found);
         const bool cabinet_mode=cabinet_override.value_or(play.cabinet);
         const unsigned bonus_stage=bonus_stage_override.value_or(play.bonus_stage);
         const bool near_max_score=near_max_score_flag || play.near_max_score;

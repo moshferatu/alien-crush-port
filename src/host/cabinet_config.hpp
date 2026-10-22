@@ -85,7 +85,8 @@ InputBindings default_input_bindings();
 // replays and --frames runs keep the flags' defaults.
 struct PlaySettings {
     // game.rom, UTF-8. Empty: Alien Crush.pce beside the executable. A
-    // relative path is taken from the executable's folder.
+    // relative path is taken from the executable's folder. When that file is
+    // not the supported ROM, any .pce beside the executable that is is used.
     std::string rom;
     // game.cabinet: three windows (--cabinet), or one (--no-cabinet).
     bool cabinet=true;

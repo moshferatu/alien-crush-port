@@ -3,6 +3,7 @@
 #include "alien_crush/render/score_panel.hpp"
 #include "alien_crush/assets/table_assets.hpp"
 #include "alien_crush/core/files.hpp"
+#include "alien_crush/core/rom_image.hpp"
 #include "alien_crush/core/recording.hpp"
 #include "alien_crush/diagnostics/reference_snapshot.hpp"
 #include <algorithm>
@@ -28,6 +29,23 @@ int main(int argc,char** argv) {
         bool rejected=false;
         try {(void)render::title_logo(invalid);} catch(const std::runtime_error&) {rejected=true;}
         require(rejected,"Reject changed ROM");
+        {
+            // The supported ROM is found in a folder whatever it is called; a
+            // changed copy and a copy that is not a .pce are passed over.
+            const auto folder=std::filesystem::temp_directory_path()/"alien-crush-find-rom-test";
+            std::filesystem::remove_all(folder);
+            std::filesystem::create_directories(folder);
+            const auto write=[&](const char* name,const std::vector<std::byte>& bytes) {
+                std::ofstream out(folder/name,std::ios::binary);
+                out.write(reinterpret_cast<const char*>(bytes.data()),static_cast<std::streamsize>(bytes.size()));
+            };
+            write("a.pce",invalid);
+            write("b.bin",rom);
+            require(rom::find_supported_rom(folder).empty(),"No supported ROM in the folder");
+            write("My Copy.PCE",rom);
+            require(rom::find_supported_rom(folder)==folder/"My Copy.PCE","Supported ROM found under any name");
+            std::filesystem::remove_all(folder);
+        }
         const auto patterns=assets::decode_word_rle(std::span(rom).subspan(0x24125),0x4000);
         std::array<std::uint16_t,512> palette{};
         for(unsigned i=0;i<512;++i) palette[i]=static_cast<std::uint16_t>(std::to_integer<unsigned>(rom[0x38bd0+i*2])|

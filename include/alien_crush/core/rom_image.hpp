@@ -52,4 +52,9 @@ struct ValidationResult {
 
 [[nodiscard]] ValidationResult validate_file(const std::filesystem::path& path);
 
+// The supported ROM in `directory`, whatever it is called: the first by name
+// of the .pce files there that pass validate_file. Empty when there is none.
+[[nodiscard]] std::filesystem::path find_supported_rom(
+    const std::filesystem::path& directory);
+
 } // namespace alien_crush::rom

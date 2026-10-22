@@ -932,6 +932,17 @@ const RomCheck& rom_check()
     return ui.rom;
 }
 
+// When the ROM the settings name is not the supported one, any copy of it
+// beside the launcher is taken instead, whatever it is called.
+void find_rom()
+{
+    if (rom_check().supported) return;
+    const auto found = alien_crush::rom::find_supported_rom(ui.base);
+    if (found.empty()) return;
+    ui.cfg.play.rom = relative_to_base(found);
+    changed();
+}
+
 void load()
 {
     find_monitors();
@@ -1005,6 +1016,7 @@ bool game_closed(DWORD& code)
 // Never the launcher's end: it waits for the game, out of sight.
 bool launch()
 {
+    find_rom();
     const auto& rom = rom_check();
     if (!rom.supported) {
         ui.tab = TAB_GAME;
@@ -2199,6 +2211,7 @@ int main(int argc, char* argv[])
     // settings an earlier build left in its subfolder.
     const auto migration = alien_crush::core::migrate_legacy_data_folder(ui.base);
     load();
+    find_rom();
     if (!migration.problems.empty()) {
         say("Could not move %s", migration.problems.front().c_str());
     } else if (!migration.moved.empty()) {
