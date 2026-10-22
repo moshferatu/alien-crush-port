@@ -776,7 +776,7 @@ Native cabinet handoffs (2026-09-09):
   current-ball movement without a repeated loading image, and the artwork join
   remains aligned. Native checkpoint replay matches RAM, pixels and audio exactly.
 - Details and remaining physical-cabinet/audio acceptance are documented in
-  [CONTINUOUS_HANDOFF.md](docs/CONTINUOUS_HANDOFF.md).
+  [CONTINUOUS_HANDOFF.md](CONTINUOUS_HANDOFF.md).
 - Validation: full 36-check Release suite passed (281.89 s); after adding host
   timing and bonus-return checks, all 4 affected tests passed (23.81 s), covering
   all 37 configured Release tests across these runs. Core-only Debug: 3/3 pass.
@@ -800,7 +800,7 @@ Seam audio investigation (2026-09-09, superseded by implementation above):
 - Inspected Devil's Crush's cabinet loop and scrolling-world renderer. Its
   normal frame/audio clock has no equivalent seam-specific audio discard.
 - Recorded the replacement architecture, recovered entry points and acceptance
-  requirements in [CONTINUOUS_HANDOFF.md](docs/CONTINUOUS_HANDOFF.md). The next
+  requirements in [CONTINUOUS_HANDOFF.md](CONTINUOUS_HANDOFF.md). The next
   implementation must remove the loading waits at the game-runtime level,
   preserving the gameplay state transitions and a continuous music/effects clock.
   No new runtime fix is implemented by this investigation.
@@ -1483,7 +1483,7 @@ State/asset continuation:
   game execution. Outputs are versioned by ROM hash and decoder schema.
 - Synthetic graphics/parser/RLE/state tests pass in Debug and Release. Video capture
   plus per-frame game observations preserve the frozen pristine baseline exactly.
-- Details and evidence: [docs/STATE_AND_ASSETS.md](docs/STATE_AND_ASSETS.md).
+- Details and evidence: [docs/STATE_AND_ASSETS.md](STATE_AND_ASSETS.md).
 
 Sprite asset continuation:
 
