@@ -29,6 +29,8 @@ You will need to obtain a copy of the original ROM:
 
 ## Playing
 
+Download the [latest release](https://github.com/moshferatu/alien-crush-port/releases/latest).
+
 Run `alien-crush-launcher.exe`.
 
 Choose your ROM file under game settings, change any other setting you like, then press **Play**.
