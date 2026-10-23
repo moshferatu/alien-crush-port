@@ -35,6 +35,10 @@ Run `alien-crush-launcher.exe`.
 
 Choose your ROM file under game settings, change any other setting you like, then press **Play**.
 
+If playing in cabinet mode, configure the windows so that they display on the correct monitor, and select whether they should be fullscreen or not.
+
+You will also need to rotate the playfield if your screen is in landscape mode.
+
 | Input | Action |
 | --- | --- |
 | Left Shift / Left / left shoulder | Left flipper |
