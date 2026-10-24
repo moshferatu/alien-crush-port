@@ -14,8 +14,8 @@ and starts the game, then comes back when the game closes.
 | Game | The ROM, cabinet or desktop mode, a starting bonus stage, and a start near the maximum score |
 | Video | Smoothing, and for the cabinet: which monitor each window is on and whether it is fullscreen, and the playfield's rotation |
 | Audio | The music voice overlay |
+| Controls | The keys (or controller buttons, d-pads and triggers) for each PC Engine pad input, and the window hotkeys |
 | Cabinet | The nudge strength and nudge board, and the analog plunger |
-| Keyboard | The keys for each PC Engine pad input, and the window hotkeys |
 
 It is worked by mouse, keyboard or controller: Up and Down move, Left and
 Right change a value, Enter opens a list, starts editing, or waits for a key, Tab (or L1 and R1) turns the tabs, Ctrl+S saves, and
@@ -147,7 +147,7 @@ Pause and the cartridge's tilt gates remain active. Z is no longer a flipper key
 ### Keys
 
 The keys above are the defaults, and each is rebindable, as in Devil's Crush:
-on the launcher's Keyboard tab, or under `input.` in `alien-crush.ini`.
+on the launcher's Controls tab, or under `input.` in `alien-crush.ini`.
 Each of the eight PC Engine pad inputs (`input.one`, `two`, `select`, `run`,
 `up`, `right`, `down`, `left`) takes up to four keys by their SDL names,
 comma-separated; an empty value leaves the input unbound. A name SDL does not
@@ -208,7 +208,7 @@ keys, which act on the selected window (the playfield to begin with):
 | F12 / Shift+F12 | Move the selected window to the next / previous connected monitor |
 | R / Shift+R | Rotate the selected window clockwise / counterclockwise by 90 degrees |
 
-F6, F10, F11 and F12 can be rebound on the launcher's Keyboard tab (`input.smoothing`,
+F6, F10, F11 and F12 can be rebound on the launcher's Controls tab (`input.smoothing`,
 `input.next_window`, `input.fullscreen` and `input.next_monitor` in `alien-crush.ini`). Only
 one window can be fullscreen on a monitor, so F11 does nothing while another cabinet window
 fills that monitor, and F12 passes over such a monitor for a fullscreen window.
@@ -227,9 +227,39 @@ backglass rotation. Black borders fill unused space. Restart to change artwork.
 
 ## Cabinet buttons
 
-A cabinet's buttons need to arrive as key presses or as a gamepad: bind the keys
-on the launcher's Keyboard tab. A gamepad's shoulders work the flippers, its
-south button launches and confirms, and Start starts and pauses.
+A cabinet's buttons can arrive as key presses, as a gamepad, or as buttons on
+a controller. A gamepad's shoulders work the flippers, its south button
+launches and confirms, and Start starts and pauses. Keys are bound on the
+launcher's Controls tab.
+
+A board that sends its buttons as a controller rather than as keystrokes -- a
+PinOne left in its controller mode, as VPX, Pinball FX and PinUP Popper
+commonly read it -- can be bound there too, as can an arcade stick or a
+gamepad whose fixed layout does not suit: choose a pad input's + and press
+the button, d-pad direction or trigger. It is written beside the keys as the
+controller's name and the input:
+
+```text
+input.left=Left Shift,Left,PinOne Button 1
+input.right=Right Shift,Right,PinOne Button 2
+input.one=Return,PinOne Button 3
+input.up=Up,Xbox Controller Hat 1 Up
+input.two=Space,DualSense Edge Axis 5+
+```
+
+| Entry | Is | Typically |
+| --- | --- | --- |
+| `Button 3` | a button, counted from 1 as Windows' controller panel counts them | face buttons, shoulders, a board's flipper buttons |
+| `Hat 1 Left` | one direction of a hat: `Up`, `Right`, `Down` or `Left` | a d-pad, or an arcade stick's lever |
+| `Axis 5+` | an axis pushed past half way, `+` or `-` | a trigger (L2/R2, LT/RT), or a stick |
+
+The name is matched as a case-insensitive part of the controller's name, the
+same as the nudge and plunger device, and with no name (`Button 3`) any
+controller matches. A trigger rests at one end of its axis, so it reads as
+pressed three quarters of the way down. An input bound to I launches on the
+same terms as a key bound to I. A controller whose inputs are bound by name
+no longer uses the gamepad layout above, so a board or stick SDL also treats
+as a gamepad does only what it is bound to. The window hotkeys take keys only.
 
 To find a board's axes for the plunger and nudging, run the hardware probe (no
 ROM required):

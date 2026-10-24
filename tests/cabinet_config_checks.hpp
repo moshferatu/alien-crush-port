@@ -178,6 +178,55 @@ inline void check_cabinet_config() {
     check(custom.read(keys,false).player_one==0,"A key no longer bound sends nothing");
     check(decode("version=1\ninput.launch=Space\ninput.left_flipper=down\n").input==host::default_input_bindings(),"The old launch and flipper settings are ignored");
 
+    // Controller inputs, held beside the keys as "PinOne Button 3",
+    // "Pad Hat 1 Left" or "Pad Axis 5+".
+    using input::JoystickInput;
+    using Kind=JoystickInput::Kind;
+    check(input::parse_joystick_input("PinOne Button 3")==JoystickInput{"PinOne",Kind::button,2,0},"A named controller button is read, numbered from 1");
+    check(input::parse_joystick_input("  pinone   BUTTON 1 ")==JoystickInput{"pinone",Kind::button,0,0},"Controller button names ignore case and spacing");
+    check(input::parse_joystick_input("Button 128")==JoystickInput{"",Kind::button,127,0},"A button with no controller name matches any controller");
+    check(input::parse_joystick_input("Xbox Controller Hat 1 Left")==JoystickInput{"Xbox Controller",Kind::hat,0,input::kHatLeft} &&
+        input::parse_joystick_input("hat 2 up")==JoystickInput{"",Kind::hat,1,input::kHatUp},"A hat direction is read");
+    check(input::parse_joystick_input("DualSense Edge Axis 5+")==JoystickInput{"DualSense Edge",Kind::axis,4,1} &&
+        input::parse_joystick_input("Axis 1-")==JoystickInput{"",Kind::axis,0,-1},"An axis direction is read");
+    for(const auto& in:{JoystickInput{"PinOne",Kind::button,2,0},JoystickInput{"",Kind::button,0,0},JoystickInput{"Pad",Kind::hat,0,input::kHatDown},
+        JoystickInput{"Pad",Kind::hat,3,input::kHatRight},JoystickInput{"Pad (v2)",Kind::axis,4,1},JoystickInput{"",Kind::axis,1,-1}})
+        check(input::parse_joystick_input(input::format_joystick_input(in))==in,"Controller inputs are written as they are read");
+    check(input::format_joystick_input({"PinOne",Kind::button,2,0})=="PinOne Button 3" &&
+        input::format_joystick_input({"",Kind::hat,0,input::kHatLeft})=="Hat 1 Left" &&
+        input::format_joystick_input({"Pad",Kind::axis,4,1})=="Pad Axis 5+","Controller inputs are written in the documented form");
+    for(const auto* text:{"Left Shift","Return","Keypad 1","Keypad +","Keypad -","Page Up","Up","Button","Button 0","Button 129","Button3",
+        "PinOneButton 3","Button -1","Hat 1","Hat Up","Hat 0 Up","Hat 1 Sideways","Axis 1","Axis+","Axis 0+","PadAxis 1+","F12",""})
+        check(!input::parse_joystick_input(text),"A key name is not a controller input");
+    check(input::axis_pressed(1,20000) && !input::axis_pressed(1,10000) && !input::axis_pressed(1,-32768) &&
+        input::axis_pressed(-1,-20000) && !input::axis_pressed(-1,20000),"An axis is pressed past half way in its direction");
+    auto with_buttons=chosen;
+    with_buttons.input[host::PadButton::left]={"Left Shift","PinOne (v2), rev B Button 3"};
+    with_buttons.input[host::PadButton::one]={"Return","Button 12","Xbox Controller Hat 1 Left","DualSense Axis 5+"};
+    check(decode(text_of(host::encode_cabinet_config(with_buttons)))==with_buttons,"Controller inputs round trip through alien-crush.ini");
+    auto board=host::default_input_bindings();
+    board[host::PadButton::one]={"Return","PinOne Button 3"};
+    board[host::PadButton::run]={"Return","PinOne Button 3"};
+    board[host::PadButton::left]={"Left Shift","PinOne Button 1","Stick Hat 1 Left"};
+    board[host::PadButton::right]={"Right Shift","Stick Axis 6+"};
+    host::KeyboardInput boarded(board);
+    check(boarded.uses_buttons() && !keyboard.uses_buttons(),"Only bindings that name a controller input open controllers");
+    check(boarded.names_controller("Cleveland Software Design PinOne") && !boarded.names_controller("Xbox Controller"),
+        "A controller named by a binding leaves the fixed gamepad layout");
+    std::vector<JoystickInput> down;
+    const host::ButtonHeld held=[&down](const JoystickInput& b){return std::ranges::find(down,b)!=down.end();};
+    keys={};
+    down={{"PinOne",Kind::button,0,0}};
+    check(boarded.read(keys,false,held).player_one==Pad::left,"A bound controller button sends its input");
+    down={{"Stick",Kind::hat,0,input::kHatLeft}};
+    check(boarded.read(keys,false,held).player_one==Pad::left,"A bound hat direction sends its input");
+    down={{"Stick",Kind::axis,5,1}};
+    check(boarded.read(keys,false,held).player_one==Pad::right,"A bound axis sends its input");
+    down={{"PinOne",Kind::button,2,0}};
+    check(boarded.read(keys,true,held).player_one==Pad::button_i,"A controller button bound to I launches, and nothing else, from the shooter");
+    down={};(void)boarded.read(keys,false,held);down={{"PinOne",Kind::button,2,0}};
+    check(boarded.read(keys,false,held).player_one==(Pad::button_i|Pad::run),"...and is I and Run elsewhere");
+
     // Flippers on their own inputs, and the runtime identity that carries them.
     const host::FlipperInputs moved{{host::PadButton::two},{host::PadButton::right,host::PadButton::up}};
     std::array<bool,SDL_GAMEPAD_BUTTON_COUNT> pad{};

@@ -37,11 +37,13 @@ void open_pad(PadDevice& device) {
     if(count>0) device.pad=SDL_OpenGamepad(ids[0]);
     SDL_free(ids);
 }
-PadInput read_input(host::KeyboardInput& keyboard,SDL_Gamepad* pad,bool in_shooter) {
+PadInput read_input(host::KeyboardInput& keyboard,const host::JoystickInputs& joysticks,SDL_Gamepad* pad,bool in_shooter) {
     int count{};const bool* keys=SDL_GetKeyboardState(&count);
+    if(pad && keyboard.names_controller(SDL_GetJoystickName(SDL_GetGamepadJoystick(pad)))) pad=nullptr;
     std::array<bool,SDL_GAMEPAD_BUTTON_COUNT> buttons{};
     for(int i=0;pad && i<SDL_GAMEPAD_BUTTON_COUNT;++i) buttons[static_cast<std::size_t>(i)]=SDL_GetGamepadButton(pad,static_cast<SDL_GamepadButton>(i));
-    auto input=keyboard.read({keys,static_cast<std::size_t>(count)},in_shooter);
+    auto input=keyboard.read({keys,static_cast<std::size_t>(count)},in_shooter,
+        [&joysticks](const input::JoystickInput& b){return joysticks.pressed(b);});
     input.player_one|=host::gamepad_game_input(buttons).player_one;
     return input;
 }
@@ -96,6 +98,7 @@ int main(int argc,char** argv) {
             else if(arg=="--help") { std::cout<<"alien-crush --rom <path> [--cabinet] [--frames N] [--record <file> | --replay <file>] [--data-dir <directory>]\n"
                 "Keys (rebindable under input. in alien-crush.ini): Enter launch in shooter, otherwise start/confirm/pause; Left Shift/Left left flipper;\n"
                 "Right Shift/Right right flipper; Space nudge; Backspace select. Gamepad shoulders flippers, south launch/confirm.\n"
+                "A pad input can also name a controller's button, hat or axis: input.left=Left Shift,PinOne Button 1,Pad Hat 1 Left,Pad Axis 5+.\n"
                 "F5/F9 quick save/load, F6 smoothing, F11 fullscreen, Escape exit (F6, F10, F11 and F12 are rebindable too).\n"
                 "Cabinet: the score and backglass float above the playfield. F10/Shift+F10 select the next/previous window;\n"
                 "F11 toggles the selected window's fullscreen, R rotates it, F12/Shift+F12 move it to the next/previous monitor.\n"
@@ -190,6 +193,7 @@ int main(int argc,char** argv) {
         host::CabinetNudge cabinet_nudge(nudge);
         host::CabinetPlunger cabinet_plunger(plunger);
         host::KeyboardInput keys(bindings);
+        host::JoystickInputs joystick_inputs(keys.uses_buttons());
         const auto host_keys=host::resolve_host_keys(bindings);
         std::optional<recording::Recording> playback;
         if(!replay_path.empty()) playback=recording::read(replay_path);
@@ -276,7 +280,11 @@ int main(int argc,char** argv) {
                     display_layout_changed=true;
                     SDL_ClearAudioStream(audio.stream);cabinet_nudge.rearm();cabinet_plunger.interrupt();
                 }
-                if(event.type==SDL_EVENT_JOYSTICK_ADDED || event.type==SDL_EVENT_JOYSTICK_REMOVED) {cabinet_plunger.refresh();cabinet_nudge.refresh();}
+                if(event.type==SDL_EVENT_JOYSTICK_ADDED || event.type==SDL_EVENT_JOYSTICK_REMOVED) {
+                    cabinet_plunger.refresh();cabinet_nudge.refresh();
+                    if(event.type==SDL_EVENT_JOYSTICK_REMOVED) joystick_inputs.remove(event.jdevice.which);
+                    joystick_inputs.refresh();
+                }
                 if(event.type==SDL_EVENT_GAMEPAD_ADDED) open_pad(gamepad);
                 if(event.type==SDL_EVENT_GAMEPAD_REMOVED && gamepad.pad && SDL_GetGamepadID(gamepad.pad)==event.gdevice.which) { SDL_CloseGamepad(gamepad.pad); gamepad.pad=nullptr; open_pad(gamepad); }
                 if(event.type==SDL_EVENT_KEY_DOWN && !event.key.repeat) {
@@ -344,7 +352,7 @@ int main(int argc,char** argv) {
             }
             // The plunger's board must not also trigger SDL's default gamepad buttons.
             auto* standard_pad=gamepad.pad && SDL_GetGamepadID(gamepad.pad)!=cabinet_plunger.id()?gamepad.pad:nullptr;
-            auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(keys,standard_pad,reference_launcher_active(runtime->work_ram()));
+            auto input=playback?playback->inputs[static_cast<std::size_t>(count)]:read_input(keys,joystick_inputs,standard_pad,reference_launcher_active(runtime->work_ram()));
             if(cabinet_mode && !playback && cabinet_nudge.read(SDL_GetTicks(),focused && host::nudge_play_active(runtime->work_ram())))
                 input.player_one|=Pad::button_ii;
             if(!playback) input=input_router.route(input,runtime->work_ram());
