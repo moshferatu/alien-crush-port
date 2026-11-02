@@ -31,7 +31,8 @@ float Presentation::refresh_rate() const {
     return mode?mode->refresh_rate:0;
 }
 void Presentation::show(const Frame& input,std::uint32_t aspect_width,std::uint32_t aspect_height,bool bottom_aligned,const Frame& background_tile,
-    const render::TableBallBackdrop* backdrop,const render::Sprite* ball,render::MotionPosition position,double fraction,const render::AnimationScene* animation) {
+    const render::TableBallBackdrop* backdrop,const render::Sprite* ball,render::MotionPosition position,double fraction,const render::AnimationScene* animation,
+    bool fill) {
     auto frame=input;
     if(frame.pixels.empty()) return;
     animated_=animation!=nullptr;
@@ -43,6 +44,11 @@ void Presentation::show(const Frame& input,std::uint32_t aspect_width,std::uint3
     else motion_.reset();
     int width{},height{}; checked(SDL_GetRenderOutputSize(renderer_,&width,&height));
     const bool sideways=rotation_==90 || rotation_==270;
+    if(fill && width>0 && height>0) {
+        // The window's own proportions, so the picture fills it.
+        aspect_width=static_cast<std::uint32_t>(sideways?height:width);
+        aspect_height=static_cast<std::uint32_t>(sideways?width:height);
+    }
     auto layout=render::calculate_scale_layout(sideways?height:width,sideways?width:height,frame.width,frame.height,aspect_width,aspect_height);
     if(!layout.valid()) return;
     if(layered_ || animated_) {

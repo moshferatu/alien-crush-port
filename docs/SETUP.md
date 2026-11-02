@@ -12,7 +12,7 @@ and starts the game, then comes back when the game closes.
 | Tab | |
 | --- | --- |
 | Game | The ROM, cabinet or desktop mode, a starting bonus stage, and a start near the maximum score |
-| Video | Smoothing, and for the cabinet: which monitor each window is on and whether it is fullscreen, and the playfield's rotation |
+| Video | Smoothing, borderless windows, stretching the playfield, and for the cabinet: which monitor each window is on and whether it is fullscreen, and the playfield's rotation |
 | Audio | The music voice overlay |
 | Controls | The keys (or controller buttons, d-pads and triggers) for each PC Engine pad input, and the window hotkeys |
 | Cabinet | The nudge strength and nudge board, and the analog plunger |
@@ -26,12 +26,12 @@ has the focus.
 
 With no options the game plays as `alien-crush.ini` says, which is
 what the launcher edits: `game.rom`, `game.cabinet`, `game.bonus_stage`,
-`game.near_max_score`, `game.drag_ball`, `audio.music_voice_overlay`, `video.smoothing`, `video.borderless` and `input.nudge_multiplier`,
+`game.near_max_score`, `game.drag_ball`, `audio.music_voice_overlay`, `video.smoothing`, `video.borderless`, `video.stretch` and `input.nudge_multiplier`,
 beside the window, key, button, nudge and plunger fields described below. An
 option on the command line beats the file for that run (`--rom`, `--cabinet`
 or `--no-cabinet`, `--bonus-stage`, `--near-max-score`, `--drag-ball`, `--music-voice-overlay` or `--no-music-voice-overlay`,
 `--smooth` or `--no-smooth`, `--nudge-multiplier`), and replays and `--frames`
-runs ignore these nine, though `--bonus-stage` and `--near-max-score`
+runs ignore these ten, though `--bonus-stage` and `--near-max-score`
 themselves still work with `--frames`. F6 is remembered in `video.smoothing` when a cabinet session exits
 normally.
 
@@ -39,6 +39,13 @@ normally.
 and border off every window that is not fullscreen, for recording the
 desktop. A window without one cannot be dragged: place the windows with it
 off, or move one with the next-monitor key; each opens where it was left.
+
+`video.stretch=1` (Stretch Playfield in the launcher) stretches the table to
+fill its whole window or screen instead of keeping the picture's proportions,
+so it is distorted to the window's shape. The bonus stages keep their
+proportions but fill the window's width, as far as its height allows. The
+title and other screens, and the score and backglass windows, are
+unchanged.
 
 ## Start options
 

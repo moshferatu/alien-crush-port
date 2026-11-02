@@ -41,9 +41,11 @@ public:
     void reset_smoothing();
     void defer(bool value) { deferred_=value; }
     void repeat(double fraction=1);
+    // `fill` gives up the aspect to fill the whole window, whatever its shape.
     void show(const Frame&,std::uint32_t aspect_width=4,std::uint32_t aspect_height=3,bool bottom_aligned=false,
         const Frame& background_tile={},const render::TableBallBackdrop* backdrop=nullptr,
-        const render::Sprite* ball=nullptr,render::MotionPosition position={},double fraction=1,const render::AnimationScene* animation=nullptr);
+        const render::Sprite* ball=nullptr,render::MotionPosition position={},double fraction=1,const render::AnimationScene* animation=nullptr,
+        bool fill=false);
     // Read back the presented output for renderer regression tests/screenshots.
     render::Image capture();
     void panel(const char* text);

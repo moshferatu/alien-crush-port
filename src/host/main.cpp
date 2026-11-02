@@ -108,8 +108,9 @@ int main(int argc,char** argv) {
                 "It, the high scores (alien-crush.hiscore), quick states and an optional backglass.bmp sit beside the executable, or in --data-dir.\n"
                 "An earlier build kept them in a portable-data folder, with the settings as cabinet.ini; they are moved out of it on the first start.\n"
                 "With no options, normal play takes game.rom, game.cabinet, game.bonus_stage, game.near_max_score,\n"
-                "game.drag_ball, audio.music_voice_overlay, video.smoothing, video.borderless and\n"
-                "input.nudge_multiplier from it; a flag beats the file for that run.\n"
+                "game.drag_ball, audio.music_voice_overlay, video.smoothing, video.borderless, video.stretch and\n"
+                "input.nudge_multiplier from it; a flag beats the file for that run. video.stretch=1 stretches\n"
+                "the table to fill its window, distorting it; the bonus stages keep their proportions.\n"
                 "--no-cabinet: one window, whatever alien-crush.ini says.\n"
                 "--bonus-stage <1-4>: start a game in that bonus stage, through the game's own bonus transition.\n"
                 "--near-max-score: start a game with 999,999,000 points, 900 short of the maximum, to see the game's ending.\n"
@@ -425,7 +426,8 @@ int main(int argc,char** argv) {
                         std::stable_partition(animation->layers.begin(),animation->layers.end(),[](const auto& layer){return !layer.foreground;});
                     }
                     display.show({frame.number,stitched->width,stitched->height,stitched->pixels,{}},
-                        render::table_aspect_width,render::table_aspect_height,true,{},backdrop,ball?&*ball:nullptr,position,fraction,animation?&*animation:nullptr);
+                        render::table_aspect_width,render::table_aspect_height,true,{},backdrop,ball?&*ball:nullptr,position,fraction,animation?&*animation:nullptr,
+                        play.stretch);
                     ++stitched_frames;
                 }
                 else {
@@ -465,6 +467,12 @@ int main(int argc,char** argv) {
                 }
                 previous_video=snapshot;
                 std::copy(runtime->work_ram().begin(),runtime->work_ram().end(),previous_actor_ram.begin());
+            } else if(play.stretch) {
+                // The table is showing by the rule the cabinet's stitched table uses.
+                const auto scene=diagnostics::observe_alien_state(runtime->work_ram());
+                const bool table_view=scene.table_code<=1 && !scene.title_menu && !scene.high_score_menu
+                    && !scene.title_transition && !scene.ending_screen;
+                display.show(frame,4,3,false,{},nullptr,nullptr,{},1,nullptr,table_view);
             } else {display.show(frame);}
             const auto playfield_ended=SDL_GetTicksNS();
             if(present_frame) next_picture=vsync?playfield_ended+picture_ns:std::max(next_picture+picture_ns,playfield_ended+1);

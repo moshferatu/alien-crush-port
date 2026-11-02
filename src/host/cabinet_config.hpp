@@ -109,6 +109,10 @@ struct PlaySettings {
     // video.borderless: windows that are not fullscreen have no title bar or
     // border, so they cannot be dragged; each still opens where it was left.
     bool borderless=false;
+    // video.stretch: the table fills its whole window or screen, whatever its
+    // shape; a bonus stage keeps its proportions, as wide as the window
+    // allows, and other screens are unchanged.
+    bool stretch=false;
     bool operator==(const PlaySettings&) const=default;
 };
 
